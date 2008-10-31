@@ -86,10 +86,6 @@ intel_texture_drawpixels(GLcontext * ctx,
    if (ctx->FragmentProgram.Enabled)
       return GL_FALSE;
 
-   /* Don't even want to think about it */
-   if (format == GL_COLOR_INDEX)
-      return GL_FALSE;
-
    /* We don't have a way to generate fragments with stencil values which *
     * will set the resulting stencil value.
     */
