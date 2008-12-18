@@ -184,6 +184,8 @@ do_blit_bitmap( GLcontext *ctx,
    unsigned int num_cliprects;
    drm_clip_rect_t *cliprects;
    int x_off, y_off;
+   GLsizei bitmap_width = width;
+   GLsizei bitmap_height = height;
 
    /* Update draw buffer bounds */
    _mesa_update_state(ctx);
@@ -290,7 +292,7 @@ do_blit_bitmap( GLcontext *ctx,
 	       /* May need to adjust this when padding has been introduced in
 		* sz above:
 		*/
-	       if (get_bitmap_rect(width, height, unpack, 
+	       if (get_bitmap_rect(bitmap_width, bitmap_height, unpack,
 				   bitmap,
 				   srcx + px, srcy + py, w, h,
 				   (GLubyte *)stipple,
