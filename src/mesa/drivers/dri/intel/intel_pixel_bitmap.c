@@ -44,6 +44,7 @@
 #include "main/enable.h"
 #include "shader/arbprogram.h"
 #include "glapi/dispatch.h"
+#include "main/state.h"
 #include "swrast/swrast.h"
 
 #include "intel_screen.h"
@@ -183,6 +184,9 @@ do_blit_bitmap( GLcontext *ctx,
    unsigned int num_cliprects;
    drm_clip_rect_t *cliprects;
    int x_off, y_off;
+
+   /* Update draw buffer bounds */
+   _mesa_update_state(ctx);
 
    if (!dst)
        return GL_FALSE;
