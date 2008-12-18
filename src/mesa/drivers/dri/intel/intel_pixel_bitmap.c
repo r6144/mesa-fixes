@@ -211,6 +211,9 @@ do_blit_bitmap( GLcontext *ctx,
    /* Update draw buffer bounds */
    _mesa_update_state(ctx);
 
+   /* Update draw buffer bounds */
+   _mesa_update_state(ctx);
+
    if (!dst)
        return GL_FALSE;
 
