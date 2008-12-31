@@ -32,6 +32,18 @@
 #include "main/mtypes.h"
 #include "main/macros.h"
 #include "main/bufferobj.h"
+#include "main/pixelstore.h"
+#include "main/state.h"
+#include "main/teximage.h"
+#include "main/texenv.h"
+#include "main/texobj.h"
+#include "main/texstate.h"
+#include "main/texparam.h"
+#include "main/varray.h"
+#include "main/attrib.h"
+#include "main/enable.h"
+#include "shader/arbprogram.h"
+#include "glapi/dispatch.h"
 #include "swrast/swrast.h"
 
 #include "intel_screen.h"
@@ -313,9 +325,6 @@ out:
 
    return GL_TRUE;
 }
-
-
-
 
 
 /* There are a large number of possible ways to implement bitmap on
