@@ -200,6 +200,14 @@ do_blit_bitmap( GLcontext *ctx,
    /* Update draw buffer bounds */
    _mesa_update_state(ctx);
 
+   if (ctx->Depth.Test) {
+      /* The blit path produces incorrect results when depth testing is on.
+       * It seems the blit Z coord is always 1.0 (the far plane) so fragments
+       * will likely be obscured by other, closer geometry.
+       */
+      return GL_FALSE;
+   }
+
    if (!dst)
        return GL_FALSE;
 
