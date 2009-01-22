@@ -348,14 +348,12 @@ intelBitmap(GLcontext * ctx,
    if (INTEL_DEBUG & DEBUG_PIXEL)
       _mesa_printf("intelBitmap(%d,%d,%u,%u): ", x, y, (unsigned) width, (unsigned) height);
 
-#if 0
    if (do_blit_bitmap(ctx, x, y, width, height,
 		      unpack, pixels)) {
       if (INTEL_DEBUG & DEBUG_PIXEL)
 	 _mesa_printf("accelerated\n");
       return;
    }
-#endif
 
    if (INTEL_DEBUG & DEBUG_PIXEL)
       _mesa_printf("fallback to swrast\n");
