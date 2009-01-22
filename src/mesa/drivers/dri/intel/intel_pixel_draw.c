@@ -370,16 +370,27 @@ intelDrawPixels(GLcontext * ctx,
                 const struct gl_pixelstore_attrib *unpack,
                 const GLvoid * pixels)
 {
+   if (INTEL_DEBUG & DEBUG_PIXEL)
+      _mesa_printf("intelDrawPixels(%d,%d,%u,%u): ", x, y, (unsigned) width, (unsigned) height);
+
+#if 0
    if (intel_texture_drawpixels(ctx, x, y, width, height, format, type,
-				unpack, pixels))
-      return;
+				unpack, pixels)) {
+     if (INTEL_DEBUG & DEBUG_PIXEL)
+	_mesa_printf("texture\n");
+     return;
+   }
 
    if (intel_stencil_drawpixels(ctx, x, y, width, height, format, type,
-				unpack, pixels))
+				unpack, pixels)) {
+      if (INTEL_DEBUG & DEBUG_PIXEL)
+	 _mesa_printf("stencil\n");
       return;
+   }
+#endif
 
    if (INTEL_DEBUG & DEBUG_PIXEL)
-      _mesa_printf("%s: fallback to swrast\n", __FUNCTION__);
+      _mesa_printf("fallback to swrast\n");
 
    if (ctx->FragmentProgram._Current == ctx->FragmentProgram._TexEnvProgram) {
       /*

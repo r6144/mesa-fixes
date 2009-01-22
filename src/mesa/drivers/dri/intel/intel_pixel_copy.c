@@ -372,12 +372,14 @@ intelCopyPixels(GLcontext * ctx,
    if (INTEL_DEBUG & DEBUG_PIXEL)
       fprintf(stderr, "%s\n", __FUNCTION__);
 
+#if 0
    if (do_blit_copypixels(ctx, srcx, srcy, width, height, destx, desty, type))
       return;
 
 #ifdef I915
    if (do_texture_copypixels(ctx, srcx, srcy, width, height, destx, desty, type))
       return;
+#endif
 #endif
 
    DBG("fallback to _swrast_CopyPixels\n");
