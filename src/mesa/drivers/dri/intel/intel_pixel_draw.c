@@ -382,7 +382,6 @@ intelDrawPixels(GLcontext * ctx,
    if (INTEL_DEBUG & DEBUG_PIXEL)
       _mesa_printf("intelDrawPixels(%d,%d,%u,%u): ", x, y, (unsigned) width, (unsigned) height);
 
-#if 0
    if (intel_texture_drawpixels(ctx, x, y, width, height, format, type,
 				unpack, pixels)) {
      if (INTEL_DEBUG & DEBUG_PIXEL)
@@ -396,7 +395,6 @@ intelDrawPixels(GLcontext * ctx,
 	 _mesa_printf("stencil\n");
       return;
    }
-#endif
 
    if (INTEL_DEBUG & DEBUG_PIXEL)
       _mesa_printf("fallback to swrast\n");
