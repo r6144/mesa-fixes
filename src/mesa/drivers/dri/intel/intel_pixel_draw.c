@@ -86,7 +86,7 @@ intel_texture_drawpixels(GLcontext * ctx,
    if (ctx->FragmentProgram.Enabled)
       return GL_FALSE;
 
-   /* We don't have a way to generate fragments with stencil values which *
+   /* We don't have a way to generate fragments with stencil values which
     * will set the resulting stencil value.
     */
    if (format == GL_STENCIL_INDEX)
@@ -209,6 +209,10 @@ intel_stencil_drawpixels(GLcontext * ctx,
 
    /* Can't do a per-bit writemask while treating stencil as rgba data. */
    if ((ctx->Stencil.WriteMask[0] & 0xff) != 0xff)
+      return GL_FALSE;
+
+   /* We don't support stencil testing/ops here */
+   if (ctx->Stencil.Enabled)
       return GL_FALSE;
 
    /* We use FBOs for our wrapping of the depthbuffer into a color
