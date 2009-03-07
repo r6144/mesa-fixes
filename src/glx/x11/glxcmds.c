@@ -849,7 +849,7 @@ PUBLIC void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
 
     static unsigned frame_count = 0;
 
-    if (frame_count % 60 == 0)
+    //    if (frame_count % 60 == 0)
 	fprintf(stderr, "glXSwapBuffers on drawable 0x%x (%u)\n", (unsigned) drawable, frame_count);
     frame_count++;
 

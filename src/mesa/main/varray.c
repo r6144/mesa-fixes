@@ -402,6 +402,9 @@ _mesa_TexCoordPointer(GLint size, GLenum type, GLsizei stride,
       return;
    }
 
+   fprintf(stderr, "glTexCoordPointer(unit %u sz %d type %s stride %d)\n",
+	   unit, size, _mesa_lookup_enum_by_nr( type ), stride);
+
    if (MESA_VERBOSE&(VERBOSE_VARRAY|VERBOSE_API))
       _mesa_debug(ctx, "glTexCoordPointer(unit %u sz %d type %s stride %d)\n",
                   unit, size, _mesa_lookup_enum_by_nr( type ), stride);
