@@ -847,6 +847,12 @@ PUBLIC void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
 #ifdef GLX_DIRECT_RENDERING
     __GLXDRIdrawable *pdraw = GetGLXDRIDrawable(dpy, drawable, NULL);
 
+    static unsigned frame_count = 0;
+
+    if (frame_count % 60 == 0)
+	fprintf(stderr, "glXSwapBuffers on drawable 0x%x (%u)\n", (unsigned) drawable, frame_count);
+    frame_count++;
+
     if (pdraw != NULL) {
 	glFlush();	    
 	(*pdraw->psc->driScreen->swapBuffers)(pdraw);
