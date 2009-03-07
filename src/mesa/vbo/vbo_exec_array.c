@@ -30,6 +30,7 @@
 #include "main/state.h"
 #include "main/api_validate.h"
 #include "main/api_noop.h"
+#include "main/enums.h"
 
 #include "vbo_context.h"
 
@@ -243,6 +244,9 @@ vbo_exec_DrawArrays(GLenum mode, GLint start, GLsizei count)
    if (!_mesa_validate_DrawArrays( ctx, mode, start, count ))
       return;
 
+   fprintf(stderr, "vbo_exec_DrawArrays(mode %s start %d count %u)\n",
+	   _mesa_lookup_enum_by_nr( mode ), start, count);
+   
    FLUSH_CURRENT( ctx, 0 );
 
    if (ctx->NewState)
