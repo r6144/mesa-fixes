@@ -229,7 +229,7 @@ static void bind_arrays( GLcontext *ctx )
 #endif
 }
 
-
+int in_vbo = 0;
 
 /***********************************************************************
  * API functions.
@@ -275,8 +275,10 @@ vbo_exec_DrawArrays(GLenum mode, GLint start, GLsizei count)
    old_en_tex = _mesa_IsEnabled(GL_TEXTURE_2D); _mesa_Disable(GL_TEXTURE_2D);
    old_en_texcoords = _mesa_IsEnabled(GL_TEXTURE_2D); _mesa_DisableClientState(GL_TEXTURE_COORD_ARRAY);
 #endif
-   
+
+   in_vbo = 1;
    vbo->draw_prims( ctx, exec->array.inputs, prim, 1, NULL, start, start + count - 1 );
+   in_vbo = 0;
 
 #if 0
    if (old_en_texcoords) _mesa_EnableClientState(GL_TEXTURE_COORD_ARRAY);

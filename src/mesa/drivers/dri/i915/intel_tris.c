@@ -61,6 +61,8 @@ static void intelRenderPrimitive(GLcontext * ctx, GLenum prim);
 static void intelRasterPrimitive(GLcontext * ctx, GLenum rprim,
                                  GLuint hwprim);
 
+extern int in_vbo;
+
 static void
 intel_flush_inline_primitive(struct intel_context *intel)
 {
@@ -953,11 +955,12 @@ intelChooseRenderState(GLcontext * ctx)
    const struct gl_fragment_program *fprog = ctx->FragmentProgram._Current;
    GLboolean have_wpos = (fprog && (fprog->Base.InputsRead & FRAG_BIT_WPOS));
    GLuint index = 0;
+   GLboolean always_fallback = in_vbo;
 
    if (INTEL_DEBUG & DEBUG_STATE)
       fprintf(stderr, "\n%s\n", __FUNCTION__);
 
-   if ((flags & (ANY_FALLBACK_FLAGS | ANY_RASTER_FLAGS)) || have_wpos) {
+   if ((flags & (ANY_FALLBACK_FLAGS | ANY_RASTER_FLAGS)) || have_wpos || always_fallback) {
 
       if (flags & ANY_RASTER_FLAGS) {
          if (flags & DD_TRI_LIGHT_TWOSIDE)
@@ -986,28 +989,24 @@ intelChooseRenderState(GLcontext * ctx)
       /* Hook in fallbacks for specific primitives.
        */
       if (flags & ANY_FALLBACK_FLAGS) {
-         if (flags & DD_LINE_STIPPLE)
+	 if ((flags & DD_LINE_STIPPLE) || always_fallback)
             intel->draw_line = intel_fallback_line;
-
-         if ((flags & DD_TRI_STIPPLE) && !intel->hw_stipple)
+	 
+	 if (((flags & DD_TRI_STIPPLE) && !intel->hw_stipple) || always_fallback)
             intel->draw_tri = intel_fallback_tri;
 
-         if (flags & DD_TRI_SMOOTH) {
-	    if (intel->strict_conformance)
-	       intel->draw_tri = intel_fallback_tri;
-	 }
+         if (((flags & DD_TRI_SMOOTH) && intel->strict_conformance) || always_fallback)
+	    intel->draw_tri = intel_fallback_tri;
 
-         if (flags & DD_POINT_ATTEN) {
+         if ((flags & DD_POINT_ATTEN) || always_fallback) {
 	    if (0)
 	       intel->draw_point = intel_atten_point;
 	    else
 	       intel->draw_point = intel_fallback_point;
 	 }
 
-	 if (flags & DD_POINT_SMOOTH) {
-	    if (intel->strict_conformance)
-	       intel->draw_point = intel_fallback_point;
-	 }
+	 if ((flags & DD_POINT_SMOOTH && intel->strict_conformance) || always_fallback)
+	    intel->draw_point = intel_fallback_point;
 
          index |= INTEL_FALLBACK_BIT;
       }
