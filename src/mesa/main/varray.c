@@ -405,6 +405,18 @@ _mesa_TexCoordPointer(GLint size, GLenum type, GLsizei stride,
    fprintf(stderr, "glTexCoordPointer(unit %u sz %d type %s stride %d)\n",
 	   unit, size, _mesa_lookup_enum_by_nr( type ), stride);
 
+   if (size == 2 && type == GL_FLOAT && stride == 20 && ptr != NULL) {
+       unsigned i;
+       fprintf(stderr, "ptr=%p\n", ptr);
+#if 1 /* ptr is actually an offset (0xc) when glBindBufferARB is used */
+       for (i = 0; i < 4; i++) {
+	   const float *p = (const float *) ((const char *) ptr + i * stride);
+	   fprintf(stderr, "(%0.2f,%0.2f)", p[0], p[1]);
+       }
+       fprintf(stderr, "\n");
+#endif
+   }
+
    if (MESA_VERBOSE&(VERBOSE_VARRAY|VERBOSE_API))
       _mesa_debug(ctx, "glTexCoordPointer(unit %u sz %d type %s stride %d)\n",
                   unit, size, _mesa_lookup_enum_by_nr( type ), stride);

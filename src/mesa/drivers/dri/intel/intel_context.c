@@ -359,7 +359,9 @@ static const struct dri_extension card_extensions[] = {
    { "GL_ARB_texture_env_dot3",           NULL },
    { "GL_ARB_texture_mirrored_repeat",    NULL },
    { "GL_ARB_texture_rectangle",          NULL },
+#if 0
    { "GL_ARB_vertex_buffer_object",       GL_ARB_vertex_buffer_object_functions },
+#endif
    { "GL_ARB_vertex_program",             GL_ARB_vertex_program_functions },
    { "GL_ARB_window_pos",                 GL_ARB_window_pos_functions },
    { "GL_EXT_blend_color",                GL_EXT_blend_color_functions },
