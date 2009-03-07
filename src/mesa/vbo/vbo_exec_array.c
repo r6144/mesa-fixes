@@ -30,7 +30,9 @@
 #include "main/state.h"
 #include "main/api_validate.h"
 #include "main/api_noop.h"
+
 #include "main/enums.h"
+#include "main/enable.h"
 
 #include "vbo_context.h"
 
@@ -240,6 +242,7 @@ vbo_exec_DrawArrays(GLenum mode, GLint start, GLsizei count)
    struct vbo_context *vbo = vbo_context(ctx);
    struct vbo_exec_context *exec = &vbo->exec;
    struct _mesa_prim prim[1];
+   GLboolean old_en_tex, old_en_texcoords;
 
    if (!_mesa_validate_DrawArrays( ctx, mode, start, count ))
       return;
@@ -268,7 +271,13 @@ vbo_exec_DrawArrays(GLenum mode, GLint start, GLsizei count)
    prim[0].count = count;
    prim[0].indexed = 0;
 
+   old_en_tex = _mesa_IsEnabled(GL_TEXTURE_2D); _mesa_Disable(GL_TEXTURE_2D);
+   old_en_texcoords = _mesa_IsEnabled(GL_TEXTURE_2D); _mesa_DisableClientState(GL_TEXTURE_COORD_ARRAY);
+   
    vbo->draw_prims( ctx, exec->array.inputs, prim, 1, NULL, start, start + count - 1 );
+
+   if (old_en_texcoords) _mesa_EnableClientState(GL_TEXTURE_COORD_ARRAY);
+   if (old_en_tex) _mesa_Enable(GL_TEXTURE_2D);
 }
 
 
