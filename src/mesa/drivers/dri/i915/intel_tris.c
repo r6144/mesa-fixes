@@ -955,7 +955,7 @@ intelChooseRenderState(GLcontext * ctx)
    const struct gl_fragment_program *fprog = ctx->FragmentProgram._Current;
    GLboolean have_wpos = (fprog && (fprog->Base.InputsRead & FRAG_BIT_WPOS));
    GLuint index = 0;
-   GLboolean always_fallback = in_vbo;
+   GLboolean always_fallback = 0;
 
    if (INTEL_DEBUG & DEBUG_STATE)
       fprintf(stderr, "\n%s\n", __FUNCTION__);
