@@ -42,6 +42,7 @@ _mesa_Scissor( GLint x, GLint y, GLsizei width, GLsizei height )
       return;
    }
 
+   fprintf(stderr, "glScissor %d %d %d %d\n", x, y, width, height);
    if (MESA_VERBOSE & VERBOSE_API)
       _mesa_debug(ctx, "glScissor %d %d %d %d\n", x, y, width, height);
 

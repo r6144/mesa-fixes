@@ -33,7 +33,7 @@
 #include "t_vertex.h"
 
 extern int in_vbo;
-#define DBG (in_vbo)
+#define DBG (1)
 
 /* Build and manage clipspace/ndc/window vertices.
  */

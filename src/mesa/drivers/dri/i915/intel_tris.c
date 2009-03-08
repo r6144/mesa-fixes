@@ -392,6 +392,10 @@ intel_draw_triangle(struct intel_context *intel,
    GLuint *vb = intel_get_prim_space(intel, 3);
    int j;
 
+   if (in_vbo) {
+      fprintf(stderr, "intel_draw_triangle(%p, %p, %p)\n", v0, v1, v2);
+   }
+   
    COPY_DWORDS(j, vb, vertsize, v0);
    COPY_DWORDS(j, vb, vertsize, v1);
    COPY_DWORDS(j, vb, vertsize, v2);
@@ -809,6 +813,10 @@ intel_fallback_tri(struct intel_context *intel,
    intelSpanRenderStart(ctx);
    _swrast_Triangle(ctx, &v[0], &v[1], &v[2]);
    intelSpanRenderFinish(ctx);
+
+   if (in_vbo) {
+      fprintf(stderr, "intel_fallback_tri(%p, %p, %p)\n", v0, v1, v2);
+   }
 }
 
 
