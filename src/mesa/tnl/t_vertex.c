@@ -426,9 +426,10 @@ void _tnl_build_vertices( GLcontext *ctx,
 	      start, end, (GLuint) vtx->vertex_size);
       if (vtx->vertex_size == 36)
 	 for (i = start; i < end; i++) {
-	    const GLubyte *p = (GLubyte *) vtx->vertex_buf + i * vtx->vertex_size;
-	    const float *pos = (const float *) p, *tex0 = (const float *) &p[24];
-	    const GLubyte *color0 = &p[16], fog = p[23];
+	    GLubyte *p = (GLubyte *) vtx->vertex_buf + i * vtx->vertex_size;
+	    float *pos = (float *) p, *tex0 = (float *) &p[24];
+	    GLubyte *color0 = &p[16], fog = p[23];
+	    tex0[2] = 1.0;
 	    fprintf(stderr, "vertex %u: pos (%0.0f,%0.0f,%0.3f,%0.3f) color0 (%u,%u,%u,%u) "
 		    "fog %u tex0 (%0.3f,%0.3f,%0.3f)\n",
 		    i, pos[0], pos[1], pos[2], pos[3], color0[0], color0[1], color0[2], color0[3],

@@ -340,6 +340,9 @@ _mesa_set_enable(GLcontext *ctx, GLenum cap, GLboolean state)
          ctx->Color.DitherFlag = state;
          break;
       case GL_FOG:
+#if 0
+	 if (state) return; /* disable fog */
+#endif
          if (ctx->Fog.Enabled == state)
             return;
          FLUSH_VERTICES(ctx, _NEW_FOG);
