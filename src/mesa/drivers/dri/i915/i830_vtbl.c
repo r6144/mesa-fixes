@@ -133,10 +133,13 @@ i830_render_start(struct intel_context *intel)
             switch (sz) {
             case 1:
             case 2:
+	    case 3:
+	    case 4:
                emit = EMIT_2F;
                sz = 2;
                mcs |= TEXCOORDTYPE_CARTESIAN;
                break;
+#if 0
             case 3:
                emit = EMIT_3F;
                sz = 3;
@@ -147,6 +150,7 @@ i830_render_start(struct intel_context *intel)
                sz = 3;
                mcs |= TEXCOORDTYPE_HOMOGENEOUS;
                break;
+#endif
             default:
                continue;
             };
