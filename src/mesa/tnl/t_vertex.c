@@ -339,9 +339,9 @@ GLuint _tnl_install_attrs( GLcontext *ctx, const struct tnl_attr_map *map,
 
 	 
 	 if (DBG)
-	    _mesa_printf("%d: %s, vp %p, offset %d\n", i,  
+	    _mesa_printf("%d: %s, vp %p, attr %u, offset %u\n", i,  
 			 _tnl_format_info[format].name, (void *)vp,
-			 vtx->attr[j].vertoffset);   
+			 vtx->attr[j].attrib, vtx->attr[j].vertoffset);   
 
 	 offset += _tnl_format_info[format].attrsize;
 	 j++;
@@ -414,11 +414,27 @@ void _tnl_build_vertices( GLcontext *ctx,
 			  GLuint end,
 			  GLuint newinputs )
 {
-   struct tnl_clipspace *vtx = GET_VERTEX_STATE(ctx);  
+   struct tnl_clipspace *vtx = GET_VERTEX_STATE(ctx);
+   GLuint i;
+
    update_input_ptrs( ctx, start );      
    vtx->emit( ctx, end - start, 
 	      (GLubyte *)(vtx->vertex_buf + 
 			  start * vtx->vertex_size));
+   if (in_vbo) {
+      fprintf(stderr, "_tnl_build_vertices(%u, %u), vertex_size=%u\n",
+	      start, end, (GLuint) vtx->vertex_size);
+      if (vtx->vertex_size == 36)
+	 for (i = start; i < end; i++) {
+	    const GLubyte *p = (GLubyte *) vtx->vertex_buf + i * vtx->vertex_size;
+	    const float *pos = (const float *) p, *tex0 = (const float *) &p[24];
+	    const GLubyte *color0 = &p[16], fog = p[23];
+	    fprintf(stderr, "vertex %u: pos (%0.0f,%0.0f,%0.3f,%0.3f) color0 (%u,%u,%u,%u) "
+		    "fog %u tex0 (%0.3f,%0.3f,%0.3f)\n",
+		    i, pos[0], pos[1], pos[2], pos[3], color0[0], color0[1], color0[2], color0[3],
+		    fog, tex0[0], tex0[1], tex0[2]);
+	 }
+   }
 }
 
 /* Emit VB vertices start..end to dest.  Note that VB vertex at
