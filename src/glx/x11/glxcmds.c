@@ -856,6 +856,7 @@ PUBLIC void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
     if (pdraw != NULL) {
 	glFlush();	    
 	(*pdraw->psc->driScreen->swapBuffers)(pdraw);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_ACCUM_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 	return;
     }
 #endif
