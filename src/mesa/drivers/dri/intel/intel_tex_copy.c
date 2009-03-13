@@ -55,8 +55,8 @@ get_teximage_source(struct intel_context *intel, GLenum internalFormat)
 {
    struct intel_renderbuffer *irb;
 
-   DBG("%s %s\n", __FUNCTION__,
-       _mesa_lookup_enum_by_nr(internalFormat));
+   DBG("%s %s (rgbBits=%d)\n", __FUNCTION__,
+       _mesa_lookup_enum_by_nr(internalFormat), (int) intel->ctx.Visual.rgbBits);
 
    switch (internalFormat) {
    case GL_DEPTH_COMPONENT:
@@ -75,6 +75,7 @@ get_teximage_source(struct intel_context *intel, GLenum internalFormat)
    case GL_RGBA8:
       return intel_readbuf_region(intel);
    case GL_RGB:
+   case GL_RGB5:
       if (intel->ctx.Visual.rgbBits == 16)
          return intel_readbuf_region(intel);
       return NULL;
