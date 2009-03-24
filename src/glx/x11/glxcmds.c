@@ -850,13 +850,13 @@ PUBLIC void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
     static unsigned frame_count = 0;
 
     //    if (frame_count % 60 == 0)
-	fprintf(stderr, "glXSwapBuffers on drawable 0x%x (%u)\n", (unsigned) drawable, frame_count);
+    fprintf(stderr, "glXSwapBuffers on drawable 0x%x (%u)\n", (unsigned) drawable, frame_count);
     frame_count++;
 
     if (pdraw != NULL) {
 	glFlush();	    
 	(*pdraw->psc->driScreen->swapBuffers)(pdraw);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_ACCUM_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+	if (frame_count % 30 == 0) glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_ACCUM_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 	return;
     }
 #endif
