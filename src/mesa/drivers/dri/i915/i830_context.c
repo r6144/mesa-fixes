@@ -91,10 +91,10 @@ i830CreateContext(const __GLcontextModes * mesaVis,
    /* Advertise the full hardware capabilities.  The new memory
     * manager should cope much better with overload situations:
     */
-   ctx->Const.MaxTextureLevels = 12;
-   ctx->Const.Max3DTextureLevels = 9;
-   ctx->Const.MaxCubeTextureLevels = 11;
-   ctx->Const.MaxTextureRectSize = (1 << 11);
+   ctx->Const.MaxTextureLevels = 11;
+   ctx->Const.Max3DTextureLevels = 8;
+   ctx->Const.MaxCubeTextureLevels = 10;
+   ctx->Const.MaxTextureRectSize = (1 << 10);
    ctx->Const.MaxTextureUnits = I830_TEX_UNITS;
 
    _tnl_init_vertices(ctx, ctx->Const.MaxArrayLockSize + 12,
