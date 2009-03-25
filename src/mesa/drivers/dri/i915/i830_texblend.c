@@ -160,8 +160,10 @@ i830SetTexEnvCombine(struct i830_context * i830,
       TEXPIPE_ALPHA | TEXBLEND_ARG0 | TEXBLENDARG_MODIFY_PARMS,
    };
 
+#if 0
    if (INTEL_DEBUG & DEBUG_TEXTURE)
       fprintf(stderr, "%s\n", __FUNCTION__);
+#endif
 
 
    /* The EXT version of the DOT3 extension does not support the
