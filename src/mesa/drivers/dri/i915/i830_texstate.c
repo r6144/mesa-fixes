@@ -244,6 +244,12 @@ i830_update_tex_unit(struct intel_context *intel, GLuint unit, GLuint ss3)
          }
       }
 
+#if 0 /* These quality-reduction options do not noticeably improve framerate */
+      if (minFilt == FILTER_LINEAR) minFilt = FILTER_NEAREST;
+      if (magFilt == FILTER_LINEAR) magFilt = FILTER_NEAREST;
+      if (mipFilt == MIPFILTER_LINEAR) mipFilt = MIPFILTER_NEAREST;
+#endif
+
       lodbias = (int) ((tUnit->LodBias + tObj->LodBias) * 16.0);
       if (lodbias < -64)
           lodbias = -64;
