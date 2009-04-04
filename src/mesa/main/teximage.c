@@ -1320,6 +1320,8 @@ _mesa_test_proxy_teximage(GLcontext *ctx, GLenum target, GLint level,
            height > 0 && _mesa_bitcount(height - 2 * border) != 1) ||
           level >= ctx->Const.MaxTextureLevels) {
          /* bad width or height or level */
+	 fprintf(stderr, "%s: width=%d height=%d border=%d non_power_of_two=%d\n", __FUNCTION__,
+		 width, height, border, ctx->Extensions.ARB_texture_non_power_of_two ? 1 : 0);
          return GL_FALSE;
       }
       return GL_TRUE;
@@ -1547,8 +1549,8 @@ texture_error_check( GLcontext *ctx, GLenum target,
    if (!sizeOK) {
       if (!isProxy) {
          _mesa_error(ctx, GL_INVALID_VALUE,
-                     "glTexImage%dD(level=%d, width=%d, height=%d, depth=%d)",
-                     dimensions, level, width, height, depth);
+                     "glTexImage%dD(level=%d, width=%d, height=%d, depth=%d, internalFormat=%d, format=%d, type=%d)",
+                     dimensions, level, width, height, depth, internalFormat, format, type);
       }
       return GL_TRUE;
    }
