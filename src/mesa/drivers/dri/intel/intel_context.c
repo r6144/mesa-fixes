@@ -349,6 +349,7 @@ intel_viewport(GLcontext *ctx, GLint x, GLint y, GLsizei w, GLsizei h)
 static const struct dri_extension card_extensions[] = {
    { "GL_ARB_multisample",                GL_ARB_multisample_functions },
    { "GL_ARB_multitexture",               NULL },
+   { "GL_ARB_pixel_buffer_object",        NULL },
    { "GL_ARB_point_parameters",           GL_ARB_point_parameters_functions },
    { "GL_ARB_texture_border_clamp",       NULL },
    { "GL_ARB_texture_compression",        GL_ARB_texture_compression_functions },
@@ -420,7 +421,6 @@ static const struct dri_extension arb_oq_extensions[] = {
 };
 
 static const struct dri_extension ttm_extensions[] = {
-   { "GL_ARB_pixel_buffer_object",        NULL },
    { "GL_EXT_framebuffer_object",         GL_EXT_framebuffer_object_functions },
    { NULL, NULL }
 };
