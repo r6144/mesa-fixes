@@ -42,6 +42,11 @@
  * Mesa's Driver Functions
  ***************************************/
 
+static const struct dri_extension i830_extensions[] = {
+   {"GL_ARB_texture_non_power_of_two", NULL},
+   {NULL, NULL}
+};
+
 static void
 i830InitDriverFunctions(struct dd_function_table *functions)
 {
@@ -96,6 +101,8 @@ i830CreateContext(const __GLcontextModes * mesaVis,
    ctx->Const.MaxCubeTextureLevels = 10;
    ctx->Const.MaxTextureRectSize = (1 << 10);
    ctx->Const.MaxTextureUnits = I830_TEX_UNITS;
+
+   driInitExtensions(ctx, i830_extensions, GL_FALSE);
 
    _tnl_init_vertices(ctx, ctx->Const.MaxArrayLockSize + 12,
                       18 * sizeof(GLfloat));
