@@ -81,9 +81,11 @@ static unsigned is_blit_supported(gl_format mesa_format)
     }
 
     /* ??? */
+#if 0
     /* not sure blit to depth works or not yet */
     if (_mesa_get_format_bits(mesa_format, GL_DEPTH_BITS) > 0)
 	    return 0;
+#endif
 
     return 1;
 }
