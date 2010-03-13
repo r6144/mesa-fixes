@@ -52,18 +52,15 @@ do_copy_texsubimage(GLcontext *ctx,
     gl_format dst_mesaformat;
     unsigned src_width;
     unsigned dst_width;
-    unsigned flip_y;
 
     if (!radeon->vtbl.blit) {
         return GL_FALSE;
     }
 
     if (_mesa_get_format_bits(timg->base.TexFormat, GL_DEPTH_BITS) > 0) {
-        rrb = radeon_renderbuffer(ctx->ReadBuffer->_DepthBuffer);
-        flip_y = ctx->ReadBuffer->Attachment[BUFFER_DEPTH].Type == GL_NONE;
+        rrb = radeon_get_depthbuffer(radeon);
     } else {
-        rrb = radeon_renderbuffer(ctx->ReadBuffer->_ColorReadBuffer);
-        flip_y = ctx->ReadBuffer->Attachment[BUFFER_COLOR0].Type == GL_NONE;
+        rrb = radeon_get_colorbuffer(radeon);
     }
 
     if (!timg->mt) {
@@ -127,7 +124,7 @@ do_copy_texsubimage(GLcontext *ctx,
                              timg->mt->bo, dst_offset, dst_mesaformat,
                              timg->mt->levels[level].rowstride / dst_bpp,
                              dst_width, timg->base.Height,
-                             dstx, dsty, width, height, flip_y);
+                             dstx, dsty, width, height, 1);
 }
 
 void
