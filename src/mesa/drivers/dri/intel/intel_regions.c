@@ -42,6 +42,7 @@
 #include <sys/ioctl.h>
 #include <errno.h>
 
+#include "main/hash.h"
 #include "intel_context.h"
 #include "intel_regions.h"
 #include "intel_blit.h"
@@ -117,8 +118,7 @@ intel_region_map(struct intel_context *intel, struct intel_region *region)
       if (region->pbo)
          intel_region_cow(intel, region);
 
-      if (region->tiling != I915_TILING_NONE &&
-	  intel->intelScreen->kernel_exec_fencing)
+      if (region->tiling != I915_TILING_NONE)
 	 drm_intel_gem_bo_map_gtt(region->buffer);
       else
 	 dri_bo_map(region->buffer, GL_TRUE);
@@ -133,8 +133,7 @@ intel_region_unmap(struct intel_context *intel, struct intel_region *region)
 {
    _DBG("%s %p\n", __FUNCTION__, region);
    if (!--region->map_refcount) {
-      if (region->tiling != I915_TILING_NONE &&
-	  intel->intelScreen->kernel_exec_fencing)
+      if (region->tiling != I915_TILING_NONE)
 	 drm_intel_gem_bo_unmap_gtt(region->buffer);
       else
 	 dri_bo_unmap(region->buffer);
@@ -179,36 +178,19 @@ intel_region_alloc(struct intel_context *intel,
 {
    dri_bo *buffer;
    struct intel_region *region;
+   unsigned long flags = 0;
+   unsigned long aligned_pitch;
 
-   /* If we're tiled, our allocations are in 8 or 32-row blocks, so
-    * failure to align our height means that we won't allocate enough pages.
-    *
-    * If we're untiled, we still have to align to 2 rows high because the
-    * data port accesses 2x2 blocks even if the bottom row isn't to be
-    * rendered, so failure to align means we could walk off the end of the
-    * GTT and fault.
+   if (expect_accelerated_upload)
+      flags |= BO_ALLOC_FOR_RENDER;
+
+   buffer = drm_intel_bo_alloc_tiled(intel->bufmgr, "region",
+				     width, height, cpp,
+				     &tiling, &aligned_pitch, flags);
+   /* We've already chosen a pitch as part of miptree layout.  It had
+    * better be the same.
     */
-   if (tiling == I915_TILING_X)
-      height = ALIGN(height, 8);
-   else if (tiling == I915_TILING_Y)
-      height = ALIGN(height, 32);
-   else
-      height = ALIGN(height, 2);
-
-   /* If we're untiled, we have to align to 2 rows high because the
-    * data port accesses 2x2 blocks even if the bottom row isn't to be
-    * rendered, so failure to align means we could walk off the end of the
-    * GTT and fault.
-    */
-   height = ALIGN(height, 2);
-
-   if (expect_accelerated_upload) {
-      buffer = drm_intel_bo_alloc_for_render(intel->bufmgr, "region",
-					     pitch * cpp * height, 64);
-   } else {
-      buffer = drm_intel_bo_alloc(intel->bufmgr, "region",
-				  pitch * cpp * height, 64);
-   }
+   assert(aligned_pitch == pitch * cpp);
 
    region = intel_region_alloc_internal(intel, cpp, width, height,
 					pitch, buffer);
@@ -228,9 +210,23 @@ intel_region_alloc_for_handle(struct intel_context *intel,
 			      GLuint width, GLuint height, GLuint pitch,
 			      GLuint handle, const char *name)
 {
-   struct intel_region *region;
+   struct intel_region *region, *dummy;
    dri_bo *buffer;
    int ret;
+
+   region = _mesa_HashLookup(intel->intelScreen->named_regions, handle);
+   if (region != NULL) {
+      dummy = NULL;
+      if (region->width != width || region->height != height ||
+	  region->cpp != cpp || region->pitch != pitch) {
+	 fprintf(stderr,
+		 "Region for name %d already exists but is not compatible\n",
+		 handle);
+	 return NULL;
+      }
+      intel_region_reference(&dummy, region);
+      return dummy;
+   }
 
    buffer = intel_bo_gem_create_from_name(intel->bufmgr, name, handle);
 
@@ -247,6 +243,10 @@ intel_region_alloc_for_handle(struct intel_context *intel,
       intel_region_release(&region);
       return NULL;
    }
+
+   region->name = handle;
+   region->screen = intel->intelScreen;
+   _mesa_HashInsert(intel->intelScreen->named_regions, handle, region);
 
    return region;
 }
@@ -287,10 +287,8 @@ intel_region_release(struct intel_region **region_handle)
       region->pbo = NULL;
       dri_bo_unreference(region->buffer);
 
-      if (region->classic_map != NULL) {
-	 drmUnmap(region->classic_map,
-			region->pitch * region->cpp * region->height);
-      }
+      if (region->name > 0)
+	 _mesa_HashRemove(region->screen->named_regions, region->name);
 
       free(region);
    }
@@ -360,6 +358,8 @@ intel_region_data(struct intel_context *intel,
       else
          intel_region_cow(intel, dst);
    }
+
+   intel_prepare_render(intel);
 
    _mesa_copy_rect(intel_region_map(intel, dst) + dst_offset,
                    dst->cpp,
@@ -483,6 +483,7 @@ intel_region_cow(struct intel_context *intel, struct intel_region *region)
    /* Now blit from the texture buffer to the new buffer: 
     */
 
+   intel_prepare_render(intel);
    ok = intelEmitCopyBlit(intel,
                           region->cpp,
                           region->pitch, pbo->buffer, 0, region->tiling,

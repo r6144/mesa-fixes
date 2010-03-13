@@ -356,20 +356,7 @@ fetch_vector1ui(const struct prog_src_register *source,
                 const struct gl_program_machine *machine)
 {
    const GLuint *src = (GLuint *) get_src_register_pointer(source, machine);
-   GLuint result;
-
-   ASSERT(src);
-
-   result = src[GET_SWZ(source->Swizzle, 0)];
-
-   if (source->Abs) {
-      result = FABSF(result);
-   }
-   if (source->Negate) {
-      result = -result;
-   }
-
-   return result;
+   return src[GET_SWZ(source->Swizzle, 0)];
 }
 
 
@@ -599,13 +586,13 @@ store_vector4ui(const struct prog_instruction *inst,
 
    if (inst->CondUpdate) {
       if (writeMask & WRITEMASK_X)
-         machine->CondCodes[0] = generate_cc(value[0]);
+         machine->CondCodes[0] = generate_cc((float)value[0]);
       if (writeMask & WRITEMASK_Y)
-         machine->CondCodes[1] = generate_cc(value[1]);
+         machine->CondCodes[1] = generate_cc((float)value[1]);
       if (writeMask & WRITEMASK_Z)
-         machine->CondCodes[2] = generate_cc(value[2]);
+         machine->CondCodes[2] = generate_cc((float)value[2]);
       if (writeMask & WRITEMASK_W)
-         machine->CondCodes[3] = generate_cc(value[3]);
+         machine->CondCodes[3] = generate_cc((float)value[3]);
 #if DEBUG_PROG
       printf("CondCodes=(%s,%s,%s,%s) for:\n",
              _mesa_condcode_string(machine->CondCodes[0]),
@@ -701,6 +688,9 @@ _mesa_execute_program(GLcontext * ctx,
             GLfloat t[4];
             fetch_vector4(&inst->SrcReg[0], machine, t);
             machine->AddressReg[0][0] = IFLOOR(t[0]);
+            if (DEBUG_PROG) {
+               printf("ARL %d\n", machine->AddressReg[0][0]);
+            }
          }
          break;
       case OPCODE_BGNLOOP:
@@ -997,7 +987,7 @@ _mesa_execute_program(GLcontext * ctx,
                val = -FLT_MAX;
             }
             else {
-               val = log(a[0]) * 1.442695F;
+               val = (float)(log(a[0]) * 1.442695F);
             }
             result[0] = result[1] = result[2] = result[3] = val;
             store_vector4(inst, machine, result);
@@ -1062,7 +1052,7 @@ _mesa_execute_program(GLcontext * ctx,
 		  /* The fast LOG2 macro doesn't meet the precision
 		   * requirements.
 		   */
-                  q[2] = (log(t[0]) * 1.442695F);
+                  q[2] = (float)(log(t[0]) * 1.442695F);
                }
             }
             else {
@@ -1780,11 +1770,11 @@ _mesa_execute_program(GLcontext * ctx,
             if (inst->SrcReg[0].File != -1) {
                GLfloat a[4];
                fetch_vector4(&inst->SrcReg[0], machine, a);
-               _mesa_printf("%s%g, %g, %g, %g\n", (const char *) inst->Data,
+               printf("%s%g, %g, %g, %g\n", (const char *) inst->Data,
                             a[0], a[1], a[2], a[3]);
             }
             else {
-               _mesa_printf("%s\n", (const char *) inst->Data);
+               printf("%s\n", (const char *) inst->Data);
             }
          }
          break;

@@ -1,7 +1,8 @@
 
 #include "intel_drm_winsys.h"
 #include "util/u_memory.h"
-#include "pipe/p_refcnt.h"
+#include "util/u_atomic.h"
+#include "util/u_inlines.h"
 
 /**
  * Because gem does not have fence's we have to create our own fences.

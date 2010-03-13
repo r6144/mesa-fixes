@@ -22,7 +22,6 @@
 
 #include "draw/draw_context.h"
 #include "pipe/p_defines.h"
-#include "pipe/internal/p_winsys_screen.h"
 
 #include "nv50_context.h"
 #include "nv50_screen.h"
@@ -47,43 +46,13 @@ static void
 nv50_destroy(struct pipe_context *pipe)
 {
 	struct nv50_context *nv50 = nv50_context(pipe);
+	int i;
 
-        if (nv50->state.fb)
-		so_ref(NULL, &nv50->state.fb);
-	if (nv50->state.blend)
-		so_ref(NULL, &nv50->state.blend);
-	if (nv50->state.blend_colour)
-		so_ref(NULL, &nv50->state.blend_colour);
-	if (nv50->state.zsa)
-		so_ref(NULL, &nv50->state.zsa);
-	if (nv50->state.rast)
-		so_ref(NULL, &nv50->state.rast);
-	if (nv50->state.stipple)
-		so_ref(NULL, &nv50->state.stipple);
-	if (nv50->state.scissor)
-		so_ref(NULL, &nv50->state.scissor);
-	if (nv50->state.viewport)
-		so_ref(NULL, &nv50->state.viewport);
-	if (nv50->state.tsc_upload)
-		so_ref(NULL, &nv50->state.tsc_upload);
-	if (nv50->state.tic_upload)
-		so_ref(NULL, &nv50->state.tic_upload);
-	if (nv50->state.vertprog)
-		so_ref(NULL, &nv50->state.vertprog);
-	if (nv50->state.fragprog)
-		so_ref(NULL, &nv50->state.fragprog);
-	if (nv50->state.geomprog)
-		so_ref(NULL, &nv50->state.geomprog);
-	if (nv50->state.fp_linkage)
-		so_ref(NULL, &nv50->state.fp_linkage);
-	if (nv50->state.gp_linkage)
-		so_ref(NULL, &nv50->state.gp_linkage);
-	if (nv50->state.vtxfmt)
-		so_ref(NULL, &nv50->state.vtxfmt);
-	if (nv50->state.vtxbuf)
-		so_ref(NULL, &nv50->state.vtxbuf);
-	if (nv50->state.vtxattr)
-		so_ref(NULL, &nv50->state.vtxattr);
+	for (i = 0; i < 64; i++) {
+		if (!nv50->state.hw[i])
+			continue;
+		so_ref(NULL, &nv50->state.hw[i]);
+	}
 
 	draw_destroy(nv50->draw);
 
@@ -95,7 +64,7 @@ nv50_destroy(struct pipe_context *pipe)
 
 
 struct pipe_context *
-nv50_create(struct pipe_screen *pscreen, unsigned pctx_id)
+nv50_create(struct pipe_screen *pscreen, void *priv)
 {
 	struct pipe_winsys *pipe_winsys = pscreen->winsys;
 	struct nv50_screen *screen = nv50_screen(pscreen);
@@ -105,10 +74,10 @@ nv50_create(struct pipe_screen *pscreen, unsigned pctx_id)
 	if (!nv50)
 		return NULL;
 	nv50->screen = screen;
-	nv50->pctx_id = pctx_id;
 
 	nv50->pipe.winsys = pipe_winsys;
 	nv50->pipe.screen = pscreen;
+	nv50->pipe.priv = priv;
 
 	nv50->pipe.destroy = nv50_destroy;
 
@@ -124,11 +93,11 @@ nv50_create(struct pipe_screen *pscreen, unsigned pctx_id)
 	nv50->pipe.is_buffer_referenced = nouveau_is_buffer_referenced;
 
 	screen->base.channel->user_private = nv50;
-	screen->base.channel->flush_notify = nv50_state_flush_notify;
 
 	nv50_init_surface_functions(nv50);
 	nv50_init_state_functions(nv50);
 	nv50_init_query_functions(nv50);
+        nv50_init_transfer_functions(nv50);
 
 	nv50->draw = draw_create();
 	assert(nv50->draw);

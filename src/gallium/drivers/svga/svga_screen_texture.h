@@ -29,6 +29,7 @@
 
 #include "pipe/p_compiler.h"
 #include "pipe/p_state.h"
+#include "util/u_inlines.h"
 #include "svga_screen_cache.h"
 
 struct pipe_context;
@@ -38,7 +39,7 @@ struct svga_winsys_surface;
 enum SVGA3dSurfaceFormat;
 
 
-#define SVGA_MAX_TEXTURE_LEVELS 12 /* 2048x2048 */
+#define SVGA_MAX_TEXTURE_LEVELS 16
 
 
 /**
@@ -77,7 +78,7 @@ struct svga_texture
 {
    struct pipe_texture base;
 
-   boolean defined[6][PIPE_MAX_TEXTURE_LEVELS];
+   boolean defined[6][SVGA_MAX_TEXTURE_LEVELS];
    
    struct svga_sampler_view *cached_view;
 
@@ -184,6 +185,9 @@ svga_surface_needs_propagation(struct pipe_surface *surf);
 
 extern void
 svga_screen_init_texture_functions(struct pipe_screen *screen);
+
+void
+svga_init_texture_functions(struct pipe_context *pipe);
 
 enum SVGA3dSurfaceFormat
 svga_translate_format(enum pipe_format format);

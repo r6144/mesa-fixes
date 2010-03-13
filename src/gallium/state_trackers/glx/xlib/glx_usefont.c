@@ -33,7 +33,6 @@
 #include "main/context.h"
 #include "main/imports.h"
 #include <GL/glx.h>
-#include "pipe/p_compiler.h"
 
 
 /* Some debugging info.  */
@@ -344,7 +343,7 @@ glXUseXFont(Font font, int first, int count, int listbase)
       glNewList(list, GL_COMPILE);
       if (valid && (bm_width > 0) && (bm_height > 0)) {
 
-	 MEMSET(bm, '\0', bm_width * bm_height);
+	 memset(bm, '\0', bm_width * bm_height);
 	 fill_bitmap(dpy, win, gc, bm_width, bm_height, x, y, c, bm);
 
 	 glBitmap(width, height, x0, y0, dx, dy, bm);

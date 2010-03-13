@@ -51,9 +51,10 @@
 #define FO_NEW_VERTEX          0x2000
 #define FO_NEW_VERTEX_SHADER   0x4000
 #define FO_NEW_BLEND_COLOR     0x8000
-#define FO_NEW_CLEAR_COLOR     0x10000
-#define FO_NEW_VERTEX_BUFFER   0x20000
-#define FO_NEW_VERTEX_ELEMENT  0x40000
+#define FO_NEW_STENCIL_REF     0x10000
+#define FO_NEW_CLEAR_COLOR     0x20000
+#define FO_NEW_VERTEX_BUFFER   0x40000
+#define FO_NEW_VERTEX_ELEMENT  0x80000
 
 
 
@@ -77,8 +78,10 @@ struct failover_context {
    const struct fo_state     *rasterizer;
    const struct fo_state     *fragment_shader;
    const struct fo_state     *vertex_shader;
+   const struct fo_state     *vertex_elements;
 
    struct pipe_blend_color blend_color;
+   struct pipe_stencil_ref stencil_ref;
    struct pipe_clip_state clip;
    struct pipe_framebuffer_state framebuffer;
    struct pipe_poly_stipple poly_stipple;
@@ -87,10 +90,8 @@ struct failover_context {
    struct pipe_texture *vertex_textures[PIPE_MAX_VERTEX_SAMPLERS];
    struct pipe_viewport_state viewport;
    struct pipe_vertex_buffer vertex_buffers[PIPE_MAX_ATTRIBS];
-   struct pipe_vertex_element vertex_elements[PIPE_MAX_ATTRIBS];
 
    uint num_vertex_buffers;
-   uint num_vertex_elements;
 
    void *sw_sampler_state[PIPE_MAX_SAMPLERS];
    void *hw_sampler_state[PIPE_MAX_SAMPLERS];

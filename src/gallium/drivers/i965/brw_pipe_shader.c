@@ -29,13 +29,13 @@
   *   Keith Whitwell <keith@tungstengraphics.com>
   */
 
+#include "util/u_inlines.h"
 #include "util/u_memory.h"
   
 #include "tgsi/tgsi_parse.h"
 #include "tgsi/tgsi_scan.h"
 
 #include "brw_context.h"
-#include "brw_util.h"
 #include "brw_wm.h"
 
 

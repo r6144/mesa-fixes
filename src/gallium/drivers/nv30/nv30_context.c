@@ -1,6 +1,5 @@
 #include "draw/draw_context.h"
 #include "pipe/p_defines.h"
-#include "pipe/internal/p_winsys_screen.h"
 
 #include "nv30_context.h"
 #include "nv30_screen.h"
@@ -43,7 +42,7 @@ nv30_destroy(struct pipe_context *pipe)
 }
 
 struct pipe_context *
-nv30_create(struct pipe_screen *pscreen, unsigned pctx_id)
+nv30_create(struct pipe_screen *pscreen, void *priv)
 {
 	struct nv30_screen *screen = nv30_screen(pscreen);
 	struct pipe_winsys *ws = pscreen->winsys;
@@ -54,12 +53,12 @@ nv30_create(struct pipe_screen *pscreen, unsigned pctx_id)
 	if (!nv30)
 		return NULL;
 	nv30->screen = screen;
-	nv30->pctx_id = pctx_id;
 
 	nv30->nvws = nvws;
 
 	nv30->pipe.winsys = ws;
 	nv30->pipe.screen = pscreen;
+	nv30->pipe.priv = priv;
 	nv30->pipe.destroy = nv30_destroy;
 	nv30->pipe.draw_arrays = nv30_draw_arrays;
 	nv30->pipe.draw_elements = nv30_draw_elements;
@@ -75,6 +74,7 @@ nv30_create(struct pipe_screen *pscreen, unsigned pctx_id)
 	nv30_init_query_functions(nv30);
 	nv30_init_surface_functions(nv30);
 	nv30_init_state_functions(nv30);
+	nv30_init_transfer_functions(nv30);
 
 	/* Create, configure, and install fallback swtnl path */
 	nv30->draw = draw_create();

@@ -31,7 +31,7 @@
 
 #include "vg_context.h"
 #include "pipe/p_context.h"
-#include "pipe/p_inlines.h"
+#include "util/u_inlines.h"
 
 #include "util/u_pack_color.h"
 #include "util/u_draw_quad.h"
@@ -86,6 +86,8 @@ draw_clear_quad(struct vg_context *st,
 
    /* draw */
    if (buf) {
+      cso_set_vertex_elements(st->cso_context, 2, st->velems);
+
       util_draw_vertex_buffer(pipe, buf, 0,
                               PIPE_PRIM_TRIANGLE_FAN,
                               4,  /* verts */

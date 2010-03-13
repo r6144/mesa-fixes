@@ -32,7 +32,7 @@
 
 #include "draw/draw_context.h"
 #include "pipe/p_defines.h"
-#include "pipe/p_inlines.h"
+#include "util/u_inlines.h"
 #include "util/u_memory.h"
 #include "pipe/p_screen.h"
 
@@ -183,7 +183,7 @@ static void i915_destroy(struct pipe_context *pipe)
 }
 
 struct pipe_context *
-i915_create_context(struct pipe_screen *screen)
+i915_create_context(struct pipe_screen *screen, void *priv)
 {
    struct i915_context *i915;
 
@@ -194,6 +194,7 @@ i915_create_context(struct pipe_screen *screen)
    i915->iws = i915_screen(screen)->iws;
    i915->base.winsys = NULL;
    i915->base.screen = screen;
+   i915->base.priv = priv;
 
    i915->base.destroy = i915_destroy;
 
@@ -220,6 +221,7 @@ i915_create_context(struct pipe_screen *screen)
    i915_init_surface_functions(i915);
    i915_init_state_functions(i915);
    i915_init_flush_functions(i915);
+   i915_init_texture_functions(i915);
 
    draw_install_aaline_stage(i915->draw, &i915->base);
    draw_install_aapoint_stage(i915->draw, &i915->base);

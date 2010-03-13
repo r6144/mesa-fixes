@@ -200,7 +200,8 @@ static void r700SetupVTXConstants(GLcontext  * ctx,
     }
     else
     {
-        nVBsize = paos->count * pStreamDesc->stride;
+        nVBsize = (paos->count - 1) * pStreamDesc->stride
+                  + pStreamDesc->size * getTypeSize(pStreamDesc->type);
     }
 
     uSQ_VTX_CONSTANT_WORD0_0 = paos->offset;
@@ -218,11 +219,11 @@ static void r700SetupVTXConstants(GLcontext  * ctx,
         SETfield(uSQ_VTX_CONSTANT_WORD2_0, SQ_NUM_FORMAT_NORM,
 	             SQ_VTX_CONSTANT_WORD2_0__NUM_FORMAT_ALL_shift, SQ_VTX_CONSTANT_WORD2_0__NUM_FORMAT_ALL_mask);
     }
-    //else
-    //{
-    //    SETfield(uSQ_VTX_CONSTANT_WORD2_0, SQ_NUM_FORMAT_INT,
-	//             SQ_VTX_CONSTANT_WORD2_0__NUM_FORMAT_ALL_shift, SQ_VTX_CONSTANT_WORD2_0__NUM_FORMAT_ALL_mask);
-    //}
+    else
+    {
+        SETfield(uSQ_VTX_CONSTANT_WORD2_0, SQ_NUM_FORMAT_SCALED,
+	             SQ_VTX_CONSTANT_WORD2_0__NUM_FORMAT_ALL_shift, SQ_VTX_CONSTANT_WORD2_0__NUM_FORMAT_ALL_mask);
+    }
 
     if(1 == pStreamDesc->_signed)
     {
@@ -1348,7 +1349,7 @@ void r600InitAtoms(context_t *context)
 	ALLOC_STATE(poly, always, 10, r700SendPolyState);
 	ALLOC_STATE(cb, cb, 18, r700SendCBState);
 	ALLOC_STATE(clrcmp, always, 6, r700SendCBCLRCMPState);
-	ALLOC_STATE(cb_target, always, 25, r700SendRenderTargetState);
+	ALLOC_STATE(cb_target, always, 29, r700SendRenderTargetState);
 	ALLOC_STATE(blnd, blnd, (6 + (R700_MAX_RENDER_TARGETS * 3)), r700SendCBBlendState);
 	ALLOC_STATE(blnd_clr, always, 6, r700SendCBBlendColorState);
 	ALLOC_STATE(sx, always, 9, r700SendSXState);

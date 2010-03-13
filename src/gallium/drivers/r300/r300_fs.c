@@ -49,12 +49,12 @@ void r300_shader_read_fs_inputs(struct tgsi_shader_info* info,
 
         switch (info->input_semantic_name[i]) {
             case TGSI_SEMANTIC_COLOR:
-                assert(index <= ATTR_COLOR_COUNT);
+                assert(index < ATTR_COLOR_COUNT);
                 fs_inputs->color[index] = i;
                 break;
 
             case TGSI_SEMANTIC_GENERIC:
-                assert(index <= ATTR_GENERIC_COUNT);
+                assert(index < ATTR_GENERIC_COUNT);
                 fs_inputs->generic[index] = i;
                 break;
 
@@ -77,17 +77,21 @@ void r300_shader_read_fs_inputs(struct tgsi_shader_info* info,
 static void find_output_registers(struct r300_fragment_program_compiler * compiler,
                                   struct r300_fragment_shader * fs)
 {
-    unsigned i;
+    unsigned i, colorbuf_count = 0;
 
     /* Mark the outputs as not present initially */
-    compiler->OutputColor = fs->info.num_outputs;
+    compiler->OutputColor[0] = fs->info.num_outputs;
+    compiler->OutputColor[1] = fs->info.num_outputs;
+    compiler->OutputColor[2] = fs->info.num_outputs;
+    compiler->OutputColor[3] = fs->info.num_outputs;
     compiler->OutputDepth = fs->info.num_outputs;
 
     /* Now see where they really are. */
     for(i = 0; i < fs->info.num_outputs; ++i) {
         switch(fs->info.output_semantic_name[i]) {
             case TGSI_SEMANTIC_COLOR:
-                compiler->OutputColor = i;
+                compiler->OutputColor[colorbuf_count] = i;
+                colorbuf_count++;
                 break;
             case TGSI_SEMANTIC_POSITION:
                 compiler->OutputDepth = i;
@@ -129,10 +133,13 @@ static void get_compare_state(
     struct r300_fragment_program_external_state* state,
     unsigned shadow_samplers)
 {
+    struct r300_textures_state *texstate =
+        (struct r300_textures_state*)r300->textures_state.state;
+
     memset(state, 0, sizeof(*state));
 
-    for (int i = 0; i < r300->sampler_count; i++) {
-        struct r300_sampler_state* s = r300->sampler_states[i];
+    for (int i = 0; i < texstate->sampler_count; i++) {
+        struct r300_sampler_state* s = texstate->sampler_states[i];
 
         if (s && s->state.compare_mode == PIPE_TEX_COMPARE_R_TO_TEXTURE) {
             /* XXX Gallium doesn't provide us with any information regarding
@@ -175,6 +182,7 @@ static void r300_translate_fragment_shader(
     /* Translate TGSI to our internal representation */
     ttr.compiler = &compiler.Base;
     ttr.info = &fs->info;
+    ttr.use_half_swizzles = TRUE;
 
     r300_tgsi_to_rc(&ttr, fs->state.tokens);
 
@@ -199,6 +207,7 @@ static void r300_translate_fragment_shader(
         DBG(r300, DBG_FP, "r300: Error compiling fragment program: %s\n",
             compiler.Base.ErrorMsg);
         assert(0);
+        abort();
     }
 
     /* And, finally... */

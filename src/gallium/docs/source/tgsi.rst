@@ -6,6 +6,23 @@ for describing shaders. Since Gallium is inherently shaderful, shaders are
 an important part of the API. TGSI is the only intermediate representation
 used by all drivers.
 
+Basics
+------
+
+All TGSI instructions, known as *opcodes*, operate on arbitrary-precision
+floating-point four-component vectors. An opcode may have up to one
+destination register, known as *dst*, and between zero and three source
+registers, called *src0* through *src2*, or simply *src* if there is only
+one.
+
+Some instructions, like :opcode:`I2F`, permit re-interpretation of vector
+components as integers. Other instructions permit using registers as
+two-component vectors with double precision; see :ref:`Double Opcodes`.
+
+When an instruction has a scalar result, the result is usually copied into
+each of the components of *dst*. When this happens, the result is said to be
+*replicated* to *dst*. :opcode:`RCP` is one such instruction.
+
 Instruction Set
 ---------------
 
@@ -13,7 +30,7 @@ From GL_NV_vertex_program
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
-ARL - Address Register Load
+.. opcode:: ARL - Address Register Load
 
 .. math::
 
@@ -26,7 +43,7 @@ ARL - Address Register Load
   dst.w = \lfloor src.w\rfloor
 
 
-MOV - Move
+.. opcode:: MOV - Move
 
 .. math::
 
@@ -39,7 +56,7 @@ MOV - Move
   dst.w = src.w
 
 
-LIT - Light Coefficients
+.. opcode:: LIT - Light Coefficients
 
 .. math::
 
@@ -52,33 +69,25 @@ LIT - Light Coefficients
   dst.w = 1
 
 
-RCP - Reciprocal
+.. opcode:: RCP - Reciprocal
+
+This instruction replicates its result.
 
 .. math::
 
-  dst.x = \frac{1}{src.x}
-
-  dst.y = \frac{1}{src.x}
-
-  dst.z = \frac{1}{src.x}
-
-  dst.w = \frac{1}{src.x}
+  dst = \frac{1}{src.x}
 
 
-RSQ - Reciprocal Square Root
+.. opcode:: RSQ - Reciprocal Square Root
+
+This instruction replicates its result.
 
 .. math::
 
-  dst.x = \frac{1}{\sqrt{|src.x|}}
-
-  dst.y = \frac{1}{\sqrt{|src.x|}}
-
-  dst.z = \frac{1}{\sqrt{|src.x|}}
-
-  dst.w = \frac{1}{\sqrt{|src.x|}}
+  dst = \frac{1}{\sqrt{|src.x|}}
 
 
-EXP - Approximate Exponential Base 2
+.. opcode:: EXP - Approximate Exponential Base 2
 
 .. math::
 
@@ -91,7 +100,7 @@ EXP - Approximate Exponential Base 2
   dst.w = 1
 
 
-LOG - Approximate Logarithm Base 2
+.. opcode:: LOG - Approximate Logarithm Base 2
 
 .. math::
 
@@ -104,7 +113,7 @@ LOG - Approximate Logarithm Base 2
   dst.w = 1
 
 
-MUL - Multiply
+.. opcode:: MUL - Multiply
 
 .. math::
 
@@ -117,7 +126,7 @@ MUL - Multiply
   dst.w = src0.w \times src1.w
 
 
-ADD - Add
+.. opcode:: ADD - Add
 
 .. math::
 
@@ -130,33 +139,25 @@ ADD - Add
   dst.w = src0.w + src1.w
 
 
-DP3 - 3-component Dot Product
+.. opcode:: DP3 - 3-component Dot Product
+
+This instruction replicates its result.
 
 .. math::
 
-  dst.x = src0.x \times src1.x + src0.y \times src1.y + src0.z \times src1.z
-
-  dst.y = src0.x \times src1.x + src0.y \times src1.y + src0.z \times src1.z
-
-  dst.z = src0.x \times src1.x + src0.y \times src1.y + src0.z \times src1.z
-
-  dst.w = src0.x \times src1.x + src0.y \times src1.y + src0.z \times src1.z
+  dst = src0.x \times src1.x + src0.y \times src1.y + src0.z \times src1.z
 
 
-DP4 - 4-component Dot Product
+.. opcode:: DP4 - 4-component Dot Product
+
+This instruction replicates its result.
 
 .. math::
 
-  dst.x = src0.x \times src1.x + src0.y \times src1.y + src0.z \times src1.z + src0.w \times src1.w
-
-  dst.y = src0.x \times src1.x + src0.y \times src1.y + src0.z \times src1.z + src0.w \times src1.w
-
-  dst.z = src0.x \times src1.x + src0.y \times src1.y + src0.z \times src1.z + src0.w \times src1.w
-
-  dst.w = src0.x \times src1.x + src0.y \times src1.y + src0.z \times src1.z + src0.w \times src1.w
+  dst = src0.x \times src1.x + src0.y \times src1.y + src0.z \times src1.z + src0.w \times src1.w
 
 
-DST - Distance Vector
+.. opcode:: DST - Distance Vector
 
 .. math::
 
@@ -169,7 +170,7 @@ DST - Distance Vector
   dst.w = src1.w
 
 
-MIN - Minimum
+.. opcode:: MIN - Minimum
 
 .. math::
 
@@ -182,7 +183,7 @@ MIN - Minimum
   dst.w = min(src0.w, src1.w)
 
 
-MAX - Maximum
+.. opcode:: MAX - Maximum
 
 .. math::
 
@@ -195,7 +196,7 @@ MAX - Maximum
   dst.w = max(src0.w, src1.w)
 
 
-SLT - Set On Less Than
+.. opcode:: SLT - Set On Less Than
 
 .. math::
 
@@ -208,7 +209,7 @@ SLT - Set On Less Than
   dst.w = (src0.w < src1.w) ? 1 : 0
 
 
-SGE - Set On Greater Equal Than
+.. opcode:: SGE - Set On Greater Equal Than
 
 .. math::
 
@@ -221,7 +222,7 @@ SGE - Set On Greater Equal Than
   dst.w = (src0.w >= src1.w) ? 1 : 0
 
 
-MAD - Multiply And Add
+.. opcode:: MAD - Multiply And Add
 
 .. math::
 
@@ -234,7 +235,7 @@ MAD - Multiply And Add
   dst.w = src0.w \times src1.w + src2.w
 
 
-SUB - Subtract
+.. opcode:: SUB - Subtract
 
 .. math::
 
@@ -247,7 +248,7 @@ SUB - Subtract
   dst.w = src0.w - src1.w
 
 
-LRP - Linear Interpolate
+.. opcode:: LRP - Linear Interpolate
 
 .. math::
 
@@ -260,7 +261,7 @@ LRP - Linear Interpolate
   dst.w = src0.w \times src1.w + (1 - src0.w) \times src2.w
 
 
-CND - Condition
+.. opcode:: CND - Condition
 
 .. math::
 
@@ -273,7 +274,7 @@ CND - Condition
   dst.w = (src2.w > 0.5) ? src0.w : src1.w
 
 
-DP2A - 2-component Dot Product And Add
+.. opcode:: DP2A - 2-component Dot Product And Add
 
 .. math::
 
@@ -286,7 +287,7 @@ DP2A - 2-component Dot Product And Add
   dst.w = src0.x \times src1.x + src0.y \times src1.y + src2.x
 
 
-FRAC - Fraction
+.. opcode:: FRAC - Fraction
 
 .. math::
 
@@ -299,7 +300,7 @@ FRAC - Fraction
   dst.w = src.w - \lfloor src.w\rfloor
 
 
-CLAMP - Clamp
+.. opcode:: CLAMP - Clamp
 
 .. math::
 
@@ -312,9 +313,9 @@ CLAMP - Clamp
   dst.w = clamp(src0.w, src1.w, src2.w)
 
 
-FLR - Floor
+.. opcode:: FLR - Floor
 
-This is identical to ARL.
+This is identical to :opcode:`ARL`.
 
 .. math::
 
@@ -327,7 +328,7 @@ This is identical to ARL.
   dst.w = \lfloor src.w\rfloor
 
 
-ROUND - Round
+.. opcode:: ROUND - Round
 
 .. math::
 
@@ -340,45 +341,33 @@ ROUND - Round
   dst.w = round(src.w)
 
 
-EX2 - Exponential Base 2
+.. opcode:: EX2 - Exponential Base 2
+
+This instruction replicates its result.
 
 .. math::
 
-  dst.x = 2^{src.x}
-
-  dst.y = 2^{src.x}
-
-  dst.z = 2^{src.x}
-
-  dst.w = 2^{src.x}
+  dst = 2^{src.x}
 
 
-LG2 - Logarithm Base 2
+.. opcode:: LG2 - Logarithm Base 2
+
+This instruction replicates its result.
 
 .. math::
 
-  dst.x = \log_2{src.x}
-
-  dst.y = \log_2{src.x}
-
-  dst.z = \log_2{src.x}
-
-  dst.w = \log_2{src.x}
+  dst = \log_2{src.x}
 
 
-POW - Power
+.. opcode:: POW - Power
+
+This instruction replicates its result.
 
 .. math::
 
-  dst.x = src0.x^{src1.x}
+  dst = src0.x^{src1.x}
 
-  dst.y = src0.x^{src1.x}
-
-  dst.z = src0.x^{src1.x}
-
-  dst.w = src0.x^{src1.x}
-
-XPD - Cross Product
+.. opcode:: XPD - Cross Product
 
 .. math::
 
@@ -391,7 +380,7 @@ XPD - Cross Product
   dst.w = 1
 
 
-ABS - Absolute
+.. opcode:: ABS - Absolute
 
 .. math::
 
@@ -404,48 +393,36 @@ ABS - Absolute
   dst.w = |src.w|
 
 
-RCC - Reciprocal Clamped
+.. opcode:: RCC - Reciprocal Clamped
+
+This instruction replicates its result.
 
 XXX cleanup on aisle three
 
 .. math::
 
-  dst.x = (1 / src.x) > 0 ? clamp(1 / src.x, 5.42101e-020, 1.884467e+019) : clamp(1 / src.x, -1.884467e+019, -5.42101e-020)
-
-  dst.y = (1 / src.x) > 0 ? clamp(1 / src.x, 5.42101e-020, 1.884467e+019) : clamp(1 / src.x, -1.884467e+019, -5.42101e-020)
-
-  dst.z = (1 / src.x) > 0 ? clamp(1 / src.x, 5.42101e-020, 1.884467e+019) : clamp(1 / src.x, -1.884467e+019, -5.42101e-020)
-
-  dst.w = (1 / src.x) > 0 ? clamp(1 / src.x, 5.42101e-020, 1.884467e+019) : clamp(1 / src.x, -1.884467e+019, -5.42101e-020)
+  dst = (1 / src.x) > 0 ? clamp(1 / src.x, 5.42101e-020, 1.884467e+019) : clamp(1 / src.x, -1.884467e+019, -5.42101e-020)
 
 
-DPH - Homogeneous Dot Product
+.. opcode:: DPH - Homogeneous Dot Product
+
+This instruction replicates its result.
 
 .. math::
 
-  dst.x = src0.x \times src1.x + src0.y \times src1.y + src0.z \times src1.z + src1.w
-
-  dst.y = src0.x \times src1.x + src0.y \times src1.y + src0.z \times src1.z + src1.w
-
-  dst.z = src0.x \times src1.x + src0.y \times src1.y + src0.z \times src1.z + src1.w
-
-  dst.w = src0.x \times src1.x + src0.y \times src1.y + src0.z \times src1.z + src1.w
+  dst = src0.x \times src1.x + src0.y \times src1.y + src0.z \times src1.z + src1.w
 
 
-COS - Cosine
+.. opcode:: COS - Cosine
+
+This instruction replicates its result.
 
 .. math::
 
-  dst.x = \cos{src.x}
-
-  dst.y = \cos{src.x}
-
-  dst.z = \cos{src.x}
-
-  dst.w = \cos{src.x}
+  dst = \cos{src.x}
 
 
-DDX - Derivative Relative To X
+.. opcode:: DDX - Derivative Relative To X
 
 .. math::
 
@@ -458,7 +435,7 @@ DDX - Derivative Relative To X
   dst.w = partialx(src.w)
 
 
-DDY - Derivative Relative To Y
+.. opcode:: DDY - Derivative Relative To Y
 
 .. math::
 
@@ -471,32 +448,32 @@ DDY - Derivative Relative To Y
   dst.w = partialy(src.w)
 
 
-KILP - Predicated Discard
+.. opcode:: KILP - Predicated Discard
 
   discard
 
 
-PK2H - Pack Two 16-bit Floats
+.. opcode:: PK2H - Pack Two 16-bit Floats
 
   TBD
 
 
-PK2US - Pack Two Unsigned 16-bit Scalars
+.. opcode:: PK2US - Pack Two Unsigned 16-bit Scalars
 
   TBD
 
 
-PK4B - Pack Four Signed 8-bit Scalars
+.. opcode:: PK4B - Pack Four Signed 8-bit Scalars
 
   TBD
 
 
-PK4UB - Pack Four Unsigned 8-bit Scalars
+.. opcode:: PK4UB - Pack Four Unsigned 8-bit Scalars
 
   TBD
 
 
-RFL - Reflection Vector
+.. opcode:: RFL - Reflection Vector
 
 .. math::
 
@@ -508,10 +485,12 @@ RFL - Reflection Vector
 
   dst.w = 1
 
-Considered for removal.
+.. note::
+
+   Considered for removal.
 
 
-SEQ - Set On Equal
+.. opcode:: SEQ - Set On Equal
 
 .. math::
 
@@ -524,21 +503,20 @@ SEQ - Set On Equal
   dst.w = (src0.w == src1.w) ? 1 : 0
 
 
-SFL - Set On False
+.. opcode:: SFL - Set On False
+
+This instruction replicates its result.
 
 .. math::
 
-  dst.x = 0
+  dst = 0
 
-  dst.y = 0
+.. note::
 
-  dst.z = 0
+   Considered for removal.
 
-  dst.w = 0
 
-Considered for removal.
-
-SGT - Set On Greater Than
+.. opcode:: SGT - Set On Greater Than
 
 .. math::
 
@@ -551,20 +529,16 @@ SGT - Set On Greater Than
   dst.w = (src0.w > src1.w) ? 1 : 0
 
 
-SIN - Sine
+.. opcode:: SIN - Sine
+
+This instruction replicates its result.
 
 .. math::
 
-  dst.x = \sin{src.x}
-
-  dst.y = \sin{src.x}
-
-  dst.z = \sin{src.x}
-
-  dst.w = \sin{src.x}
+  dst = \sin{src.x}
 
 
-SLE - Set On Less Equal Than
+.. opcode:: SLE - Set On Less Equal Than
 
 .. math::
 
@@ -577,7 +551,7 @@ SLE - Set On Less Equal Than
   dst.w = (src0.w <= src1.w) ? 1 : 0
 
 
-SNE - Set On Not Equal
+.. opcode:: SNE - Set On Not Equal
 
 .. math::
 
@@ -590,59 +564,63 @@ SNE - Set On Not Equal
   dst.w = (src0.w != src1.w) ? 1 : 0
 
 
-STR - Set On True
+.. opcode:: STR - Set On True
+
+This instruction replicates its result.
 
 .. math::
 
-  dst.x = 1
-
-  dst.y = 1
-
-  dst.z = 1
-
-  dst.w = 1
+  dst = 1
 
 
-TEX - Texture Lookup
+.. opcode:: TEX - Texture Lookup
 
   TBD
 
 
-TXD - Texture Lookup with Derivatives
+.. opcode:: TXD - Texture Lookup with Derivatives
 
   TBD
 
 
-TXP - Projective Texture Lookup
+.. opcode:: TXP - Projective Texture Lookup
 
   TBD
 
 
-UP2H - Unpack Two 16-Bit Floats
+.. opcode:: UP2H - Unpack Two 16-Bit Floats
 
   TBD
 
-  Considered for removal.
+.. note::
 
-UP2US - Unpack Two Unsigned 16-Bit Scalars
+   Considered for removal.
 
-  TBD
-
-  Considered for removal.
-
-UP4B - Unpack Four Signed 8-Bit Values
+.. opcode:: UP2US - Unpack Two Unsigned 16-Bit Scalars
 
   TBD
 
-  Considered for removal.
+.. note::
 
-UP4UB - Unpack Four Unsigned 8-Bit Scalars
+   Considered for removal.
+
+.. opcode:: UP4B - Unpack Four Signed 8-Bit Values
 
   TBD
 
-  Considered for removal.
+.. note::
 
-X2D - 2D Coordinate Transformation
+   Considered for removal.
+
+.. opcode:: UP4UB - Unpack Four Unsigned 8-Bit Scalars
+
+  TBD
+
+.. note::
+
+   Considered for removal.
+
+.. opcode:: X2D - 2D Coordinate Transformation
 
 .. math::
 
@@ -654,20 +632,24 @@ X2D - 2D Coordinate Transformation
 
   dst.w = src0.y + src1.x \times src2.z + src1.y \times src2.w
 
-Considered for removal.
+.. note::
+
+   Considered for removal.
 
 
 From GL_NV_vertex_program2
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
-ARA - Address Register Add
+.. opcode:: ARA - Address Register Add
 
   TBD
 
-  Considered for removal.
+.. note::
 
-ARR - Address Register Load With Round
+   Considered for removal.
+
+.. opcode:: ARR - Address Register Load With Round
 
 .. math::
 
@@ -680,26 +662,28 @@ ARR - Address Register Load With Round
   dst.w = round(src.w)
 
 
-BRA - Branch
+.. opcode:: BRA - Branch
 
   pc = target
 
-  Considered for removal.
+.. note::
 
-CAL - Subroutine Call
+   Considered for removal.
+
+.. opcode:: CAL - Subroutine Call
 
   push(pc)
   pc = target
 
 
-RET - Subroutine Call Return
+.. opcode:: RET - Subroutine Call Return
 
   pc = pop()
 
   Potential restrictions:  
   * Only occurs at end of function.
 
-SSG - Set Sign
+.. opcode:: SSG - Set Sign
 
 .. math::
 
@@ -712,7 +696,7 @@ SSG - Set Sign
   dst.w = (src.w > 0) ? 1 : (src.w < 0) ? -1 : 0
 
 
-CMP - Compare
+.. opcode:: CMP - Compare
 
 .. math::
 
@@ -725,7 +709,7 @@ CMP - Compare
   dst.w = (src0.w < 0) ? src1.w : src2.w
 
 
-KIL - Conditional Discard
+.. opcode:: KIL - Conditional Discard
 
 .. math::
 
@@ -734,7 +718,7 @@ KIL - Conditional Discard
   endif
 
 
-SCS - Sine Cosine
+.. opcode:: SCS - Sine Cosine
 
 .. math::
 
@@ -747,12 +731,12 @@ SCS - Sine Cosine
   dst.y = 1
 
 
-TXB - Texture Lookup With Bias
+.. opcode:: TXB - Texture Lookup With Bias
 
   TBD
 
 
-NRM - 3-component Vector Normalise
+.. opcode:: NRM - 3-component Vector Normalise
 
 .. math::
 
@@ -765,7 +749,7 @@ NRM - 3-component Vector Normalise
   dst.w = 1
 
 
-DIV - Divide
+.. opcode:: DIV - Divide
 
 .. math::
 
@@ -778,35 +762,31 @@ DIV - Divide
   dst.w = \frac{src0.w}{src1.w}
 
 
-DP2 - 2-component Dot Product
+.. opcode:: DP2 - 2-component Dot Product
+
+This instruction replicates its result.
 
 .. math::
 
-  dst.x = src0.x \times src1.x + src0.y \times src1.y
-
-  dst.y = src0.x \times src1.x + src0.y \times src1.y
-
-  dst.z = src0.x \times src1.x + src0.y \times src1.y
-
-  dst.w = src0.x \times src1.x + src0.y \times src1.y
+  dst = src0.x \times src1.x + src0.y \times src1.y
 
 
-TXL - Texture Lookup With LOD
+.. opcode:: TXL - Texture Lookup With LOD
 
   TBD
 
 
-BRK - Break
+.. opcode:: BRK - Break
 
   TBD
 
 
-IF - If
+.. opcode:: IF - If
 
   TBD
 
 
-BGNFOR - Begin a For-Loop
+.. opcode:: BGNFOR - Begin a For-Loop
 
   dst.x = floor(src.x)
   dst.y = floor(src.y)
@@ -819,25 +799,31 @@ BGNFOR - Begin a For-Loop
   Note: The destination must be a loop register.
         The source must be a constant register.
 
-  Considered for cleanup / removal.
+.. note::
+
+   Considered for cleanup.
+
+.. note::
+
+   Considered for removal.
 
 
-REP - Repeat
-
-  TBD
-
-
-ELSE - Else
-
-  TBD
-
-
-ENDIF - End If
+.. opcode:: REP - Repeat
 
   TBD
 
 
-ENDFOR - End a For-Loop
+.. opcode:: ELSE - Else
+
+  TBD
+
+
+.. opcode:: ENDIF - End If
+
+  TBD
+
+
+.. opcode:: ENDFOR - End a For-Loop
 
   dst.x = dst.x + dst.z
   dst.y = dst.y - 1.0
@@ -848,30 +834,48 @@ ENDFOR - End a For-Loop
 
   Note: The destination must be a loop register.
 
-  Considered for cleanup / removal.
+.. note::
 
-ENDREP - End Repeat
+   Considered for cleanup.
+
+.. note::
+
+   Considered for removal.
+
+.. opcode:: ENDREP - End Repeat
 
   TBD
 
 
-PUSHA - Push Address Register On Stack
+.. opcode:: PUSHA - Push Address Register On Stack
 
   push(src.x)
   push(src.y)
   push(src.z)
   push(src.w)
 
-  Considered for cleanup / removal.
+.. note::
 
-POPA - Pop Address Register From Stack
+   Considered for cleanup.
+
+.. note::
+
+   Considered for removal.
+
+.. opcode:: POPA - Pop Address Register From Stack
 
   dst.w = pop()
   dst.z = pop()
   dst.y = pop()
   dst.x = pop()
 
-  Considered for cleanup / removal.
+.. note::
+
+   Considered for cleanup.
+
+.. note::
+
+   Considered for removal.
 
 
 From GL_NV_gpu_program4
@@ -879,7 +883,7 @@ From GL_NV_gpu_program4
 
 Support for these opcodes indicated by a special pipe capability bit (TBD).
 
-CEIL - Ceiling
+.. opcode:: CEIL - Ceiling
 
 .. math::
 
@@ -892,7 +896,7 @@ CEIL - Ceiling
   dst.w = \lceil src.w\rceil
 
 
-I2F - Integer To Float
+.. opcode:: I2F - Integer To Float
 
 .. math::
 
@@ -905,7 +909,7 @@ I2F - Integer To Float
   dst.w = (float) src.w
 
 
-NOT - Bitwise Not
+.. opcode:: NOT - Bitwise Not
 
 .. math::
 
@@ -918,7 +922,7 @@ NOT - Bitwise Not
   dst.w = ~src.w
 
 
-TRUNC - Truncate
+.. opcode:: TRUNC - Truncate
 
 .. math::
 
@@ -931,7 +935,7 @@ TRUNC - Truncate
   dst.w = trunc(src.w)
 
 
-SHL - Shift Left
+.. opcode:: SHL - Shift Left
 
 .. math::
 
@@ -944,7 +948,7 @@ SHL - Shift Left
   dst.w = src0.w << src1.x
 
 
-SHR - Shift Right
+.. opcode:: SHR - Shift Right
 
 .. math::
 
@@ -957,7 +961,7 @@ SHR - Shift Right
   dst.w = src0.w >> src1.x
 
 
-AND - Bitwise And
+.. opcode:: AND - Bitwise And
 
 .. math::
 
@@ -970,7 +974,7 @@ AND - Bitwise And
   dst.w = src0.w & src1.w
 
 
-OR - Bitwise Or
+.. opcode:: OR - Bitwise Or
 
 .. math::
 
@@ -983,7 +987,7 @@ OR - Bitwise Or
   dst.w = src0.w | src1.w
 
 
-MOD - Modulus
+.. opcode:: MOD - Modulus
 
 .. math::
 
@@ -996,7 +1000,7 @@ MOD - Modulus
   dst.w = src0.w \bmod src1.w
 
 
-XOR - Bitwise Xor
+.. opcode:: XOR - Bitwise Xor
 
 .. math::
 
@@ -1009,7 +1013,7 @@ XOR - Bitwise Xor
   dst.w = src0.w \oplus src1.w
 
 
-SAD - Sum Of Absolute Differences
+.. opcode:: SAD - Sum Of Absolute Differences
 
 .. math::
 
@@ -1022,17 +1026,17 @@ SAD - Sum Of Absolute Differences
   dst.w = |src0.w - src1.w| + src2.w
 
 
-TXF - Texel Fetch
+.. opcode:: TXF - Texel Fetch
 
   TBD
 
 
-TXQ - Texture Size Query
+.. opcode:: TXQ - Texture Size Query
 
   TBD
 
 
-CONT - Continue
+.. opcode:: CONT - Continue
 
   TBD
 
@@ -1041,12 +1045,12 @@ From GL_NV_geometry_program4
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
-EMIT - Emit
+.. opcode:: EMIT - Emit
 
   TBD
 
 
-ENDPRIM - End Primitive
+.. opcode:: ENDPRIM - End Primitive
 
   TBD
 
@@ -1055,66 +1059,64 @@ From GLSL
 ^^^^^^^^^^
 
 
-BGNLOOP - Begin a Loop
+.. opcode:: BGNLOOP - Begin a Loop
 
   TBD
 
 
-BGNSUB - Begin Subroutine
+.. opcode:: BGNSUB - Begin Subroutine
 
   TBD
 
 
-ENDLOOP - End a Loop
+.. opcode:: ENDLOOP - End a Loop
 
   TBD
 
 
-ENDSUB - End Subroutine
+.. opcode:: ENDSUB - End Subroutine
 
   TBD
 
 
-NOP - No Operation
+.. opcode:: NOP - No Operation
 
   Do nothing.
 
 
-NRM4 - 4-component Vector Normalise
+.. opcode:: NRM4 - 4-component Vector Normalise
+
+This instruction replicates its result.
 
 .. math::
 
-  dst.x = \frac{src.x}{src.x \times src.x + src.y \times src.y + src.z \times src.z + src.w \times src.w}
-
-  dst.y = \frac{src.y}{src.x \times src.x + src.y \times src.y + src.z \times src.z + src.w \times src.w}
-
-  dst.z = \frac{src.z}{src.x \times src.x + src.y \times src.y + src.z \times src.z + src.w \times src.w}
-
-  dst.w = \frac{src.w}{src.x \times src.x + src.y \times src.y + src.z \times src.z + src.w \times src.w}
+  dst = \frac{src.x}{src.x \times src.x + src.y \times src.y + src.z \times src.z + src.w \times src.w}
 
 
 ps_2_x
 ^^^^^^^^^^^^
 
 
-CALLNZ - Subroutine Call If Not Zero
+.. opcode:: CALLNZ - Subroutine Call If Not Zero
 
   TBD
 
 
-IFC - If
+.. opcode:: IFC - If
 
   TBD
 
 
-BREAKC - Break Conditional
+.. opcode:: BREAKC - Break Conditional
 
   TBD
+
+.. _doubleopcodes:
 
 Double Opcodes
 ^^^^^^^^^^^^^^^
 
-DADD - Add Double
+.. opcode:: DADD - Add Double
 
 .. math::
 
@@ -1123,7 +1125,7 @@ DADD - Add Double
   dst.zw = src0.zw + src1.zw
 
 
-DDIV - Divide Double
+.. opcode:: DDIV - Divide Double
 
 .. math::
 
@@ -1131,7 +1133,7 @@ DDIV - Divide Double
 
   dst.zw = src0.zw / src1.zw
 
-DSEQ - Set Double on Equal
+.. opcode:: DSEQ - Set Double on Equal
 
 .. math::
 
@@ -1139,7 +1141,7 @@ DSEQ - Set Double on Equal
 
   dst.zw = src0.zw == src1.zw ? 1.0F : 0.0F
 
-DSLT - Set Double on Less than
+.. opcode:: DSLT - Set Double on Less than
 
 .. math::
 
@@ -1147,7 +1149,7 @@ DSLT - Set Double on Less than
 
   dst.zw = src0.zw < src1.zw ? 1.0F : 0.0F
 
-DFRAC - Double Fraction
+.. opcode:: DFRAC - Double Fraction
 
 .. math::
 
@@ -1156,7 +1158,7 @@ DFRAC - Double Fraction
   dst.zw = src.zw - \lfloor src.zw\rfloor
 
 
-DFRACEXP - Convert Double Number to Fractional and Integral Components
+.. opcode:: DFRACEXP - Convert Double Number to Fractional and Integral Components
 
 .. math::
 
@@ -1164,7 +1166,7 @@ DFRACEXP - Convert Double Number to Fractional and Integral Components
 
   dst0.zw = frexp(src.zw, dst1.zw)
 
-DLDEXP - Multiple Double Number by Integral Power of 2
+.. opcode:: DLDEXP - Multiple Double Number by Integral Power of 2
 
 .. math::
 
@@ -1172,7 +1174,7 @@ DLDEXP - Multiple Double Number by Integral Power of 2
 
   dst.zw = ldexp(src0.zw, src1.zw)
 
-DMIN - Minimum Double
+.. opcode:: DMIN - Minimum Double
 
 .. math::
 
@@ -1180,7 +1182,7 @@ DMIN - Minimum Double
 
   dst.zw = min(src0.zw, src1.zw)
 
-DMAX - Maximum Double
+.. opcode:: DMAX - Maximum Double
 
 .. math::
 
@@ -1188,7 +1190,7 @@ DMAX - Maximum Double
 
   dst.zw = max(src0.zw, src1.zw)
 
-DMUL - Multiply Double
+.. opcode:: DMUL - Multiply Double
 
 .. math::
 
@@ -1197,7 +1199,7 @@ DMUL - Multiply Double
   dst.zw = src0.zw \times src1.zw
 
 
-DMAD - Multiply And Add Doubles
+.. opcode:: DMAD - Multiply And Add Doubles
 
 .. math::
 
@@ -1206,7 +1208,7 @@ DMAD - Multiply And Add Doubles
   dst.zw = src0.zw \times src1.zw + src2.zw
 
 
-DRCP - Reciprocal Double
+.. opcode:: DRCP - Reciprocal Double
 
 .. math::
 
@@ -1214,7 +1216,7 @@ DRCP - Reciprocal Double
 
    dst.zw = \frac{1}{src.zw}
 
-DSQRT - Square root double
+.. opcode:: DSQRT - Square root double
 
 .. math::
 
@@ -1269,25 +1271,41 @@ Keywords
 
   discard           Discard fragment.
 
-  dst               First destination register.
-
-  dst0              First destination register.
-
   pc                Program counter.
-
-  src               First source register.
-
-  src0              First source register.
-
-  src1              Second source register.
-
-  src2              Third source register.
 
   target            Label of target instruction.
 
 
 Other tokens
 ---------------
+
+
+Declaration
+^^^^^^^^^^^
+
+
+Declares a register that is will be referenced as an operand in Instruction
+tokens.
+
+File field contains register file that is being declared and is one
+of TGSI_FILE.
+
+UsageMask field specifies which of the register components can be accessed
+and is one of TGSI_WRITEMASK.
+
+Interpolate field is only valid for fragment shader INPUT register files.
+It specifes the way input is being interpolated by the rasteriser and is one
+of TGSI_INTERPOLATE.
+
+If Dimension flag is set to 1, a Declaration Dimension token follows.
+
+If Semantic flag is set to 1, a Declaration Semantic token follows.
+
+CylindricalWrap bitfield is only valid for fragment shader INPUT register
+files. It specifies which register components should be subject to cylindrical
+wrapping when interpolating by the rasteriser. If TGSI_CYLINDRICAL_WRAP_X
+is set to 1, the X component should be interpolated according to cylindrical
+wrapping rules.
 
 
 Declaration Semantic
@@ -1362,10 +1380,8 @@ TGSI_SEMANTIC_PSIZE
 """""""""""""""""""
 
 PSIZE, or point size, is used to specify point sizes per-vertex. It should
-be in ``(p, n, x, f)`` format, where ``p`` is the point size, ``n`` is the minimum
-size, ``x`` is the maximum size, and ``f`` is the fade threshold.
-
-XXX this is arb_vp. is this what we actually do? should double-check...
+be in ``(s, 0, 0, 1)`` format, where ``s`` is the (possibly clamped) point size.
+Only the first component matters when writing from the vertex shader.
 
 When using this semantic, be sure to set the appropriate state in the
 :ref:`rasterizer` first.
@@ -1441,3 +1457,43 @@ GL_ARB_fragment_coord_conventions extension.
 
 DirectX 9 uses INTEGER.
 DirectX 10 uses HALF_INTEGER.
+
+
+
+Texture Sampling and Texture Formats
+------------------------------------
+
+This table shows how texture image components are returned as (x,y,z,w) tuples
+by TGSI texture instructions, such as :opcode:`TEX`, :opcode:`TXD`, and
+:opcode:`TXP`. For reference, OpenGL and Direct3D conventions are shown as
+well.
+
++--------------------+--------------+--------------------+--------------+
+| Texture Components | Gallium      | OpenGL             | Direct3D 9   |
++====================+==============+====================+==============+
+| R                  | XXX TBD      | (r, 0, 0, 1)       | (r, 1, 1, 1) |
++--------------------+--------------+--------------------+--------------+
+| RG                 | XXX TBD      | (r, g, 0, 1)       | (r, g, 1, 1) |
++--------------------+--------------+--------------------+--------------+
+| RGB                | (r, g, b, 1) | (r, g, b, 1)       | (r, g, b, 1) |
++--------------------+--------------+--------------------+--------------+
+| RGBA               | (r, g, b, a) | (r, g, b, a)       | (r, g, b, a) |
++--------------------+--------------+--------------------+--------------+
+| A                  | (0, 0, 0, a) | (0, 0, 0, a)       | (0, 0, 0, a) |
++--------------------+--------------+--------------------+--------------+
+| L                  | (l, l, l, 1) | (l, l, l, 1)       | (l, l, l, 1) |
++--------------------+--------------+--------------------+--------------+
+| LA                 | (l, l, l, a) | (l, l, l, a)       | (l, l, l, a) |
++--------------------+--------------+--------------------+--------------+
+| I                  | (i, i, i, i) | (i, i, i, i)       | N/A          |
++--------------------+--------------+--------------------+--------------+
+| UV                 | XXX TBD      | (0, 0, 0, 1)       | (u, v, 1, 1) |
+|                    |              | [#envmap-bumpmap]_ |              |
++--------------------+--------------+--------------------+--------------+
+| Z                  | XXX TBD      | (z, z, z, 1)       | (0, z, 0, 1) |
+|                    |              | [#depth-tex-mode]_ |              |
++--------------------+--------------+--------------------+--------------+
+
+.. [#envmap-bumpmap] http://www.opengl.org/registry/specs/ATI/envmap_bumpmap.txt
+.. [#depth-tex-mode] the default is (z, z, z, 1) but may also be (0, 0, 0, z)
+   or (z, z, z, z) depending on the value of GL_DEPTH_TEXTURE_MODE.

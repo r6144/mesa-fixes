@@ -25,7 +25,7 @@
 
 #include "svga_cmd.h"
 
-#include "pipe/p_inlines.h"
+#include "util/u_inlines.h"
 #include "util/u_prim.h"
 #include "util/u_time.h"
 #include "indices/u_indices.h"
@@ -216,11 +216,6 @@ svga_draw_range_elements( struct pipe_context *pipe,
    }
 
    if (SVGA_DEBUG & DEBUG_FLUSH) {
-      static unsigned id;
-      debug_printf("%s %d\n", __FUNCTION__, id++);
-      if (id > 1300)
-         util_time_sleep( 2000 );
-
       svga_hwtnl_flush_retry( svga );
       svga_context_flush(svga, NULL);
    }

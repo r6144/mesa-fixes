@@ -36,7 +36,7 @@
 #include "pipe/p_context.h"
 #include "pipe/p_screen.h"
 #include "pipe/p_defines.h"
-#include "pipe/p_inlines.h"
+#include "util/u_inlines.h"
 #include "pipe/p_state.h"
 
 #include "st_context.h"
@@ -53,11 +53,11 @@ st_cond_flush_get_tex_transfer(struct st_context *st,
 			       unsigned int x, unsigned int y,
 			       unsigned int w, unsigned int h)
 {
-   struct pipe_screen *screen = st->pipe->screen;
+   struct pipe_context *context = st->pipe;
 
    st_teximage_flush_before_map(st, pt, face, level, usage);
-   return screen->get_tex_transfer(screen, pt, face, level, zslice, usage,
-				   x, y, w, h);
+   return context->get_tex_transfer(context, pt, face, level, zslice, usage,
+				    x, y, w, h);
 }
 
 static INLINE struct pipe_transfer *
@@ -70,9 +70,9 @@ st_no_flush_get_tex_transfer(struct st_context *st,
 			     unsigned int x, unsigned int y,
 			     unsigned int w, unsigned int h)
 {
-   struct pipe_screen *screen = st->pipe->screen;
+   struct pipe_context *context = st->pipe;
 
-   return screen->get_tex_transfer(screen, pt, face, level,
+   return context->get_tex_transfer(context, pt, face, level,
 				   zslice, usage, x, y, w, h);
 }
 

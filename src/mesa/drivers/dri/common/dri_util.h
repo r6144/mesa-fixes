@@ -295,7 +295,8 @@ struct __DRIdrawableRec {
     unsigned int index;
 
     /**
-     * Pointer to the "drawable has changed ID" stamp in the SAREA.
+     * Pointer to the "drawable has changed ID" stamp in the SAREA (or
+     * to dri2.stamp if DRI2 is being used).
      */
     unsigned int *pStamp;
 
@@ -377,7 +378,10 @@ struct __DRIdrawableRec {
      */
     unsigned int swap_interval;
 
-    GLboolean validBuffers;
+    struct {
+	unsigned int stamp;
+	drm_clip_rect_t clipRect;
+    } dri2;
 };
 
 /**
@@ -413,6 +417,16 @@ struct __DRIcontextRec {
      * Pointer to screen on which this context was created.
      */
     __DRIscreen *driScreenPriv;
+
+    /**
+     * The loaders's private context data.  This structure is opaque.
+     */
+    void *loaderPrivate;
+
+    struct {
+	int draw_stamp;
+	int read_stamp;
+    } dri2;
 };
 
 /**
@@ -530,6 +544,7 @@ struct __DRIscreenRec {
 	 * fields will not be valid or initializaed in that case. */
 	int enabled;
 	__DRIdri2LoaderExtension *loader;
+	__DRIimageLookupExtension *image;
     } dri2;
 
     /* The lock actually in use, old sarea or DRI2 */
@@ -549,5 +564,8 @@ driCalculateSwapUsage( __DRIdrawable *dPriv,
 
 extern GLint
 driIntersectArea( drm_clip_rect_t rect1, drm_clip_rect_t rect2 );
+
+extern void
+dri2InvalidateDrawable(__DRIdrawable *drawable);
 
 #endif /* _DRI_UTIL_H_ */

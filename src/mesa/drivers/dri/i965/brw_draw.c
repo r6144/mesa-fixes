@@ -82,7 +82,7 @@ static GLuint brw_set_prim(struct brw_context *brw, GLenum prim)
    GLcontext *ctx = &brw->intel.ctx;
 
    if (INTEL_DEBUG & DEBUG_PRIMS)
-      _mesa_printf("PRIM: %s\n", _mesa_lookup_enum_by_nr(prim));
+      printf("PRIM: %s\n", _mesa_lookup_enum_by_nr(prim));
    
    /* Slight optimization to avoid the GS program when not needed:
     */
@@ -125,7 +125,7 @@ static void brw_emit_prim(struct brw_context *brw,
    struct intel_context *intel = &brw->intel;
 
    if (INTEL_DEBUG & DEBUG_PRIMS)
-      _mesa_printf("PRIM: %s %d %d\n", _mesa_lookup_enum_by_nr(prim->mode), 
+      printf("PRIM: %s %d %d\n", _mesa_lookup_enum_by_nr(prim->mode), 
 		   prim->start, prim->count);
 
    prim_packet.header.opcode = CMD_3D_PRIM;
@@ -336,6 +336,8 @@ static GLboolean brw_try_draw_prims( GLcontext *ctx,
     * Note this is where brw->vs->prog_data.inputs_read is calculated,
     * so can't access it earlier.
     */
+
+   intel_prepare_render(intel);
 
    for (i = 0; i < nr_prims; i++) {
       uint32_t hw_prim;

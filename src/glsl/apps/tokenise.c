@@ -46,6 +46,7 @@ main(int argc,
    unsigned int i;
 
    if (argc != 3) {
+      printf("Usage: tokenize infile outfile\n");
       return 1;
    }
 
@@ -56,6 +57,7 @@ main(int argc,
 
    fseek(in, 0, SEEK_END);
    size = ftell(in);
+   assert(size != -1);
    fseek(in, 0, SEEK_SET);
 
    out = fopen(argv[2], "wb");

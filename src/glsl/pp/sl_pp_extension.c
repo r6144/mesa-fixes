@@ -32,10 +32,15 @@
 #include "sl_pp_public.h"
 
 
+/**
+ * Declare an extension to the preprocessor.  This tells the preprocessor
+ * which extensions are supported by Mesa.
+ * The shader still needs to have a "#extension name: behavior" line to enable
+ * the extension.
+ */
 int
 sl_pp_context_add_extension(struct sl_pp_context *context,
-                            const char *name,
-                            const char *name_string)
+                            const char *name)
 {
    struct sl_pp_extension ext;
 
@@ -48,15 +53,17 @@ sl_pp_context_add_extension(struct sl_pp_context *context,
       return -1;
    }
 
-   ext.name_string = sl_pp_context_add_unique_str(context, name_string);
-   if (ext.name_string == -1) {
-      return -1;
-   }
-
    context->extensions[context->num_extensions++] = ext;
+
+   assert(context->num_extensions <= sizeof(context->extensions));
+
    return 0;
 }
 
+
+/**
+ * Process a "#extension name: behavior" directive.
+ */
 int
 sl_pp_process_extension(struct sl_pp_context *context,
                         const struct sl_pp_token_info *input,
@@ -86,7 +93,7 @@ sl_pp_process_extension(struct sl_pp_context *context,
 
       out.data.extension = -1;
       for (i = 0; i < context->num_extensions; i++) {
-         if (extension_name == context->extensions[i].name_string) {
+         if (extension_name == context->extensions[i].name) {
             out.data.extension = extension_name;
             break;
          }

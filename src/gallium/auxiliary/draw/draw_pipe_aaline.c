@@ -35,6 +35,7 @@
 #include "pipe/p_context.h"
 #include "pipe/p_defines.h"
 #include "pipe/p_shader_tokens.h"
+#include "util/u_inlines.h"
 
 #include "util/u_format.h"
 #include "util/u_math.h"
@@ -46,6 +47,10 @@
 #include "draw_context.h"
 #include "draw_private.h"
 #include "draw_pipe.h"
+
+
+/** Approx number of new tokens for instructions in aa_transform_inst() */
+#define NUM_NEW_TOKENS 50
 
 
 /**
@@ -178,12 +183,7 @@ aa_transform_decl(struct tgsi_transform_context *ctx,
 static int
 free_bit(uint bitfield)
 {
-   int i;
-   for (i = 0; i < 32; i++) {
-      if ((bitfield & (1 << i)) == 0)
-         return i;
-   }
-   return -1;
+   return ffs(~bitfield) - 1;
 }
 
 
@@ -342,11 +342,10 @@ generate_aaline_fs(struct aaline_stage *aaline)
    const struct pipe_shader_state *orig_fs = &aaline->fs->state;
    struct pipe_shader_state aaline_fs;
    struct aa_transform_context transform;
-
-#define MAX 1000
+   const uint newLen = tgsi_num_tokens(orig_fs->tokens) + NUM_NEW_TOKENS;
 
    aaline_fs = *orig_fs; /* copy to init */
-   aaline_fs.tokens = MALLOC(sizeof(struct tgsi_token) * MAX);
+   aaline_fs.tokens = tgsi_alloc_tokens(newLen);
    if (aaline_fs.tokens == NULL)
       return FALSE;
 
@@ -362,7 +361,7 @@ generate_aaline_fs(struct aaline_stage *aaline)
 
    tgsi_transform_shader(orig_fs->tokens,
                          (struct tgsi_token *) aaline_fs.tokens,
-                         MAX, &transform.base);
+                         newLen, &transform.base);
 
 #if 0 /* DEBUG */
    tgsi_dump(orig_fs->tokens, 0);
@@ -423,9 +422,9 @@ aaline_create_texture(struct aaline_stage *aaline)
 
       /* This texture is new, no need to flush. 
        */
-      transfer = screen->get_tex_transfer(screen, aaline->texture, 0, level, 0,
+      transfer = pipe->get_tex_transfer(pipe, aaline->texture, 0, level, 0,
                                          PIPE_TRANSFER_WRITE, 0, 0, size, size);
-      data = screen->transfer_map(screen, transfer);
+      data = pipe->transfer_map(pipe, transfer);
       if (data == NULL)
          return FALSE;
 
@@ -449,8 +448,8 @@ aaline_create_texture(struct aaline_stage *aaline)
       }
 
       /* unmap */
-      screen->transfer_unmap(screen, transfer);
-      screen->tex_transfer_destroy(transfer);
+      pipe->transfer_unmap(pipe, transfer);
+      pipe->tex_transfer_destroy(pipe, transfer);
    }
    return TRUE;
 }

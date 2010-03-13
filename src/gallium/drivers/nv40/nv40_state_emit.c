@@ -13,6 +13,7 @@ static struct nv40_state_entry *render_states[] = {
 	&nv40_state_blend,
 	&nv40_state_blend_colour,
 	&nv40_state_zsa,
+	&nv40_state_sr,
 	&nv40_state_viewport,
 	&nv40_state_vbo,
 	NULL
@@ -29,6 +30,7 @@ static struct nv40_state_entry *swtnl_states[] = {
 	&nv40_state_blend,
 	&nv40_state_blend_colour,
 	&nv40_state_zsa,
+	&nv40_state_sr,
 	&nv40_state_viewport,
 	&nv40_state_vtxfmt,
 	NULL
@@ -61,13 +63,15 @@ nv40_state_emit(struct nv40_context *nv40)
 	unsigned i;
 	uint64_t states;
 
-	if (nv40->pctx_id != screen->cur_pctx) {
+	/* XXX: race conditions
+	 */
+	if (nv40 != screen->cur_ctx) {
 		for (i = 0; i < NV40_STATE_MAX; i++) {
 			if (state->hw[i] && screen->state[i] != state->hw[i])
 				state->dirty |= (1ULL << i);
 		}
 
-		screen->cur_pctx = nv40->pctx_id;
+		screen->cur_ctx = nv40;
 	}
 
 	for (i = 0, states = state->dirty; states; i++) {
@@ -170,7 +174,7 @@ nv40_state_validate_swtnl(struct nv40_context *nv40)
 
 	if (nv40->draw_dirty & NV40_NEW_ARRAYS) {
 		draw_set_vertex_buffers(draw, nv40->vtxbuf_nr, nv40->vtxbuf);
-		draw_set_vertex_elements(draw, nv40->vtxelt_nr, nv40->vtxelt);	
+		draw_set_vertex_elements(draw, nv40->vtxelt->num_elements, nv40->vtxelt->pipe);	
 	}
 
 	nv40_state_do_validate(nv40, swtnl_states);

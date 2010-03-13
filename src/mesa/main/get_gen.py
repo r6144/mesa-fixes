@@ -27,6 +27,7 @@
 
 
 import string
+import sys
 
 
 GLint = 1
@@ -154,7 +155,7 @@ StateVars = [
 	( "GL_CURRENT_RASTER_DISTANCE", GLfloat,
 	  ["ctx->Current.RasterDistance"], "", None ),
 	( "GL_CURRENT_RASTER_INDEX", GLfloat,
-	  ["ctx->Current.RasterIndex"], "", None ),
+	  ["1.0"], "", None ),
 	( "GL_CURRENT_RASTER_POSITION", GLfloat,
 	  ["ctx->Current.RasterPos[0]",
 	   "ctx->Current.RasterPos[1]",
@@ -166,20 +167,32 @@ StateVars = [
 	   "ctx->Current.RasterSecondaryColor[2]",
 	   "ctx->Current.RasterSecondaryColor[3]"], "", None ),
 	( "GL_CURRENT_RASTER_TEXTURE_COORDS", GLfloat,
-	  ["ctx->Current.RasterTexCoords[texUnit][0]",
-	   "ctx->Current.RasterTexCoords[texUnit][1]",
-	   "ctx->Current.RasterTexCoords[texUnit][2]",
-	   "ctx->Current.RasterTexCoords[texUnit][3]"],
-	  "const GLuint texUnit = ctx->Texture.CurrentUnit;", None ),
+	  ["ctx->Current.RasterTexCoords[unit][0]",
+	   "ctx->Current.RasterTexCoords[unit][1]",
+	   "ctx->Current.RasterTexCoords[unit][2]",
+	   "ctx->Current.RasterTexCoords[unit][3]"],
+	  """const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION,
+                        "glGet(raster tex coords, unit %u)", unit);
+            return;
+         }""",
+	  None ),
 	( "GL_CURRENT_RASTER_POSITION_VALID", GLboolean,
 	  ["ctx->Current.RasterPosValid"], "", None ),
 	( "GL_CURRENT_TEXTURE_COORDS", GLfloat,
-	  ["ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][0]",
-	   "ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][1]",
-	   "ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][2]",
-	   "ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][3]"],
-	  """const GLuint texUnit = ctx->Texture.CurrentUnit;
-         FLUSH_CURRENT(ctx, 0);""", None ),
+	  ["ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][0]",
+	   "ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][1]",
+	   "ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][2]",
+	   "ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][3]"],
+	  """const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION,
+                        "glGet(current tex coords, unit %u)", unit);
+            return;
+         }
+         FLUSH_CURRENT(ctx, 0);""",
+	  None ),
 	( "GL_DEPTH_BIAS", GLfloat, ["ctx->Pixel.DepthBias"], "", None ),
 	( "GL_DEPTH_BITS", GLint, ["ctx->DrawBuffer->Visual.depthBits"],
 	  "", None ),
@@ -218,7 +231,7 @@ StateVars = [
 	( "GL_INDEX_BITS", GLint, ["ctx->DrawBuffer->Visual.indexBits"],
 	  "", None ),
 	( "GL_INDEX_CLEAR_VALUE", GLint, ["ctx->Color.ClearIndex"], "", None ),
-	( "GL_INDEX_MODE", GLboolean, ["!ctx->DrawBuffer->Visual.rgbMode"],
+	( "GL_INDEX_MODE", GLboolean, ["GL_FALSE"],
 	  "", None ),
 	( "GL_INDEX_OFFSET", GLint, ["ctx->Pixel.IndexOffset"], "", None ),
 	( "GL_INDEX_SHIFT", GLint, ["ctx->Pixel.IndexShift"], "", None ),
@@ -397,7 +410,7 @@ StateVars = [
 	( "GL_RENDER_MODE", GLenum, ["ctx->RenderMode"], "", None ),
 	( "GL_RESCALE_NORMAL", GLboolean,
 	  ["ctx->Transform.RescaleNormals"], "", None ),
-	( "GL_RGBA_MODE", GLboolean, ["ctx->DrawBuffer->Visual.rgbMode"],
+	( "GL_RGBA_MODE", GLboolean, ["GL_TRUE"],
 	  "", None ),
 	( "GL_SCISSOR_BOX", GLint,
 	  ["ctx->Scissor.X",
@@ -457,9 +470,24 @@ StateVars = [
 	   "matrix[4]", "matrix[5]", "matrix[6]", "matrix[7]",
 	   "matrix[8]", "matrix[9]", "matrix[10]", "matrix[11]",
 	   "matrix[12]", "matrix[13]", "matrix[14]", "matrix[15]" ],
-	  "const GLfloat *matrix = ctx->TextureMatrixStack[ctx->Texture.CurrentUnit].Top->m;", None ),
+	  """const GLfloat *matrix;
+         const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION, "glGet(texture matrix %u)",
+                        unit);
+            return;
+         }
+         matrix = ctx->TextureMatrixStack[unit].Top->m;""",
+	  None ),
 	( "GL_TEXTURE_STACK_DEPTH", GLint,
-	  ["ctx->TextureMatrixStack[ctx->Texture.CurrentUnit].Depth + 1"], "", None ),
+	  ["ctx->TextureMatrixStack[unit].Depth + 1"],
+	  """const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION,
+                        "glGet(texture stack depth, unit %u)", unit);
+            return;
+         }""",
+	  None ),
 	( "GL_UNPACK_ALIGNMENT", GLint, ["ctx->Unpack.Alignment"], "", None ),
 	( "GL_UNPACK_LSB_FIRST", GLboolean, ["ctx->Unpack.LsbFirst"], "", None ),
 	( "GL_UNPACK_ROW_LENGTH", GLint, ["ctx->Unpack.RowLength"], "", None ),
@@ -1107,7 +1135,7 @@ def EmitGetFunction(stateVars, returnType, indexed):
 		elif returnType == GLint64:
 			function = "GetInteger64v"
 		else:
-			abort()
+			sys.exit(1)
 
 	if returnType == GLint64:
 		print "#if FEATURE_ARB_sync"
@@ -1198,7 +1226,6 @@ def EmitHeader():
 #include "context.h"
 #include "enable.h"
 #include "extensions.h"
-#include "fbobject.h"
 #include "get.h"
 #include "macros.h"
 #include "mtypes.h"

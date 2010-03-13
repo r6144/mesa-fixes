@@ -113,6 +113,8 @@ struct state_key {
       GLuint NumArgsA:3;  /**< up to MAX_COMBINER_TERMS */
       GLuint ModeA:5;     /**< MODE_x */
 
+      GLuint texture_cyl_wrap:1; /**< For gallium test/debug only */
+
       struct mode_opt OptRGB[MAX_COMBINER_TERMS];
       struct mode_opt OptA[MAX_COMBINER_TERMS];
    } unit[MAX_TEXTURE_UNITS];
@@ -464,6 +466,10 @@ static GLuint make_state_key( GLcontext *ctx,  struct state_key *key )
          key->unit[i].OptRGB[1].Operand = OPR_SRC_COLOR;
          key->unit[i].OptRGB[1].Source = texUnit->BumpTarget - GL_TEXTURE0 + SRC_TEXTURE0;
        }
+
+      /* this is a back-door for enabling cylindrical texture wrap mode */
+      if (texObj->Priority == 0.125)
+         key->unit[i].texture_cyl_wrap = 1;
    }
 
    /* _NEW_LIGHT | _NEW_FOG */
@@ -1089,7 +1095,7 @@ static struct ureg emit_combine( struct texenv_fragment_program *p,
       emit_arith( p, OPCODE_MAD, tmp0, WRITEMASK_XYZW, 0, 
 		  two, src[0], neg1);
 
-      if (_mesa_memcmp(&src[0], &src[1], sizeof(struct ureg)) == 0)
+      if (memcmp(&src[0], &src[1], sizeof(struct ureg)) == 0)
 	 tmp1 = tmp0;
       else
 	 emit_arith( p, OPCODE_MAD, tmp1, WRITEMASK_XYZW, 0, 
@@ -1302,6 +1308,12 @@ static void load_texture( struct texenv_fragment_program *p, GLuint unit )
       }
       else
 	 p->src_texture[unit] = get_zero(p);
+
+      if (p->state->unit[unit].texture_cyl_wrap) {
+         /* set flag which is checked by Mesa->Gallium program translation */
+         p->program->Base.InputFlags[0] |= PROG_PARAM_BIT_CYL_WRAP;
+      }
+
    }
 }
 
@@ -1404,7 +1416,7 @@ create_new_program(GLcontext *ctx, struct state_key *key,
    GLuint unit;
    struct ureg cf, out;
 
-   _mesa_memset(&p, 0, sizeof(p));
+   memset(&p, 0, sizeof(p));
    p.state = key;
    p.program = program;
 
@@ -1482,7 +1494,7 @@ create_new_program(GLcontext *ctx, struct state_key *key,
       emit_arith( &p, OPCODE_ADD, out, WRITEMASK_XYZ, 0, cf, s, undef );
       emit_arith( &p, OPCODE_MOV, out, WRITEMASK_W, 0, cf, undef, undef );
    }
-   else if (_mesa_memcmp(&cf, &out, sizeof(cf)) != 0) {
+   else if (memcmp(&cf, &out, sizeof(cf)) != 0) {
       /* Will wind up in here if no texture enabled or a couple of
        * other scenarios (GL_REPLACE for instance).
        */
@@ -1535,13 +1547,20 @@ create_new_program(GLcontext *ctx, struct state_key *key,
    /* Notify driver the fragment program has (actually) changed.
     */
    if (ctx->Driver.ProgramStringNotify) {
-      ctx->Driver.ProgramStringNotify( ctx, GL_FRAGMENT_PROGRAM_ARB, 
-                                       &p.program->Base );
+      GLboolean ok = ctx->Driver.ProgramStringNotify(ctx,
+                                                     GL_FRAGMENT_PROGRAM_ARB, 
+                                                     &p.program->Base);
+      /* Driver should be able to handle any texenv programs as long as
+       * the driver correctly reported max number of texture units correctly,
+       * etc.
+       */
+      ASSERT(ok);
+      (void) ok; /* silence unused var warning */
    }
 
    if (DISASSEM) {
       _mesa_print_program(&p.program->Base);
-      _mesa_printf("\n");
+      printf("\n");
    }
 }
 

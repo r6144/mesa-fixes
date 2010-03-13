@@ -86,8 +86,9 @@ MAIN_SOURCES = \
 	main/vtxfmt.c
 
 GLAPI_SOURCES = \
-	main/dispatch.c \
 	glapi/glapi.c \
+	glapi/glapi_dispatch.c \
+	glapi/glapi_entrypoint.c \
 	glapi/glapi_getproc.c \
 	glapi/glapi_nop.c \
 	glapi/glthread.c
@@ -204,7 +205,6 @@ STATETRACKER_SOURCES = \
 	state_tracker/st_cb_readpixels.c \
 	state_tracker/st_cb_strings.c \
 	state_tracker/st_cb_texture.c \
-	state_tracker/st_cb_viewport.c \
 	state_tracker/st_context.c \
 	state_tracker/st_debug.c \
 	state_tracker/st_draw.c \

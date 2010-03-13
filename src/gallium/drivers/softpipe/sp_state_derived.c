@@ -30,7 +30,6 @@
 #include "pipe/p_shader_tokens.h"
 #include "draw/draw_context.h"
 #include "draw/draw_vertex.h"
-#include "draw/draw_private.h"
 #include "sp_context.h"
 #include "sp_screen.h"
 #include "sp_state.h"
@@ -67,7 +66,7 @@ softpipe_get_vertex_info(struct softpipe_context *softpipe)
       /* compute vertex layout now */
       const struct sp_fragment_shader *spfs = softpipe->fs;
       struct vertex_info *vinfo_vbuf = &softpipe->vertex_info_vbuf;
-      const uint num = draw_current_shader_outputs(softpipe->draw);
+      const uint num = draw_num_shader_outputs(softpipe->draw);
       uint i;
 
       /* Tell draw_vbuf to simply emit the whole post-xform vertex

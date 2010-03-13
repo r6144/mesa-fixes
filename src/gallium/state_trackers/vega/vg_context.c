@@ -34,7 +34,7 @@
 #include "st_inlines.h"
 
 #include "pipe/p_context.h"
-#include "pipe/p_inlines.h"
+#include "util/u_inlines.h"
 #include "pipe/p_shader_tokens.h"
 
 #include "cso_cache/cso_context.h"
@@ -72,6 +72,7 @@ struct vg_context * vg_create_context(struct pipe_context *pipe,
                                       struct vg_context *share)
 {
    struct vg_context *ctx;
+   unsigned i;
 
    ctx = CALLOC_STRUCT(vg_context);
 
@@ -102,6 +103,13 @@ struct vg_context * vg_create_context(struct pipe_context *pipe,
    ctx->blend_sampler.min_img_filter = PIPE_TEX_FILTER_NEAREST;
    ctx->blend_sampler.mag_img_filter = PIPE_TEX_FILTER_NEAREST;
    ctx->blend_sampler.normalized_coords = 0;
+
+   for (i = 0; i < 2; i++) {
+      ctx->velems[i].src_offset = i * 4 * sizeof(float);
+      ctx->velems[i].instance_divisor = 0;
+      ctx->velems[i].vertex_buffer_index = 0;
+      ctx->velems[i].src_format = PIPE_FORMAT_R32G32B32A32_FLOAT;
+   }
 
    vg_set_error(ctx, VG_NO_ERROR);
 

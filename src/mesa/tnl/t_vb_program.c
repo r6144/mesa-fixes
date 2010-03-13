@@ -203,13 +203,14 @@ vp_fetch_texel(GLcontext *ctx, const GLfloat texcoord[4], GLfloat lambda,
  * Called via ctx->Driver.ProgramStringNotify() after a new vertex program
  * string has been parsed.
  */
-void
+GLboolean
 _tnl_program_string(GLcontext *ctx, GLenum target, struct gl_program *program)
 {
    /* No-op.
     * If we had derived anything from the program that was private to this
     * stage we'd recompute/validate it here.
     */
+   return GL_TRUE;
 }
 
 
@@ -220,7 +221,7 @@ static void
 init_machine(GLcontext *ctx, struct gl_program_machine *machine)
 {
    /* Input registers get initialized from the current vertex attribs */
-   MEMCPY(machine->VertAttribs, ctx->Current.Attrib,
+   memcpy(machine->VertAttribs, ctx->Current.Attrib,
           MAX_VERTEX_GENERIC_ATTRIBS * 4 * sizeof(GLfloat));
 
    if (ctx->VertexProgram._Current->IsNVProgram) {
@@ -513,7 +514,7 @@ init_vp(GLcontext *ctx, struct tnl_pipeline_stage *stage)
 
    /* a few other misc allocations */
    _mesa_vector4f_alloc( &store->ndcCoords, 0, size, 32 );
-   store->clipmask = (GLubyte *) ALIGN_MALLOC(sizeof(GLubyte)*size, 32 );
+   store->clipmask = (GLubyte *) _mesa_align_malloc(sizeof(GLubyte)*size, 32 );
 
    return GL_TRUE;
 }
@@ -536,7 +537,7 @@ dtr(struct tnl_pipeline_stage *stage)
 
       /* free misc arrays */
       _mesa_vector4f_free( &store->ndcCoords );
-      ALIGN_FREE( store->clipmask );
+      _mesa_align_free( store->clipmask );
 
       FREE( store );
       stage->privatePtr = NULL;

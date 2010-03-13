@@ -22,7 +22,7 @@
 
 #include "pipe/p_state.h"
 #include "pipe/p_defines.h"
-#include "pipe/p_inlines.h"
+#include "util/u_inlines.h"
 
 #include "tgsi/tgsi_parse.h"
 
@@ -202,18 +202,18 @@ nv50_sampler_state_create(struct pipe_context *pipe,
 		break;
 	}
 
-	if (cso->max_anisotropy >= 16.0)
+	if (cso->max_anisotropy >= 16)
 		tsc[0] |= (7 << 20);
 	else
-	if (cso->max_anisotropy >= 12.0)
+	if (cso->max_anisotropy >= 12)
 		tsc[0] |= (6 << 20);
 	else {
-		tsc[0] |= (int)(cso->max_anisotropy * 0.5f) << 20;
+		tsc[0] |= (cso->max_anisotropy >> 1) << 20;
 
-		if (cso->max_anisotropy >= 4.0)
+		if (cso->max_anisotropy >= 4)
 			tsc[1] |= NV50TSC_1_1_UNKN_ANISO_35;
 		else
-		if (cso->max_anisotropy >= 2.0)
+		if (cso->max_anisotropy >= 2)
 			tsc[1] |= NV50TSC_1_1_UNKN_ANISO_15;
 	}
 
@@ -302,7 +302,7 @@ static void *
 nv50_rasterizer_state_create(struct pipe_context *pipe,
 			     const struct pipe_rasterizer_state *cso)
 {
-	struct nouveau_stateobj *so = so_new(15, 21, 0);
+	struct nouveau_stateobj *so = so_new(16, 22, 0);
 	struct nouveau_grobj *tesla = nv50_context(pipe)->screen->tesla;
 	struct nv50_rasterizer_stateobj *rso =
 		CALLOC_STRUCT(nv50_rasterizer_stateobj);
@@ -313,6 +313,9 @@ nv50_rasterizer_state_create(struct pipe_context *pipe,
 	 * 	- multisample
 	 * 	- point_sprite / sprite_coord_mode
 	 */
+
+	so_method(so, tesla, NV50TCL_SCISSOR_ENABLE(0), 1);
+	so_data  (so, cso->scissor);
 
 	so_method(so, tesla, NV50TCL_SHADE_MODEL, 1);
 	so_data  (so, cso->flatshade ? NV50TCL_SHADE_MODEL_FLAT :
@@ -342,7 +345,7 @@ nv50_rasterizer_state_create(struct pipe_context *pipe,
 	so_data  (so, fui(cso->point_size));
 
 	so_method(so, tesla, NV50TCL_POINT_SPRITE_ENABLE, 1);
-	so_data  (so, cso->point_sprite);
+	so_data  (so, cso->point_quad_rasterization ? 1 : 0);
 
 	so_method(so, tesla, NV50TCL_POLYGON_MODE_FRONT, 3);
 	if (cso->front_winding == PIPE_WINDING_CCW) {
@@ -447,7 +450,7 @@ nv50_depth_stencil_alpha_state_create(struct pipe_context *pipe,
 {
 	struct nouveau_grobj *tesla = nv50_context(pipe)->screen->tesla;
 	struct nv50_zsa_stateobj *zsa = CALLOC_STRUCT(nv50_zsa_stateobj);
-	struct nouveau_stateobj *so = so_new(8, 22, 0);
+	struct nouveau_stateobj *so = so_new(9, 21, 0);
 
 	so_method(so, tesla, NV50TCL_DEPTH_WRITE_ENABLE, 1);
 	so_data  (so, cso->depth.writemask ? 1 : 0);
@@ -462,13 +465,13 @@ nv50_depth_stencil_alpha_state_create(struct pipe_context *pipe,
 	}
 
 	if (cso->stencil[0].enabled) {
-		so_method(so, tesla, NV50TCL_STENCIL_FRONT_ENABLE, 8);
+		so_method(so, tesla, NV50TCL_STENCIL_FRONT_ENABLE, 5);
 		so_data  (so, 1);
 		so_data  (so, nvgl_stencil_op(cso->stencil[0].fail_op));
 		so_data  (so, nvgl_stencil_op(cso->stencil[0].zfail_op));
 		so_data  (so, nvgl_stencil_op(cso->stencil[0].zpass_op));
 		so_data  (so, nvgl_comparison_op(cso->stencil[0].func));
-		so_data  (so, cso->stencil[0].ref_value);
+		so_method(so, tesla, NV50TCL_STENCIL_FRONT_MASK, 2);
 		so_data  (so, cso->stencil[0].writemask);
 		so_data  (so, cso->stencil[0].valuemask);
 	} else {
@@ -483,8 +486,7 @@ nv50_depth_stencil_alpha_state_create(struct pipe_context *pipe,
 		so_data  (so, nvgl_stencil_op(cso->stencil[1].zfail_op));
 		so_data  (so, nvgl_stencil_op(cso->stencil[1].zpass_op));
 		so_data  (so, nvgl_comparison_op(cso->stencil[1].func));
-		so_method(so, tesla, NV50TCL_STENCIL_BACK_FUNC_REF, 3);
-		so_data  (so, cso->stencil[1].ref_value);
+		so_method(so, tesla, NV50TCL_STENCIL_BACK_MASK, 2);
 		so_data  (so, cso->stencil[1].writemask);
 		so_data  (so, cso->stencil[1].valuemask);
 	} else {
@@ -633,6 +635,16 @@ nv50_set_blend_color(struct pipe_context *pipe,
 	nv50->dirty |= NV50_NEW_BLEND_COLOUR;
 }
 
+ static void
+nv50_set_stencil_ref(struct pipe_context *pipe,
+		     const struct pipe_stencil_ref *sr)
+{
+	struct nv50_context *nv50 = nv50_context(pipe);
+
+	nv50->stencil_ref = *sr;
+	nv50->dirty |= NV50_NEW_STENCIL_REF;
+}
+
 static void
 nv50_set_clip_state(struct pipe_context *pipe,
 		    const struct pipe_clip_state *clip)
@@ -711,15 +723,34 @@ nv50_set_vertex_buffers(struct pipe_context *pipe, unsigned count,
 	nv50->dirty |= NV50_NEW_ARRAYS;
 }
 
+static void *
+nv50_vtxelts_state_create(struct pipe_context *pipe,
+			  unsigned num_elements,
+			  const struct pipe_vertex_element *elements)
+{
+	struct nv50_vtxelt_stateobj *cso = CALLOC_STRUCT(nv50_vtxelt_stateobj);
+
+	assert(num_elements < 16); /* not doing fallbacks yet */
+	cso->num_elements = num_elements;
+	memcpy(cso->pipe, elements, num_elements * sizeof(*elements));
+
+	nv50_vtxelt_construct(cso);
+
+	return (void *)cso;
+}
+
 static void
-nv50_set_vertex_elements(struct pipe_context *pipe, unsigned count,
-			 const struct pipe_vertex_element *ve)
+nv50_vtxelts_state_delete(struct pipe_context *pipe, void *hwcso)
+{
+	FREE(hwcso);
+}
+
+static void
+nv50_vtxelts_state_bind(struct pipe_context *pipe, void *hwcso)
 {
 	struct nv50_context *nv50 = nv50_context(pipe);
 
-	memcpy(nv50->vtxelt, ve, sizeof(*ve) * count);
-	nv50->vtxelt_nr = count;
-
+	nv50->vtxelt = hwcso;
 	nv50->dirty |= NV50_NEW_ARRAYS;
 }
 
@@ -761,6 +792,7 @@ nv50_init_state_functions(struct nv50_context *nv50)
 	nv50->pipe.delete_gs_state = nv50_gp_state_delete;
 
 	nv50->pipe.set_blend_color = nv50_set_blend_color;
+        nv50->pipe.set_stencil_ref = nv50_set_stencil_ref;
 	nv50->pipe.set_clip_state = nv50_set_clip_state;
 	nv50->pipe.set_constant_buffer = nv50_set_constant_buffer;
 	nv50->pipe.set_framebuffer_state = nv50_set_framebuffer_state;
@@ -768,7 +800,10 @@ nv50_init_state_functions(struct nv50_context *nv50)
 	nv50->pipe.set_scissor_state = nv50_set_scissor_state;
 	nv50->pipe.set_viewport_state = nv50_set_viewport_state;
 
+	nv50->pipe.create_vertex_elements_state = nv50_vtxelts_state_create;
+	nv50->pipe.delete_vertex_elements_state = nv50_vtxelts_state_delete;
+	nv50->pipe.bind_vertex_elements_state = nv50_vtxelts_state_bind;
+
 	nv50->pipe.set_vertex_buffers = nv50_set_vertex_buffers;
-	nv50->pipe.set_vertex_elements = nv50_set_vertex_elements;
 }
 

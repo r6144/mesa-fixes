@@ -114,13 +114,13 @@ static void calculate_curbe_offsets( struct brw_context *brw )
       brw->curbe.total_size = reg;
 
       if (0)
-	 _mesa_printf("curbe wm %d+%d clip %d+%d vs %d+%d\n",
-		      brw->curbe.wm_start,
-		      brw->curbe.wm_size,
-		      brw->curbe.clip_start,
-		      brw->curbe.clip_size,
-		      brw->curbe.vs_start,
-		      brw->curbe.vs_size );
+	 printf("curbe wm %d+%d clip %d+%d vs %d+%d\n",
+		brw->curbe.wm_start,
+		brw->curbe.wm_size,
+		brw->curbe.clip_start,
+		brw->curbe.clip_size,
+		brw->curbe.vs_start,
+		brw->curbe.vs_size );
 
       brw->state.dirty.brw |= BRW_NEW_CURBE_OFFSETS;
    }
@@ -198,7 +198,7 @@ static void prepare_constant_buffer(struct brw_context *brw)
       return;
    }
 
-   buf = (GLfloat *) _mesa_calloc(bufsz);
+   buf = (GLfloat *) calloc(1, bufsz);
 
    /* fragment shader constants */
    if (brw->curbe.wm_size) {
@@ -279,13 +279,13 @@ static void prepare_constant_buffer(struct brw_context *brw)
 
    if (0) {
       for (i = 0; i < sz*16; i+=4) 
-	 _mesa_printf("curbe %d.%d: %f %f %f %f\n", i/8, i&4,
-		      buf[i+0], buf[i+1], buf[i+2], buf[i+3]);
+	 printf("curbe %d.%d: %f %f %f %f\n", i/8, i&4,
+		buf[i+0], buf[i+1], buf[i+2], buf[i+3]);
 
-      _mesa_printf("last_buf %p buf %p sz %d/%d cmp %d\n",
-		   brw->curbe.last_buf, buf,
-		   bufsz, brw->curbe.last_bufsz,
-		   brw->curbe.last_buf ? memcmp(buf, brw->curbe.last_buf, bufsz) : -1);
+      printf("last_buf %p buf %p sz %d/%d cmp %d\n",
+	     brw->curbe.last_buf, buf,
+	     bufsz, brw->curbe.last_bufsz,
+	     brw->curbe.last_buf ? memcmp(buf, brw->curbe.last_buf, bufsz) : -1);
    }
 
    if (brw->curbe.curbe_bo != NULL &&
@@ -293,20 +293,20 @@ static void prepare_constant_buffer(struct brw_context *brw)
        bufsz == brw->curbe.last_bufsz &&
        memcmp(buf, brw->curbe.last_buf, bufsz) == 0) {
       /* constants have not changed */
-      _mesa_free(buf);
+      free(buf);
    } 
    else {
       /* constants have changed */
       if (brw->curbe.last_buf)
-	 _mesa_free(brw->curbe.last_buf);
+	 free(brw->curbe.last_buf);
 
       brw->curbe.last_buf = buf;
       brw->curbe.last_bufsz = bufsz;
 
       if (brw->curbe.curbe_bo != NULL &&
-	  (brw->curbe.need_new_bo ||
-	   brw->curbe.curbe_next_offset + bufsz > brw->curbe.curbe_bo->size))
+	  brw->curbe.curbe_next_offset + bufsz > brw->curbe.curbe_bo->size)
       {
+	 drm_intel_gem_bo_unmap_gtt(brw->curbe.curbe_bo);
 	 dri_bo_unreference(brw->curbe.curbe_bo);
 	 brw->curbe.curbe_bo = NULL;
       }
@@ -318,6 +318,7 @@ static void prepare_constant_buffer(struct brw_context *brw)
 	 brw->curbe.curbe_bo = dri_bo_alloc(brw->intel.bufmgr, "CURBE",
 					    4096, 1 << 6);
 	 brw->curbe.curbe_next_offset = 0;
+	 drm_intel_gem_bo_map_gtt(brw->curbe.curbe_bo);
       }
 
       brw->curbe.curbe_offset = brw->curbe.curbe_next_offset;
@@ -326,7 +327,9 @@ static void prepare_constant_buffer(struct brw_context *brw)
 
       /* Copy data to the buffer:
        */
-      dri_bo_subdata(brw->curbe.curbe_bo, brw->curbe.curbe_offset, bufsz, buf);
+      memcpy(brw->curbe.curbe_bo->virtual + brw->curbe.curbe_offset,
+	     buf,
+	     bufsz);
    }
 
    brw_add_validated_bo(brw, brw->curbe.curbe_bo);

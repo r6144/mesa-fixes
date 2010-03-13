@@ -148,9 +148,9 @@ st_delete_program(GLcontext *ctx, struct gl_program *prog)
             stfp->driver_shader = NULL;
          }
          
-         if (stfp->state.tokens) {
-            st_free_tokens(stfp->state.tokens);
-            stfp->state.tokens = NULL;
+         if (stfp->tgsi.tokens) {
+            st_free_tokens(stfp->tgsi.tokens);
+            stfp->tgsi.tokens = NULL;
          }
 
          if (stfp->bitmap_program) {
@@ -177,9 +177,9 @@ static GLboolean st_is_program_native( GLcontext *ctx,
 }
 
 
-static void st_program_string_notify( GLcontext *ctx,
-				      GLenum target,
-				      struct gl_program *prog )
+static GLboolean st_program_string_notify( GLcontext *ctx,
+                                           GLenum target,
+                                           struct gl_program *prog )
 {
    struct st_context *st = st_context(ctx);
 
@@ -193,9 +193,9 @@ static void st_program_string_notify( GLcontext *ctx,
          stfp->driver_shader = NULL;
       }
 
-      if (stfp->state.tokens) {
-         st_free_tokens(stfp->state.tokens);
-         stfp->state.tokens = NULL;
+      if (stfp->tgsi.tokens) {
+         st_free_tokens(stfp->tgsi.tokens);
+         stfp->tgsi.tokens = NULL;
       }
 
       if (st->fp == stfp)
@@ -211,6 +211,9 @@ static void st_program_string_notify( GLcontext *ctx,
       if (st->vp == stvp)
 	 st->dirty.st |= ST_NEW_VERTEX_PROGRAM;
    }
+
+   /* XXX check if program is legal, within limits */
+   return GL_TRUE;
 }
 
 

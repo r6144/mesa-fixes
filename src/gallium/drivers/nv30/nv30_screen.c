@@ -20,9 +20,6 @@ struct nouveau_winsys {
 
 	struct pipe_screen *pscreen;
 
-	unsigned nr_pctx;
-	struct pipe_context **pctx;
-
 	struct pipe_surface *front;
 };
 
@@ -31,7 +28,7 @@ nv30_screen_get_param(struct pipe_screen *pscreen, int param)
 {
 	switch (param) {
 	case PIPE_CAP_MAX_TEXTURE_IMAGE_UNITS:
-		return 16;
+		return 8;
 	case PIPE_CAP_NPOT_TEXTURES:
 		return 0;
 	case PIPE_CAP_TWO_SIDED_STENCIL:
@@ -67,6 +64,8 @@ nv30_screen_get_param(struct pipe_screen *pscreen, int param)
 	case NOUVEAU_CAP_HW_VTXBUF:
 	case NOUVEAU_CAP_HW_IDXBUF:
 		return 1;
+	case PIPE_CAP_MAX_COMBINED_SAMPLERS:
+		return 16;
 	case PIPE_CAP_INDEP_BLEND_ENABLE:
 		return 0;
 	case PIPE_CAP_INDEP_BLEND_FUNC:
@@ -113,8 +112,8 @@ nv30_screen_surface_format_supported(struct pipe_screen *pscreen,
 
 	if (tex_usage & PIPE_TEXTURE_USAGE_RENDER_TARGET) {
 		switch (format) {
-		case PIPE_FORMAT_A8R8G8B8_UNORM:
-		case PIPE_FORMAT_R5G6B5_UNORM:
+		case PIPE_FORMAT_B8G8R8A8_UNORM:
+		case PIPE_FORMAT_B5G6R5_UNORM:
 			return TRUE;
 		default:
 			break;
@@ -122,12 +121,12 @@ nv30_screen_surface_format_supported(struct pipe_screen *pscreen,
 	} else
 	if (tex_usage & PIPE_TEXTURE_USAGE_DEPTH_STENCIL) {
 		switch (format) {
-		case PIPE_FORMAT_Z24S8_UNORM:
-		case PIPE_FORMAT_Z24X8_UNORM:
+		case PIPE_FORMAT_S8Z24_UNORM:
+		case PIPE_FORMAT_X8Z24_UNORM:
 			return TRUE;
 		case PIPE_FORMAT_Z16_UNORM:
 			if (front) {
-				return (front->format == PIPE_FORMAT_R5G6B5_UNORM);
+				return (front->format == PIPE_FORMAT_B5G6R5_UNORM);
 			}
 			return TRUE;
 		default:
@@ -135,16 +134,16 @@ nv30_screen_surface_format_supported(struct pipe_screen *pscreen,
 		}
 	} else {
 		switch (format) {
-		case PIPE_FORMAT_A8R8G8B8_UNORM:
-		case PIPE_FORMAT_A1R5G5B5_UNORM:
-		case PIPE_FORMAT_A4R4G4B4_UNORM:
-		case PIPE_FORMAT_R5G6B5_UNORM:
+		case PIPE_FORMAT_B8G8R8A8_UNORM:
+		case PIPE_FORMAT_B5G5R5A1_UNORM:
+		case PIPE_FORMAT_B4G4R4A4_UNORM:
+		case PIPE_FORMAT_B5G6R5_UNORM:
 		case PIPE_FORMAT_L8_UNORM:
 		case PIPE_FORMAT_A8_UNORM:
 		case PIPE_FORMAT_I8_UNORM:
-		case PIPE_FORMAT_A8L8_UNORM:
+		case PIPE_FORMAT_L8A8_UNORM:
 		case PIPE_FORMAT_Z16_UNORM:
-		case PIPE_FORMAT_Z24S8_UNORM:
+		case PIPE_FORMAT_S8Z24_UNORM:
 			return TRUE;
 		default:
 			break;
@@ -212,9 +211,9 @@ nv30_screen_create(struct pipe_winsys *ws, struct nouveau_device *dev)
 	pscreen->get_param = nv30_screen_get_param;
 	pscreen->get_paramf = nv30_screen_get_paramf;
 	pscreen->is_format_supported = nv30_screen_surface_format_supported;
+	pscreen->context_create = nv30_create;
 
 	nv30_screen_init_miptree_functions(pscreen);
-	nv30_screen_init_transfer_functions(pscreen);
 
 	/* 3D object */
 	switch (dev->chipset & 0xf0) {

@@ -275,28 +275,28 @@ copy_packed_data(ScrnInfoPtr pScrn,
    int i, j;
    struct pipe_texture **dst = port->yuv[port->current_set];
    struct pipe_transfer *ytrans, *utrans, *vtrans;
-   struct pipe_screen *screen = port->r->pipe->screen;
+   struct pipe_context *pipe = port->r->pipe;
    char *ymap, *vmap, *umap;
    unsigned char y1, y2, u, v;
    int yidx, uidx, vidx;
    int y_array_size = w * h;
 
-   ytrans = screen->get_tex_transfer(screen, dst[0],
-                                     0, 0, 0,
-                                     PIPE_TRANSFER_WRITE,
-                                     left, top, w, h);
-   utrans = screen->get_tex_transfer(screen, dst[1],
-                                     0, 0, 0,
-                                     PIPE_TRANSFER_WRITE,
-                                     left, top, w, h);
-   vtrans = screen->get_tex_transfer(screen, dst[2],
-                                     0, 0, 0,
-                                     PIPE_TRANSFER_WRITE,
-                                     left, top, w, h);
+   ytrans = pipe->get_tex_transfer(pipe, dst[0],
+                                   0, 0, 0,
+                                   PIPE_TRANSFER_WRITE,
+                                   left, top, w, h);
+   utrans = pipe->get_tex_transfer(pipe, dst[1],
+                                   0, 0, 0,
+                                   PIPE_TRANSFER_WRITE,
+                                   left, top, w, h);
+   vtrans = pipe->get_tex_transfer(pipe, dst[2],
+                                   0, 0, 0,
+                                   PIPE_TRANSFER_WRITE,
+                                   left, top, w, h);
 
-   ymap = (char*)screen->transfer_map(screen, ytrans);
-   umap = (char*)screen->transfer_map(screen, utrans);
-   vmap = (char*)screen->transfer_map(screen, vtrans);
+   ymap = (char*)pipe->transfer_map(pipe, ytrans);
+   umap = (char*)pipe->transfer_map(pipe, utrans);
+   vmap = (char*)pipe->transfer_map(pipe, vtrans);
 
    yidx = uidx = vidx = 0;
 
@@ -362,12 +362,12 @@ copy_packed_data(ScrnInfoPtr pScrn,
       break;
    }
 
-   screen->transfer_unmap(screen, ytrans);
-   screen->transfer_unmap(screen, utrans);
-   screen->transfer_unmap(screen, vtrans);
-   screen->tex_transfer_destroy(ytrans);
-   screen->tex_transfer_destroy(utrans);
-   screen->tex_transfer_destroy(vtrans);
+   pipe->transfer_unmap(pipe, ytrans);
+   pipe->transfer_unmap(pipe, utrans);
+   pipe->transfer_unmap(pipe, vtrans);
+   pipe->tex_transfer_destroy(pipe, ytrans);
+   pipe->tex_transfer_destroy(pipe, utrans);
+   pipe->tex_transfer_destroy(pipe, vtrans);
 }
 
 
@@ -388,6 +388,9 @@ draw_yuv(struct xorg_xv_port_priv *port,
 {
    struct pipe_texture **textures = port->yuv[port->current_set];
 
+   /*debug_printf("  draw_yuv([%d, %d, %d ,%d], [%d, %d, %d, %d])\n",
+                src_x, src_y, src_w, src_h,
+                dst_x, dst_y, dst_w, dst_h);*/
    renderer_draw_yuv(port->r,
                      src_x, src_y, src_w, src_h,
                      dst_x, dst_y, dst_w, dst_h,
@@ -489,6 +492,9 @@ display_video(ScrnInfoPtr pScrn, struct xorg_xv_port_priv *pPriv, int id,
    exaMoveInPixmap(pPixmap);
    dst = exaGetPixmapDriverPrivate(pPixmap);
 
+   /*debug_printf("display_video([%d, %d, %d, %d], [%d, %d, %d, %d])\n",
+     src_x, src_y, src_w, src_h, dstX, dstY, dst_w, dst_h);*/
+
    if (dst && !dst->tex) {
 	xorg_exa_set_shared_usage(pPixmap);
 	pScrn->pScreen->ModifyPixmapHeader(pPixmap, 0, 0, 0, 0, 0, NULL);
@@ -539,8 +545,9 @@ display_video(ScrnInfoPtr pScrn, struct xorg_xv_port_priv *pPriv, int id,
       offset_w = dst_w - w;
       offset_h = dst_h - h;
 
-      draw_yuv(pPriv, src_x + offset_x*diff_x, src_y + offset_y*diff_y,
-               src_w - offset_w*diff_x, src_h - offset_h*diff_x,
+      draw_yuv(pPriv,
+               src_x + offset_x*diff_x, src_y + offset_y*diff_y,
+               src_w - offset_w*diff_x, src_h - offset_h*diff_y,
                x, y, w, h);
 
       pbox++;

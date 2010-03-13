@@ -293,18 +293,18 @@ radeonFillInModes( __DRIscreen *psp,
 					  depth_bits_array, stencil_bits_array,
 					  depth_buffer_factor, back_buffer_modes,
 					  back_buffer_factor, msaa_samples_array,
-					  1);
+					  1, GL_TRUE);
 	configs_a8r8g8b8 = driCreateConfigs(GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
 					    depth_bits_array, stencil_bits_array,
 					    1, back_buffer_modes, 1,
-					    msaa_samples_array, 1);
+					    msaa_samples_array, 1, GL_TRUE);
 	configs = driConcatConfigs(configs_r5g6b5, configs_a8r8g8b8);
    } else
 	configs = driCreateConfigs(GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
 				   depth_bits_array, stencil_bits_array,
 				   depth_buffer_factor,
 				   back_buffer_modes, back_buffer_factor,
-				   msaa_samples_array, 1);
+				   msaa_samples_array, 1, GL_TRUE);
 
     if (configs == NULL) {
 	fprintf( stderr, "[%s:%u] Error creating FBConfig!\n",
@@ -826,6 +826,7 @@ static int radeon_set_screen_flags(radeonScreenPtr screen, int device_id)
    case PCI_CHIP_RS880_9712:
    case PCI_CHIP_RS880_9713:
    case PCI_CHIP_RS880_9714:
+   case PCI_CHIP_RS880_9715:
       screen->chip_family = CHIP_FAMILY_RS880;
       screen->chip_flags = RADEON_CHIPSET_TCL;
       break;
@@ -1479,7 +1480,7 @@ radeonCreateBuffer( __DRIscreen *driScrnPriv,
     if (!rfb)
       return GL_FALSE;
 
-    _mesa_initialize_framebuffer(&rfb->base, mesaVis);
+    _mesa_initialize_window_framebuffer(&rfb->base, mesaVis);
 
     if (mesaVis->redBits == 5)
         rgbFormat = _mesa_little_endian() ? MESA_FORMAT_RGB565 : MESA_FORMAT_RGB565_REV;
@@ -1676,7 +1677,8 @@ __DRIconfig **radeonInitScreen2(__DRIscreen *psp)
 				     back_buffer_modes,
 				     ARRAY_SIZE(back_buffer_modes),
 				     msaa_samples_array,
-				     ARRAY_SIZE(msaa_samples_array));
+				     ARRAY_SIZE(msaa_samples_array),
+				     GL_TRUE);
       if (configs == NULL)
 	 configs = new_configs;
       else

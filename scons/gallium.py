@@ -110,8 +110,21 @@ def generate(env):
             env['toolchain'] = 'wcesdk'
     env.Tool(env['toolchain'])
 
-    if os.environ.has_key('CC'):
-        env['CC'] = os.environ['CC']
+    if env['platform'] == 'embedded':
+        # Allow overriding compiler from environment
+        if os.environ.has_key('CC'):
+            env['CC'] = os.environ['CC']
+            # Update CCVERSION to match
+            pipe = SCons.Action._subproc(env, [env['CC'], '--version'],
+                                         stdin = 'devnull',
+                                         stderr = 'devnull',
+                                         stdout = subprocess.PIPE)
+            if pipe.wait() == 0:
+                line = pipe.stdout.readline()
+                match = re.search(r'[0-9]+(\.[0-9]+)+', line)
+                if match:
+                    env['CCVERSION'] = match.group(0)
+            
 
     env['gcc'] = 'gcc' in os.path.basename(env['CC']).split('-')
     env['msvc'] = env['CC'] == 'cl'
@@ -142,7 +155,9 @@ def generate(env):
     # different scons versions building the same source file
     env['build'] = build_dir
     env.SConsignFile(os.path.join(build_dir, '.sconsign'))
-    env.CacheDir('build/cache')
+    if 'SCONS_CACHE_DIR' in os.environ:
+        print 'scons: Using build cache in %s.' % (os.environ['SCONS_CACHE_DIR'],)
+        env.CacheDir(os.environ['SCONS_CACHE_DIR'])
     env['CONFIGUREDIR'] = os.path.join(build_dir, 'conf')
     env['CONFIGURELOG'] = os.path.join(os.path.abspath(build_dir), 'config.log')
 
@@ -164,8 +179,9 @@ def generate(env):
             '_WINDOWS',
             #'_UNICODE',
             #'UNICODE',
-            ('_WIN32_WINNT', '0x0501'), # minimum required OS version
-            ('WINVER', '0x0501'),
+            # http://msdn.microsoft.com/en-us/library/aa383745.aspx
+            ('_WIN32_WINNT', '0x0601'),
+            ('WINVER', '0x0601'),
         ]
         if msvc and env['toolchain'] != 'winddk':
             cppdefines += [
@@ -230,7 +246,7 @@ def generate(env):
         cppdefines += ['PIPE_SUBSYSTEM_WINDOWS_CE']
         cppdefines += ['PIPE_SUBSYSTEM_WINDOWS_CE_OGL']
     if platform == 'embedded':
-        cppdefines += ['PIPE_SUBSYSTEM_EMBEDDED']
+        cppdefines += ['PIPE_OS_EMBEDDED']
     env.Append(CPPDEFINES = cppdefines)
 
     # C compiler options
@@ -238,16 +254,7 @@ def generate(env):
     cxxflags = [] # C++
     ccflags = [] # C & C++
     if gcc:
-        ccversion = ''
-        pipe = SCons.Action._subproc(env, [env['CC'], '--version'],
-                                     stdin = 'devnull',
-                                     stderr = 'devnull',
-                                     stdout = subprocess.PIPE)
-        if pipe.wait() == 0:
-            line = pipe.stdout.readline()
-            match = re.search(r'[0-9]+(\.[0-9]+)+', line)
-            if match:
-            	ccversion = match.group(0)
+        ccversion = env['CCVERSION']
         if debug:
             ccflags += ['-O0', '-g3']
         elif ccversion.startswith('4.2.'):
@@ -277,10 +284,10 @@ def generate(env):
                 ccflags += [
                     '-mmmx', '-msse', '-msse2', # enable SIMD intrinsics
                 ]
-        	if distutils.version.LooseVersion(ccversion) >= distutils.version.LooseVersion('4.2'):
-		    ccflags += [
-                    	'-mstackrealign', # ensure stack is aligned
-		    ]
+            if distutils.version.LooseVersion(ccversion) >= distutils.version.LooseVersion('4.2'):
+                ccflags += [
+                    '-mstackrealign', # ensure stack is aligned
+                ]
         if env['machine'] == 'x86_64':
             ccflags += ['-m64']
         # See also:
@@ -297,12 +304,12 @@ def generate(env):
             '-std=gnu99',
         ]
         if distutils.version.LooseVersion(ccversion) >= distutils.version.LooseVersion('4.2'):
-	    ccflags += [
-            	'-Werror=pointer-arith',
-	    ]
-	    cflags += [
-            	'-Werror=declaration-after-statement',
-	    ]
+            ccflags += [
+                '-Werror=pointer-arith',
+            ]
+            cflags += [
+                '-Werror=declaration-after-statement',
+            ]
     if msvc:
         # See also:
         # - http://msdn.microsoft.com/en-us/library/19z1t1wy.aspx

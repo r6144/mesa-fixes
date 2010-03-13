@@ -195,8 +195,21 @@ intel_update_renderbuffers(__DRIcontext *context, __DRIdrawable *drawable)
    __DRIscreen *screen;
    int i, count;
    unsigned int attachments[10];
-   uint32_t name;
    const char *region_name;
+
+   /* If we're rendering to the fake front buffer, make sure all the
+    * pending drawing has landed on the real front buffer.  Otherwise
+    * when we eventually get to DRI2GetBuffersWithFormat the stale
+    * real front buffer contents will get copied to the new fake front
+    * buffer.
+    */
+   if (intel->is_front_buffer_rendering)
+      intel_flush(&intel->ctx, GL_FALSE);
+
+   /* Set this up front, so that in case our buffers get invalidated
+    * while we're getting new buffers, we don't clobber the stamp and
+    * thus ignore the invalidate. */
+   drawable->lastStamp = drawable->dri2.stamp;
 
    if (INTEL_DEBUG & DEBUG_DRI)
       fprintf(stderr, "enter %s, drawable %p\n", __func__, drawable);
@@ -324,11 +337,8 @@ intel_update_renderbuffers(__DRIcontext *context, __DRIdrawable *drawable)
        if (rb == NULL)
 	  continue;
 
-       if (rb->region) {
-	  dri_bo_flink(rb->region->buffer, &name);
-	  if (name == buffers[i].name)
+       if (rb->region && rb->region->name == buffers[i].name)
 	     continue;
-       }
 
        if (INTEL_DEBUG & DEBUG_DRI)
 	  fprintf(stderr,
@@ -360,11 +370,8 @@ intel_update_renderbuffers(__DRIcontext *context, __DRIdrawable *drawable)
 	  if (rb != NULL) {
 	     struct intel_region *stencil_region = NULL;
 
-	     if (rb->region) {
-		dri_bo_flink(rb->region->buffer, &name);
-		if (name == buffers[i].name)
+	     if (rb->region && rb->region->name == buffers[i].name)
 		   continue;
-	     }
 
 	     intel_region_reference(&stencil_region, region);
 	     intel_renderbuffer_set_region(rb, stencil_region);
@@ -373,8 +380,29 @@ intel_update_renderbuffers(__DRIcontext *context, __DRIdrawable *drawable)
        }
    }
 
-   drawable->validBuffers = GL_TRUE;
    driUpdateFramebufferSize(&intel->ctx, drawable);
+}
+
+void
+intel_prepare_render(struct intel_context *intel)
+{
+   __DRIcontext *driContext = intel->driContext;
+   __DRIdrawable *drawable;
+
+   drawable = intel->driDrawable;
+   if (drawable->dri2.stamp != driContext->dri2.draw_stamp) {
+      if (drawable->lastStamp != drawable->dri2.stamp)
+	 intel_update_renderbuffers(driContext, drawable);
+      intel_draw_buffer(&intel->ctx, intel->ctx.DrawBuffer);
+      driContext->dri2.draw_stamp = drawable->dri2.stamp;
+   }
+
+   drawable = intel->driReadDrawable;
+   if (drawable->dri2.stamp != driContext->dri2.read_stamp) {
+      if (drawable->lastStamp != drawable->dri2.stamp)
+	 intel_update_renderbuffers(driContext, drawable);
+      driContext->dri2.read_stamp = drawable->dri2.stamp;
+   }
 }
 
 void
@@ -382,31 +410,13 @@ intel_viewport(GLcontext *ctx, GLint x, GLint y, GLsizei w, GLsizei h)
 {
     struct intel_context *intel = intel_context(ctx);
     __DRIcontext *driContext = intel->driContext;
-    void (*old_viewport)(GLcontext *ctx, GLint x, GLint y,
-			 GLsizei w, GLsizei h);
 
-    if (!intel->meta.internal_viewport_call && ctx->DrawBuffer->Name == 0) {
-       /* If we're rendering to the fake front buffer, make sure all the pending
-	* drawing has landed on the real front buffer.  Otherwise when we
-	* eventually get to DRI2GetBuffersWithFormat the stale real front
-	* buffer contents will get copied to the new fake front buffer.
-	*/
-       if (intel->is_front_buffer_rendering) {
-	  intel_flush(ctx, GL_FALSE);
-       }
-
-       intel_update_renderbuffers(driContext, driContext->driDrawablePriv);
-       if (driContext->driDrawablePriv != driContext->driReadablePriv)
-	  intel_update_renderbuffers(driContext, driContext->driReadablePriv);
+    if (!intel->using_dri2_swapbuffers &&
+	!intel->meta.internal_viewport_call && ctx->DrawBuffer->Name == 0) {
+       dri2InvalidateDrawable(driContext->driDrawablePriv);
+       dri2InvalidateDrawable(driContext->driReadablePriv);
     }
-
-    old_viewport = ctx->Driver.Viewport;
-    ctx->Driver.Viewport = NULL;
-    intel->driDrawable = driContext->driDrawablePriv;
-    intel_draw_buffer(ctx, intel->ctx.DrawBuffer);
-    ctx->Driver.Viewport = old_viewport;
 }
-
 
 static const struct dri_debug_control debug_control[] = {
    { "tex",   DEBUG_TEXTURE},
@@ -581,12 +591,16 @@ intelInitContext(struct intel_context *intel,
    GLcontext *ctx = &intel->ctx;
    GLcontext *shareCtx = (GLcontext *) sharedContextPrivate;
    __DRIscreen *sPriv = driContextPriv->driScreenPriv;
-   intelScreenPrivate *intelScreen = (intelScreenPrivate *) sPriv->private;
+   struct intel_screen *intelScreen = sPriv->private;
    int bo_reuse_mode;
+
+   /* we can't do anything without a connection to the device */
+   if (intelScreen->bufmgr == NULL)
+      return GL_FALSE;
 
    if (!_mesa_initialize_context(&intel->ctx, mesaVis, shareCtx,
                                  functions, (void *) intel)) {
-      _mesa_printf("%s: failed to init mesa context\n", __FUNCTION__);
+      printf("%s: failed to init mesa context\n", __FUNCTION__);
       return GL_FALSE;
    }
 
@@ -596,7 +610,11 @@ intelInitContext(struct intel_context *intel,
    intel->driContext = driContextPriv;
    intel->driFd = sPriv->fd;
 
-   if (IS_965(intel->intelScreen->deviceID)) {
+   if (IS_GEN6(intel->intelScreen->deviceID)) {
+      intel->gen = 6;
+      intel->needs_ff_sync = GL_TRUE;
+      intel->has_luminance_srgb = GL_TRUE;
+   } else if (IS_965(intel->intelScreen->deviceID)) {
       intel->gen = 4;
    } else if (IS_9XX(intel->intelScreen->deviceID)) {
       intel->gen = 3;
@@ -718,11 +736,6 @@ intelInitContext(struct intel_context *intel,
 
    intel->RenderIndex = ~0;
 
-   if (intel->gen >= 4 && !intel->intelScreen->irq_active) {
-      _mesa_printf("IRQs not active.  Exiting\n");
-      exit(1);
-   }
-
    intelInitExtensions(ctx);
 
    INTEL_DEBUG = driParseDebugString(getenv("INTEL_DEBUG"), debug_control);
@@ -742,12 +755,6 @@ intelInitContext(struct intel_context *intel,
    }
    intel->use_texture_tiling = driQueryOptionb(&intel->optionCache,
 					       "texture_tiling");
-   if (intel->use_texture_tiling &&
-       !intel->intelScreen->kernel_exec_fencing) {
-      fprintf(stderr, "No kernel support for execution fencing, "
-	      "disabling texture tiling\n");
-      intel->use_texture_tiling = GL_FALSE;
-   }
    intel->use_early_z = driQueryOptionb(&intel->optionCache, "early_z");
 
    intel->prim.primitive = ~0;
@@ -872,22 +879,13 @@ intelMakeCurrent(__DRIcontext * driContextPriv,
    if (driContextPriv) {
       struct gl_framebuffer *fb = driDrawPriv->driverPrivate;
       struct gl_framebuffer *readFb = driReadPriv->driverPrivate;
- 
-      intel_update_renderbuffers(driContextPriv, driDrawPriv);
-      if (driDrawPriv != driReadPriv)
-	 intel_update_renderbuffers(driContextPriv, driReadPriv);
-
-      /* set GLframebuffer size to match window, if needed */
-      driUpdateFramebufferSize(&intel->ctx, driDrawPriv);
-
-      if (driReadPriv != driDrawPriv) {
-	 driUpdateFramebufferSize(&intel->ctx, driReadPriv);
-      }
 
       _mesa_make_current(&intel->ctx, fb, readFb);
       intel->driReadDrawable = driReadPriv;
       intel->driDrawable = driDrawPriv;
-      intel_draw_buffer(&intel->ctx, fb);
+      driContextPriv->dri2.draw_stamp = driDrawPriv->dri2.stamp - 1;
+      driContextPriv->dri2.read_stamp = driReadPriv->dri2.stamp - 1;
+      intel_prepare_render(intel);
    }
    else {
       _mesa_make_current(NULL, NULL, NULL);

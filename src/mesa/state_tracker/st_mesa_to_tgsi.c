@@ -62,6 +62,10 @@ struct st_translate {
    struct ureg_src inputs[PIPE_MAX_SHADER_INPUTS];
    struct ureg_dst address[1];
    struct ureg_src samplers[PIPE_MAX_SAMPLERS];
+   struct ureg_dst psizregreal;
+   struct ureg_src pointSizeConst;
+   GLint psizoutindex;
+   GLboolean prevInstWrotePsiz;
 
    const GLuint *inputMapping;
    const GLuint *outputMapping;
@@ -150,6 +154,8 @@ dst_register( struct st_translate *t,
       return t->temps[index];
 
    case PROGRAM_OUTPUT:
+      if (index == t->psizoutindex)
+         t->prevInstWrotePsiz = GL_TRUE;
       return t->outputs[t->outputMapping[index]];
 
    case PROGRAM_ADDRESS:
@@ -177,13 +183,13 @@ src_register( struct st_translate *t,
          t->temps[index] = ureg_DECL_temporary( t->ureg );
       return ureg_src(t->temps[index]);
 
-   case PROGRAM_STATE_VAR:
    case PROGRAM_NAMED_PARAM:
    case PROGRAM_ENV_PARAM:
    case PROGRAM_LOCAL_PARAM:
    case PROGRAM_UNIFORM:
       ASSERT(index >= 0);
       return t->constants[index];
+   case PROGRAM_STATE_VAR:
    case PROGRAM_CONSTANT:       /* ie, immediate */
       if (index < 0)
          return ureg_DECL_constant( t->ureg, 0 );
@@ -816,6 +822,8 @@ st_translate_mesa_program(
    t->inputMapping = inputMapping;
    t->outputMapping = outputMapping;
    t->ureg = ureg;
+   t->psizoutindex = -1;
+   t->prevInstWrotePsiz = GL_FALSE;
 
    /*_mesa_print_program(program);*/
 
@@ -825,10 +833,19 @@ st_translate_mesa_program(
    if (procType == TGSI_PROCESSOR_FRAGMENT) {
       struct gl_fragment_program* fp = (struct gl_fragment_program*)program;
       for (i = 0; i < numInputs; i++) {
-         t->inputs[i] = ureg_DECL_fs_input(ureg,
-                                           inputSemanticName[i],
-                                           inputSemanticIndex[i],
-                                           interpMode[i]);
+         if (program->InputFlags[0] & PROG_PARAM_BIT_CYL_WRAP) {
+            t->inputs[i] = ureg_DECL_fs_input_cyl(ureg,
+                                                  inputSemanticName[i],
+                                                  inputSemanticIndex[i],
+                                                  interpMode[i],
+                                                  TGSI_CYLINDRICAL_WRAP_X);
+         }
+         else {
+            t->inputs[i] = ureg_DECL_fs_input(ureg,
+                                              inputSemanticName[i],
+                                              inputSemanticIndex[i],
+                                              interpMode[i]);
+         }
       }
 
       if (program->InputsRead & FRAG_BIT_WPOS) {
@@ -919,6 +936,21 @@ st_translate_mesa_program(
          t->outputs[i] = ureg_DECL_output( ureg,
                                            outputSemanticName[i],
                                            outputSemanticIndex[i] );
+         if ((outputSemanticName[i] == TGSI_SEMANTIC_PSIZE) && program->Id) {
+            static const gl_state_index pointSizeClampState[STATE_LENGTH]
+               = { STATE_INTERNAL, STATE_POINT_SIZE_IMPL_CLAMP, 0, 0, 0 };
+               /* XXX: note we are modifying the incoming shader here!  Need to
+               * do this before emitting the constant decls below, or this
+               * will be missed:
+               */
+            unsigned pointSizeClampConst = _mesa_add_state_reference(program->Parameters,
+                                                                     pointSizeClampState);
+            struct ureg_dst psizregtemp = ureg_DECL_temporary( ureg );
+            t->pointSizeConst = ureg_DECL_constant( ureg, pointSizeClampConst );
+            t->psizregreal = t->outputs[i];
+            t->psizoutindex = i;
+            t->outputs[i] = psizregtemp;
+         }
       }
       if (passthrough_edgeflags)
          emit_edgeflags( t, program );
@@ -986,6 +1018,19 @@ st_translate_mesa_program(
    for (i = 0; i < program->NumInstructions; i++) {
       set_insn_start( t, ureg_get_instruction_number( ureg ));
       compile_instruction( t, &program->Instructions[i] );
+
+      /* note can't do that easily at the end of prog due to
+         possible early return */
+      if (t->prevInstWrotePsiz && program->Id) {
+         set_insn_start( t, ureg_get_instruction_number( ureg ));
+         ureg_MAX( t->ureg, ureg_writemask(t->outputs[t->psizoutindex], WRITEMASK_X),
+                   ureg_src(t->outputs[t->psizoutindex]),
+                   ureg_swizzle(t->pointSizeConst, 1,1,1,1));
+         ureg_MIN( t->ureg, ureg_writemask(t->psizregreal, WRITEMASK_X),
+                   ureg_src(t->outputs[t->psizoutindex]),
+                   ureg_swizzle(t->pointSizeConst, 2,2,2,2));
+      }
+      t->prevInstWrotePsiz = GL_FALSE;
    }
 
    /* Fix up all emitted labels:
@@ -1010,7 +1055,7 @@ out:
 
 
 /**
- * Tokens cannot be free with _mesa_free otherwise the builtin gallium
+ * Tokens cannot be free with free otherwise the builtin gallium
  * malloc debugging will get confused.
  */
 void

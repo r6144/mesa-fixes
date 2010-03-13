@@ -246,7 +246,7 @@ struct intel_context
    __DRIdrawable *driDrawable;
    __DRIdrawable *driReadDrawable;
    __DRIscreen *driScreen;
-   intelScreenPrivate *intelScreen;
+   struct intel_screen *intelScreen;
 
    /**
     * Configuration cache
@@ -345,7 +345,7 @@ extern int INTEL_DEBUG;
 
 #define DBG(...) do {						\
 	if (INTEL_DEBUG & FILE_DEBUG_FLAG)			\
-		_mesa_printf(__VA_ARGS__);			\
+		printf(__VA_ARGS__);			\
 } while(0)
 
 #define PCI_CHIP_845_G			0x2562
@@ -454,6 +454,7 @@ void intel_viewport(GLcontext * ctx, GLint x, GLint y,
 
 void intel_update_renderbuffers(__DRIcontext *context,
 				__DRIdrawable *drawable);
+void intel_prepare_render(struct intel_context *intel);
 
 void i915_set_buf_info_for_region(uint32_t *state, struct intel_region *region,
 				  uint32_t buffer_id);
@@ -472,27 +473,6 @@ static INLINE GLboolean
 is_power_of_two(uint32_t value)
 {
    return (value & (value - 1)) == 0;
-}
-
-static INLINE void
-intel_bo_map_gtt_preferred(struct intel_context *intel,
-			   drm_intel_bo *bo,
-			   GLboolean write)
-{
-   if (intel->intelScreen->kernel_exec_fencing)
-      drm_intel_gem_bo_map_gtt(bo);
-   else
-      drm_intel_bo_map(bo, write);
-}
-
-static INLINE void
-intel_bo_unmap_gtt_preferred(struct intel_context *intel,
-			     drm_intel_bo *bo)
-{
-   if (intel->intelScreen->kernel_exec_fencing)
-      drm_intel_gem_bo_unmap_gtt(bo);
-   else
-      drm_intel_bo_unmap(bo);
 }
 
 #endif

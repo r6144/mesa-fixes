@@ -31,21 +31,6 @@ Wrapper driver.
 LLVM Softpipe
 ^^^^^^^^^^^^^
 
-nVidia nv04
-^^^^^^^^^^^
-
-Deprecated.
-
-nVidia nv10
-^^^^^^^^^^^
-
-Deprecated.
-
-nVidia nv20
-^^^^^^^^^^^
-
-Deprecated.
-
 nVidia nv30
 ^^^^^^^^^^^
 
@@ -102,6 +87,22 @@ Xorg XFree86 DDX
 
 Auxiliary
 ---------
+
+OS
+^^
+
+The OS module contains the abstractions for basic operating system services:
+
+* memory allocation
+* simple message logging
+* obtaining run-time configuration option
+* threading primitives
+
+This is the bare minimum required to port Gallium to a new platform.
+
+The OS module already provides the implementations of these abstractions for
+the most common platforms.  When targeting an embedded platform no
+implementation will be provided -- these must be provided separately.
 
 CSO Cache
 ^^^^^^^^^

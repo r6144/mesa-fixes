@@ -153,7 +153,6 @@ struct brw_blend_state {
    struct brw_surf_ss0 ss0;
 };
 
-
 struct brw_rasterizer_state;
 
 struct brw_immediate_data {
@@ -352,7 +351,7 @@ struct brw_vs_prog_data {
 
 /* Size == 0 if output either not written, or always [0,0,0,1]
  */
-struct brw_vs_ouput_sizes {
+struct brw_vs_output_sizes {
    GLubyte output_size[PIPE_MAX_SHADER_OUTPUTS];
 };
 
@@ -547,25 +546,26 @@ struct brw_context
       const struct brw_blend_state *blend;
       const struct brw_rasterizer_state *rast;
       const struct brw_depth_stencil_state *zstencil;
+      const struct brw_vertex_element_packet *velems;
 
       const struct brw_sampler *sampler[PIPE_MAX_SAMPLERS];
       unsigned num_samplers;
 
       struct pipe_texture *texture[PIPE_MAX_SAMPLERS];
       struct pipe_vertex_buffer vertex_buffer[PIPE_MAX_ATTRIBS];
-      struct pipe_vertex_element vertex_element[PIPE_MAX_ATTRIBS];
-      unsigned num_vertex_elements;
       unsigned num_textures;
       unsigned num_vertex_buffers;
 
       struct pipe_scissor_state scissor;
       struct pipe_viewport_state viewport;
+      struct pipe_stencil_ref stencil_ref;
       struct pipe_framebuffer_state fb;
       struct pipe_clip_state ucp;
       struct pipe_buffer *vertex_constants;
       struct pipe_buffer *fragment_constants;
 
       struct brw_blend_constant_color bcc;
+      struct brw_cc1 cc1_stencil_ref;
       struct brw_polygon_stipple bps;
       struct brw_cc_viewport ccv;
 
@@ -837,6 +837,10 @@ int brw_upload_urb_fence(struct brw_context *brw);
  */
 int brw_upload_cs_urb_state(struct brw_context *brw);
 
+/* brw_context.c
+ */
+struct pipe_context *brw_create_context(struct pipe_screen *screen,
+					void *priv);
 
 /*======================================================================
  * Inline conversion functions.  These are better-typed than the

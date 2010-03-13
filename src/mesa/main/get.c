@@ -7,7 +7,6 @@
 #include "context.h"
 #include "enable.h"
 #include "extensions.h"
-#include "fbobject.h"
 #include "get.h"
 #include "macros.h"
 #include "mtypes.h"
@@ -254,7 +253,7 @@ _mesa_GetBooleanv( GLenum pname, GLboolean *params )
          params[0] = FLOAT_TO_BOOLEAN(ctx->Current.RasterDistance);
          break;
       case GL_CURRENT_RASTER_INDEX:
-         params[0] = FLOAT_TO_BOOLEAN(ctx->Current.RasterIndex);
+         params[0] = FLOAT_TO_BOOLEAN(1.0);
          break;
       case GL_CURRENT_RASTER_POSITION:
          params[0] = FLOAT_TO_BOOLEAN(ctx->Current.RasterPos[0]);
@@ -270,11 +269,16 @@ _mesa_GetBooleanv( GLenum pname, GLboolean *params )
          break;
       case GL_CURRENT_RASTER_TEXTURE_COORDS:
          {
-         const GLuint texUnit = ctx->Texture.CurrentUnit;
-         params[0] = FLOAT_TO_BOOLEAN(ctx->Current.RasterTexCoords[texUnit][0]);
-         params[1] = FLOAT_TO_BOOLEAN(ctx->Current.RasterTexCoords[texUnit][1]);
-         params[2] = FLOAT_TO_BOOLEAN(ctx->Current.RasterTexCoords[texUnit][2]);
-         params[3] = FLOAT_TO_BOOLEAN(ctx->Current.RasterTexCoords[texUnit][3]);
+         const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION,
+                        "glGet(raster tex coords, unit %u)", unit);
+            return;
+         }
+         params[0] = FLOAT_TO_BOOLEAN(ctx->Current.RasterTexCoords[unit][0]);
+         params[1] = FLOAT_TO_BOOLEAN(ctx->Current.RasterTexCoords[unit][1]);
+         params[2] = FLOAT_TO_BOOLEAN(ctx->Current.RasterTexCoords[unit][2]);
+         params[3] = FLOAT_TO_BOOLEAN(ctx->Current.RasterTexCoords[unit][3]);
          }
          break;
       case GL_CURRENT_RASTER_POSITION_VALID:
@@ -282,12 +286,17 @@ _mesa_GetBooleanv( GLenum pname, GLboolean *params )
          break;
       case GL_CURRENT_TEXTURE_COORDS:
          {
-         const GLuint texUnit = ctx->Texture.CurrentUnit;
+         const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION,
+                        "glGet(current tex coords, unit %u)", unit);
+            return;
+         }
          FLUSH_CURRENT(ctx, 0);
-         params[0] = FLOAT_TO_BOOLEAN(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][0]);
-         params[1] = FLOAT_TO_BOOLEAN(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][1]);
-         params[2] = FLOAT_TO_BOOLEAN(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][2]);
-         params[3] = FLOAT_TO_BOOLEAN(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][3]);
+         params[0] = FLOAT_TO_BOOLEAN(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][0]);
+         params[1] = FLOAT_TO_BOOLEAN(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][1]);
+         params[2] = FLOAT_TO_BOOLEAN(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][2]);
+         params[3] = FLOAT_TO_BOOLEAN(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][3]);
          }
          break;
       case GL_DEPTH_BIAS:
@@ -382,7 +391,7 @@ _mesa_GetBooleanv( GLenum pname, GLboolean *params )
          params[0] = INT_TO_BOOLEAN(ctx->Color.ClearIndex);
          break;
       case GL_INDEX_MODE:
-         params[0] = !ctx->DrawBuffer->Visual.rgbMode;
+         params[0] = GL_FALSE;
          break;
       case GL_INDEX_OFFSET:
          params[0] = INT_TO_BOOLEAN(ctx->Pixel.IndexOffset);
@@ -818,7 +827,7 @@ _mesa_GetBooleanv( GLenum pname, GLboolean *params )
          params[0] = ctx->Transform.RescaleNormals;
          break;
       case GL_RGBA_MODE:
-         params[0] = ctx->DrawBuffer->Visual.rgbMode;
+         params[0] = GL_TRUE;
          break;
       case GL_SCISSOR_BOX:
          params[0] = INT_TO_BOOLEAN(ctx->Scissor.X);
@@ -922,7 +931,14 @@ _mesa_GetBooleanv( GLenum pname, GLboolean *params )
          break;
       case GL_TEXTURE_MATRIX:
          {
-         const GLfloat *matrix = ctx->TextureMatrixStack[ctx->Texture.CurrentUnit].Top->m;
+         const GLfloat *matrix;
+         const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION, "glGet(texture matrix %u)",
+                        unit);
+            return;
+         }
+         matrix = ctx->TextureMatrixStack[unit].Top->m;
          params[0] = FLOAT_TO_BOOLEAN(matrix[0]);
          params[1] = FLOAT_TO_BOOLEAN(matrix[1]);
          params[2] = FLOAT_TO_BOOLEAN(matrix[2]);
@@ -942,7 +958,15 @@ _mesa_GetBooleanv( GLenum pname, GLboolean *params )
          }
          break;
       case GL_TEXTURE_STACK_DEPTH:
-         params[0] = INT_TO_BOOLEAN(ctx->TextureMatrixStack[ctx->Texture.CurrentUnit].Depth + 1);
+         {
+         const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION,
+                        "glGet(texture stack depth, unit %u)", unit);
+            return;
+         }
+         params[0] = INT_TO_BOOLEAN(ctx->TextureMatrixStack[unit].Depth + 1);
+         }
          break;
       case GL_UNPACK_ALIGNMENT:
          params[0] = INT_TO_BOOLEAN(ctx->Unpack.Alignment);
@@ -2098,7 +2122,7 @@ _mesa_GetFloatv( GLenum pname, GLfloat *params )
          params[0] = ctx->Current.RasterDistance;
          break;
       case GL_CURRENT_RASTER_INDEX:
-         params[0] = ctx->Current.RasterIndex;
+         params[0] = 1.0;
          break;
       case GL_CURRENT_RASTER_POSITION:
          params[0] = ctx->Current.RasterPos[0];
@@ -2114,11 +2138,16 @@ _mesa_GetFloatv( GLenum pname, GLfloat *params )
          break;
       case GL_CURRENT_RASTER_TEXTURE_COORDS:
          {
-         const GLuint texUnit = ctx->Texture.CurrentUnit;
-         params[0] = ctx->Current.RasterTexCoords[texUnit][0];
-         params[1] = ctx->Current.RasterTexCoords[texUnit][1];
-         params[2] = ctx->Current.RasterTexCoords[texUnit][2];
-         params[3] = ctx->Current.RasterTexCoords[texUnit][3];
+         const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION,
+                        "glGet(raster tex coords, unit %u)", unit);
+            return;
+         }
+         params[0] = ctx->Current.RasterTexCoords[unit][0];
+         params[1] = ctx->Current.RasterTexCoords[unit][1];
+         params[2] = ctx->Current.RasterTexCoords[unit][2];
+         params[3] = ctx->Current.RasterTexCoords[unit][3];
          }
          break;
       case GL_CURRENT_RASTER_POSITION_VALID:
@@ -2126,12 +2155,17 @@ _mesa_GetFloatv( GLenum pname, GLfloat *params )
          break;
       case GL_CURRENT_TEXTURE_COORDS:
          {
-         const GLuint texUnit = ctx->Texture.CurrentUnit;
+         const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION,
+                        "glGet(current tex coords, unit %u)", unit);
+            return;
+         }
          FLUSH_CURRENT(ctx, 0);
-         params[0] = ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][0];
-         params[1] = ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][1];
-         params[2] = ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][2];
-         params[3] = ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][3];
+         params[0] = ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][0];
+         params[1] = ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][1];
+         params[2] = ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][2];
+         params[3] = ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][3];
          }
          break;
       case GL_DEPTH_BIAS:
@@ -2226,7 +2260,7 @@ _mesa_GetFloatv( GLenum pname, GLfloat *params )
          params[0] = (GLfloat)(ctx->Color.ClearIndex);
          break;
       case GL_INDEX_MODE:
-         params[0] = BOOLEAN_TO_FLOAT(!ctx->DrawBuffer->Visual.rgbMode);
+         params[0] = BOOLEAN_TO_FLOAT(GL_FALSE);
          break;
       case GL_INDEX_OFFSET:
          params[0] = (GLfloat)(ctx->Pixel.IndexOffset);
@@ -2662,7 +2696,7 @@ _mesa_GetFloatv( GLenum pname, GLfloat *params )
          params[0] = BOOLEAN_TO_FLOAT(ctx->Transform.RescaleNormals);
          break;
       case GL_RGBA_MODE:
-         params[0] = BOOLEAN_TO_FLOAT(ctx->DrawBuffer->Visual.rgbMode);
+         params[0] = BOOLEAN_TO_FLOAT(GL_TRUE);
          break;
       case GL_SCISSOR_BOX:
          params[0] = (GLfloat)(ctx->Scissor.X);
@@ -2766,7 +2800,14 @@ _mesa_GetFloatv( GLenum pname, GLfloat *params )
          break;
       case GL_TEXTURE_MATRIX:
          {
-         const GLfloat *matrix = ctx->TextureMatrixStack[ctx->Texture.CurrentUnit].Top->m;
+         const GLfloat *matrix;
+         const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION, "glGet(texture matrix %u)",
+                        unit);
+            return;
+         }
+         matrix = ctx->TextureMatrixStack[unit].Top->m;
          params[0] = matrix[0];
          params[1] = matrix[1];
          params[2] = matrix[2];
@@ -2786,7 +2827,15 @@ _mesa_GetFloatv( GLenum pname, GLfloat *params )
          }
          break;
       case GL_TEXTURE_STACK_DEPTH:
-         params[0] = (GLfloat)(ctx->TextureMatrixStack[ctx->Texture.CurrentUnit].Depth + 1);
+         {
+         const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION,
+                        "glGet(texture stack depth, unit %u)", unit);
+            return;
+         }
+         params[0] = (GLfloat)(ctx->TextureMatrixStack[unit].Depth + 1);
+         }
          break;
       case GL_UNPACK_ALIGNMENT:
          params[0] = (GLfloat)(ctx->Unpack.Alignment);
@@ -3942,7 +3991,7 @@ _mesa_GetIntegerv( GLenum pname, GLint *params )
          params[0] = IROUND(ctx->Current.RasterDistance);
          break;
       case GL_CURRENT_RASTER_INDEX:
-         params[0] = IROUND(ctx->Current.RasterIndex);
+         params[0] = IROUND(1.0);
          break;
       case GL_CURRENT_RASTER_POSITION:
          params[0] = IROUND(ctx->Current.RasterPos[0]);
@@ -3958,11 +4007,16 @@ _mesa_GetIntegerv( GLenum pname, GLint *params )
          break;
       case GL_CURRENT_RASTER_TEXTURE_COORDS:
          {
-         const GLuint texUnit = ctx->Texture.CurrentUnit;
-         params[0] = IROUND(ctx->Current.RasterTexCoords[texUnit][0]);
-         params[1] = IROUND(ctx->Current.RasterTexCoords[texUnit][1]);
-         params[2] = IROUND(ctx->Current.RasterTexCoords[texUnit][2]);
-         params[3] = IROUND(ctx->Current.RasterTexCoords[texUnit][3]);
+         const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION,
+                        "glGet(raster tex coords, unit %u)", unit);
+            return;
+         }
+         params[0] = IROUND(ctx->Current.RasterTexCoords[unit][0]);
+         params[1] = IROUND(ctx->Current.RasterTexCoords[unit][1]);
+         params[2] = IROUND(ctx->Current.RasterTexCoords[unit][2]);
+         params[3] = IROUND(ctx->Current.RasterTexCoords[unit][3]);
          }
          break;
       case GL_CURRENT_RASTER_POSITION_VALID:
@@ -3970,12 +4024,17 @@ _mesa_GetIntegerv( GLenum pname, GLint *params )
          break;
       case GL_CURRENT_TEXTURE_COORDS:
          {
-         const GLuint texUnit = ctx->Texture.CurrentUnit;
+         const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION,
+                        "glGet(current tex coords, unit %u)", unit);
+            return;
+         }
          FLUSH_CURRENT(ctx, 0);
-         params[0] = IROUND(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][0]);
-         params[1] = IROUND(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][1]);
-         params[2] = IROUND(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][2]);
-         params[3] = IROUND(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][3]);
+         params[0] = IROUND(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][0]);
+         params[1] = IROUND(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][1]);
+         params[2] = IROUND(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][2]);
+         params[3] = IROUND(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][3]);
          }
          break;
       case GL_DEPTH_BIAS:
@@ -4070,7 +4129,7 @@ _mesa_GetIntegerv( GLenum pname, GLint *params )
          params[0] = ctx->Color.ClearIndex;
          break;
       case GL_INDEX_MODE:
-         params[0] = BOOLEAN_TO_INT(!ctx->DrawBuffer->Visual.rgbMode);
+         params[0] = BOOLEAN_TO_INT(GL_FALSE);
          break;
       case GL_INDEX_OFFSET:
          params[0] = ctx->Pixel.IndexOffset;
@@ -4506,7 +4565,7 @@ _mesa_GetIntegerv( GLenum pname, GLint *params )
          params[0] = BOOLEAN_TO_INT(ctx->Transform.RescaleNormals);
          break;
       case GL_RGBA_MODE:
-         params[0] = BOOLEAN_TO_INT(ctx->DrawBuffer->Visual.rgbMode);
+         params[0] = BOOLEAN_TO_INT(GL_TRUE);
          break;
       case GL_SCISSOR_BOX:
          params[0] = ctx->Scissor.X;
@@ -4610,7 +4669,14 @@ _mesa_GetIntegerv( GLenum pname, GLint *params )
          break;
       case GL_TEXTURE_MATRIX:
          {
-         const GLfloat *matrix = ctx->TextureMatrixStack[ctx->Texture.CurrentUnit].Top->m;
+         const GLfloat *matrix;
+         const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION, "glGet(texture matrix %u)",
+                        unit);
+            return;
+         }
+         matrix = ctx->TextureMatrixStack[unit].Top->m;
          params[0] = IROUND(matrix[0]);
          params[1] = IROUND(matrix[1]);
          params[2] = IROUND(matrix[2]);
@@ -4630,7 +4696,15 @@ _mesa_GetIntegerv( GLenum pname, GLint *params )
          }
          break;
       case GL_TEXTURE_STACK_DEPTH:
-         params[0] = ctx->TextureMatrixStack[ctx->Texture.CurrentUnit].Depth + 1;
+         {
+         const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION,
+                        "glGet(texture stack depth, unit %u)", unit);
+            return;
+         }
+         params[0] = ctx->TextureMatrixStack[unit].Depth + 1;
+         }
          break;
       case GL_UNPACK_ALIGNMENT:
          params[0] = ctx->Unpack.Alignment;
@@ -5787,7 +5861,7 @@ _mesa_GetInteger64v( GLenum pname, GLint64 *params )
          params[0] = IROUND64(ctx->Current.RasterDistance);
          break;
       case GL_CURRENT_RASTER_INDEX:
-         params[0] = IROUND64(ctx->Current.RasterIndex);
+         params[0] = IROUND64(1.0);
          break;
       case GL_CURRENT_RASTER_POSITION:
          params[0] = IROUND64(ctx->Current.RasterPos[0]);
@@ -5803,11 +5877,16 @@ _mesa_GetInteger64v( GLenum pname, GLint64 *params )
          break;
       case GL_CURRENT_RASTER_TEXTURE_COORDS:
          {
-         const GLuint texUnit = ctx->Texture.CurrentUnit;
-         params[0] = IROUND64(ctx->Current.RasterTexCoords[texUnit][0]);
-         params[1] = IROUND64(ctx->Current.RasterTexCoords[texUnit][1]);
-         params[2] = IROUND64(ctx->Current.RasterTexCoords[texUnit][2]);
-         params[3] = IROUND64(ctx->Current.RasterTexCoords[texUnit][3]);
+         const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION,
+                        "glGet(raster tex coords, unit %u)", unit);
+            return;
+         }
+         params[0] = IROUND64(ctx->Current.RasterTexCoords[unit][0]);
+         params[1] = IROUND64(ctx->Current.RasterTexCoords[unit][1]);
+         params[2] = IROUND64(ctx->Current.RasterTexCoords[unit][2]);
+         params[3] = IROUND64(ctx->Current.RasterTexCoords[unit][3]);
          }
          break;
       case GL_CURRENT_RASTER_POSITION_VALID:
@@ -5815,12 +5894,17 @@ _mesa_GetInteger64v( GLenum pname, GLint64 *params )
          break;
       case GL_CURRENT_TEXTURE_COORDS:
          {
-         const GLuint texUnit = ctx->Texture.CurrentUnit;
+         const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION,
+                        "glGet(current tex coords, unit %u)", unit);
+            return;
+         }
          FLUSH_CURRENT(ctx, 0);
-         params[0] = IROUND64(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][0]);
-         params[1] = IROUND64(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][1]);
-         params[2] = IROUND64(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][2]);
-         params[3] = IROUND64(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + texUnit][3]);
+         params[0] = IROUND64(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][0]);
+         params[1] = IROUND64(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][1]);
+         params[2] = IROUND64(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][2]);
+         params[3] = IROUND64(ctx->Current.Attrib[VERT_ATTRIB_TEX0 + unit][3]);
          }
          break;
       case GL_DEPTH_BIAS:
@@ -5915,7 +5999,7 @@ _mesa_GetInteger64v( GLenum pname, GLint64 *params )
          params[0] = (GLint64)(ctx->Color.ClearIndex);
          break;
       case GL_INDEX_MODE:
-         params[0] = BOOLEAN_TO_INT64(!ctx->DrawBuffer->Visual.rgbMode);
+         params[0] = BOOLEAN_TO_INT64(GL_FALSE);
          break;
       case GL_INDEX_OFFSET:
          params[0] = (GLint64)(ctx->Pixel.IndexOffset);
@@ -6351,7 +6435,7 @@ _mesa_GetInteger64v( GLenum pname, GLint64 *params )
          params[0] = BOOLEAN_TO_INT64(ctx->Transform.RescaleNormals);
          break;
       case GL_RGBA_MODE:
-         params[0] = BOOLEAN_TO_INT64(ctx->DrawBuffer->Visual.rgbMode);
+         params[0] = BOOLEAN_TO_INT64(GL_TRUE);
          break;
       case GL_SCISSOR_BOX:
          params[0] = (GLint64)(ctx->Scissor.X);
@@ -6455,7 +6539,14 @@ _mesa_GetInteger64v( GLenum pname, GLint64 *params )
          break;
       case GL_TEXTURE_MATRIX:
          {
-         const GLfloat *matrix = ctx->TextureMatrixStack[ctx->Texture.CurrentUnit].Top->m;
+         const GLfloat *matrix;
+         const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION, "glGet(texture matrix %u)",
+                        unit);
+            return;
+         }
+         matrix = ctx->TextureMatrixStack[unit].Top->m;
          params[0] = IROUND64(matrix[0]);
          params[1] = IROUND64(matrix[1]);
          params[2] = IROUND64(matrix[2]);
@@ -6475,7 +6566,15 @@ _mesa_GetInteger64v( GLenum pname, GLint64 *params )
          }
          break;
       case GL_TEXTURE_STACK_DEPTH:
-         params[0] = (GLint64)(ctx->TextureMatrixStack[ctx->Texture.CurrentUnit].Depth + 1);
+         {
+         const GLuint unit = ctx->Texture.CurrentUnit;
+         if (unit >= ctx->Const.MaxTextureCoordUnits) {
+            _mesa_error(ctx, GL_INVALID_OPERATION,
+                        "glGet(texture stack depth, unit %u)", unit);
+            return;
+         }
+         params[0] = (GLint64)(ctx->TextureMatrixStack[unit].Depth + 1);
+         }
          break;
       case GL_UNPACK_ALIGNMENT:
          params[0] = (GLint64)(ctx->Unpack.Alignment);

@@ -42,7 +42,7 @@
 #include "radeon_debug.h"
 #include "r600_context.h"
 #include "r600_cmdbuf.h"
-#include "shader/programopt.c"
+#include "shader/programopt.h"
 
 #include "r700_debug.h"
 #include "r700_vertprog.h"
@@ -307,8 +307,8 @@ struct r700_vertex_program* r700TranslateVertexShader(GLcontext *ctx,
 	struct r700_vertex_program *vp;
 	unsigned int i;
 
-	vp = _mesa_calloc(sizeof(*vp));
-	vp->mesa_program = (struct gl_vertex_program *)_mesa_clone_program(ctx, &mesa_vp->Base);
+	vp = calloc(1, sizeof(*vp));
+	vp->mesa_program = _mesa_clone_vertex_program(ctx, mesa_vp);
 
 	if (mesa_vp->IsPositionInvariant)
 	{

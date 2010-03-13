@@ -127,6 +127,7 @@ static int driUnbindContext(__DRIcontext *pcp)
     /* Let driver unbind drawable from context */
     (*psp->DriverAPI.UnbindContext)(pcp);
 
+    assert(pdp);
     if (pdp->refcount == 0) {
 	/* ERROR!!! */
 	return GL_FALSE;
@@ -189,6 +190,7 @@ static int driBindContext(__DRIcontext *pcp,
     ** initialize the drawable information if has not been done before.
     */
 
+    assert(psp);
     if (!psp->dri2.enabled) {
 	if (pdp && !pdp->pStamp) {
 	    DRM_SPINLOCK(&psp->pSAREA->drawable_lock, psp->drawLockID);
@@ -242,12 +244,12 @@ __driUtilUpdateDrawableInfo(__DRIdrawable *pdp)
     }
 
     if (pdp->pClipRects) {
-	_mesa_free(pdp->pClipRects); 
+	free(pdp->pClipRects); 
 	pdp->pClipRects = NULL;
     }
 
     if (pdp->pBackClipRects) {
-	_mesa_free(pdp->pBackClipRects); 
+	free(pdp->pBackClipRects); 
 	pdp->pBackClipRects = NULL;
     }
 
@@ -324,7 +326,7 @@ static void driSwapBuffers(__DRIdrawable *dPriv)
     if (!dPriv->numClipRects)
         return;
 
-    rects = _mesa_malloc(sizeof(*rects) * dPriv->numClipRects);
+    rects = malloc(sizeof(*rects) * dPriv->numClipRects);
 
     if (!rects)
         return;
@@ -337,7 +339,7 @@ static void driSwapBuffers(__DRIdrawable *dPriv)
     }
 
     driReportDamage(dPriv, rects, dPriv->numClipRects);
-    _mesa_free(rects);
+    free(rects);
 }
 
 static int driDrawableGetMSC( __DRIscreen *sPriv, __DRIdrawable *dPriv,
@@ -430,7 +432,7 @@ driCreateNewDrawable(__DRIscreen *psp, const __DRIconfig *config,
      */
     (void) attrs;
 
-    pdp = _mesa_malloc(sizeof *pdp);
+    pdp = malloc(sizeof *pdp);
     if (!pdp) {
 	return NULL;
     }
@@ -454,11 +456,10 @@ driCreateNewDrawable(__DRIscreen *psp, const __DRIconfig *config,
 
     pdp->driScreenPriv = psp;
     pdp->driContextPriv = &psp->dummyContextPriv;
-    pdp->validBuffers = GL_FALSE;
 
     if (!(*psp->DriverAPI.CreateBuffer)(psp, pdp, &config->modes,
 					renderType == GLX_PIXMAP_BIT)) {
-       _mesa_free(pdp);
+       free(pdp);
        return NULL;
     }
 
@@ -485,8 +486,11 @@ dri2CreateNewDrawable(__DRIscreen *screen,
     if (!pdraw)
     	return NULL;
 
-    pdraw->pClipRects = _mesa_malloc(sizeof *pdraw->pBackClipRects);
-    pdraw->pBackClipRects = _mesa_malloc(sizeof *pdraw->pBackClipRects);
+    pdraw->pClipRects = &pdraw->dri2.clipRect;
+    pdraw->pBackClipRects = &pdraw->dri2.clipRect;
+
+    pdraw->pStamp = &pdraw->dri2.stamp;
+    *pdraw->pStamp = pdraw->lastStamp + 1;
 
     return pdraw;
 }
@@ -507,15 +511,15 @@ static void dri_put_drawable(__DRIdrawable *pdp)
 
 	psp = pdp->driScreenPriv;
         (*psp->DriverAPI.DestroyBuffer)(pdp);
-	if (pdp->pClipRects) {
-	    _mesa_free(pdp->pClipRects);
+	if (pdp->pClipRects && pdp->pClipRects != &pdp->dri2.clipRect) {
+	    free(pdp->pClipRects);
 	    pdp->pClipRects = NULL;
 	}
-	if (pdp->pBackClipRects) {
-	    _mesa_free(pdp->pBackClipRects);
+	if (pdp->pBackClipRects && pdp->pClipRects != &pdp->dri2.clipRect) {
+	    free(pdp->pBackClipRects);
 	    pdp->pBackClipRects = NULL;
 	}
-	_mesa_free(pdp);
+	free(pdp);
     }
 }
 
@@ -545,7 +549,7 @@ driDestroyContext(__DRIcontext *pcp)
 {
     if (pcp) {
 	(*pcp->driScreenPriv->DriverAPI.DestroyContext)(pcp);
-	_mesa_free(pcp);
+	free(pcp);
     }
 }
 
@@ -575,13 +579,16 @@ driCreateNewContext(__DRIscreen *psp, const __DRIconfig *config,
     __DRIcontext *pcp;
     void * const shareCtx = (shared != NULL) ? shared->driverPrivate : NULL;
 
-    pcp = _mesa_malloc(sizeof *pcp);
+    pcp = malloc(sizeof *pcp);
     if (!pcp)
 	return NULL;
 
     pcp->driScreenPriv = psp;
     pcp->driDrawablePriv = NULL;
-
+    pcp->loaderPrivate = data;
+    
+    pcp->dri2.draw_stamp = 0;
+    pcp->dri2.read_stamp = 0;
     /* When the first context is created for a screen, initialize a "dummy"
      * context.
      */
@@ -597,7 +604,7 @@ driCreateNewContext(__DRIscreen *psp, const __DRIconfig *config,
     pcp->hHWContext = hwContext;
 
     if ( !(*psp->DriverAPI.CreateContext)(&config->modes, pcp, shareCtx) ) {
-        _mesa_free(pcp);
+        free(pcp);
         return NULL;
     }
 
@@ -651,7 +658,7 @@ static void driDestroyScreen(__DRIscreen *psp)
 	   (void)drmCloseOnce(psp->fd);
 	}
 
-	_mesa_free(psp);
+	free(psp);
     }
 }
 
@@ -670,6 +677,8 @@ setupLoaderExtensions(__DRIscreen *psp,
 	    psp->systemTime = (__DRIsystemTimeExtension *) extensions[i];
 	if (strcmp(extensions[i]->name, __DRI_DRI2_LOADER) == 0)
 	    psp->dri2.loader = (__DRIdri2LoaderExtension *) extensions[i];
+	if (strcmp(extensions[i]->name, __DRI_IMAGE_LOOKUP) == 0)
+	    psp->dri2.image = (__DRIimageLookupExtension *) extensions[i];
     }
 }
 
@@ -689,7 +698,7 @@ setupLoaderExtensions(__DRIscreen *psp,
  * \param drm_version Version of the kernel DRM.
  * \param frame_buffer Data describing the location and layout of the
  *                     framebuffer.
- * \param pSAREA       Pointer the the SAREA.
+ * \param pSAREA       Pointer to the SAREA.
  * \param fd           Device handle for the DRM.
  * \param extensions   ??
  * \param driver_modes  Returns modes suppoted by the driver
@@ -713,7 +722,7 @@ driCreateNewScreen(int scrn,
     static const __DRIextension *emptyExtensionList[] = { NULL };
     __DRIscreen *psp;
 
-    psp = _mesa_calloc(sizeof *psp);
+    psp = calloc(1, sizeof *psp);
     if (!psp)
 	return NULL;
 
@@ -758,7 +767,7 @@ driCreateNewScreen(int scrn,
 
     *driver_modes = driDriverAPI.InitScreen(psp);
     if (*driver_modes == NULL) {
-	_mesa_free(psp);
+	free(psp);
 	return NULL;
     }
 
@@ -780,7 +789,7 @@ dri2CreateNewScreen(int scrn, int fd,
     if (driDriverAPI.InitScreen2 == NULL)
         return NULL;
 
-    psp = _mesa_calloc(sizeof(*psp));
+    psp = calloc(1, sizeof(*psp));
     if (!psp)
 	return NULL;
 
@@ -802,7 +811,7 @@ dri2CreateNewScreen(int scrn, int fd,
     psp->DriverAPI = driDriverAPI;
     *driver_configs = driDriverAPI.InitScreen2(psp);
     if (*driver_configs == NULL) {
-	_mesa_free(psp);
+	free(psp);
 	return NULL;
     }
 
@@ -946,6 +955,12 @@ driCalculateSwapUsage( __DRIdrawable *dPriv, int64_t last_swap_ust,
    }
    
    return usage;
+}
+
+void
+dri2InvalidateDrawable(__DRIdrawable *drawable)
+{
+    drawable->dri2.stamp++;
 }
 
 /*@}*/

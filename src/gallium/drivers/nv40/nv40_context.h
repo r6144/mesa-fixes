@@ -1,6 +1,8 @@
 #ifndef __NV40_CONTEXT_H__
 #define __NV40_CONTEXT_H__
 
+#include <stdio.h>
+
 #include "pipe/p_context.h"
 #include "pipe/p_defines.h"
 #include "pipe/p_state.h"
@@ -8,6 +10,7 @@
 
 #include "util/u_memory.h"
 #include "util/u_math.h"
+#include "util/u_inlines.h"
 
 #include "draw/draw_vertex.h"
 
@@ -58,7 +61,8 @@ enum nv40_state_index {
 	NV40_STATE_VTXBUF = 31,
 	NV40_STATE_VTXFMT = 32,
 	NV40_STATE_VTXATTR = 33,
-	NV40_STATE_MAX = 34
+	NV40_STATE_SR = 34,
+	NV40_STATE_MAX = 35
 };
 
 #include "nv40_screen.h"
@@ -76,6 +80,7 @@ enum nv40_state_index {
 #define NV40_NEW_FRAGPROG	(1 << 10)
 #define NV40_NEW_ARRAYS		(1 << 11)
 #define NV40_NEW_UCP		(1 << 12)
+#define NV40_NEW_SR		(1 << 13)
 
 struct nv40_rasterizer_state {
 	struct pipe_rasterizer_state pipe;
@@ -96,11 +101,16 @@ struct nv40_blend_state {
 struct nv40_state {
 	unsigned scissor_enabled;
 	unsigned stipple_enabled;
-	unsigned viewport_bypass;
 	unsigned fp_samplers;
 
 	uint64_t dirty;
 	struct nouveau_stateobj *hw[NV40_STATE_MAX];
+};
+
+
+struct nv40_vtxelt_state {
+	struct pipe_vertex_element pipe[16];
+	unsigned num_elements;
 };
 
 struct nv40_context {
@@ -108,7 +118,6 @@ struct nv40_context {
 
 	struct nouveau_winsys *nvws;
 	struct nv40_screen *screen;
-	unsigned pctx_id;
 
 	struct draw_context *draw;
 
@@ -142,6 +151,7 @@ struct nv40_context {
 	struct nv40_zsa_state *zsa;
 	struct nv40_blend_state *blend;
 	struct pipe_blend_color blend_colour;
+	struct pipe_stencil_ref stencil_ref;
 	struct pipe_viewport_state viewport;
 	struct pipe_framebuffer_state framebuffer;
 	struct pipe_buffer *idxbuf;
@@ -153,8 +163,7 @@ struct nv40_context {
 	unsigned dirty_samplers;
 	struct pipe_vertex_buffer vtxbuf[PIPE_MAX_ATTRIBS];
 	unsigned vtxbuf_nr;
-	struct pipe_vertex_element vtxelt[PIPE_MAX_ATTRIBS];
-	unsigned vtxelt_nr;
+	struct nv40_vtxelt_state *vtxelt;
 };
 
 static INLINE struct nv40_context *
@@ -174,6 +183,7 @@ struct nv40_state_entry {
 extern void nv40_init_state_functions(struct nv40_context *nv40);
 extern void nv40_init_surface_functions(struct nv40_context *nv40);
 extern void nv40_init_query_functions(struct nv40_context *nv40);
+extern void nv40_init_transfer_functions(struct nv40_context *nv40);
 
 extern void nv40_screen_init_miptree_functions(struct pipe_screen *pscreen);
 
@@ -213,6 +223,7 @@ extern struct nv40_state_entry nv40_state_framebuffer;
 extern struct nv40_state_entry nv40_state_fragtex;
 extern struct nv40_state_entry nv40_state_vbo;
 extern struct nv40_state_entry nv40_state_vtxfmt;
+extern struct nv40_state_entry nv40_state_sr;
 
 /* nv40_vbo.c */
 extern void nv40_draw_arrays(struct pipe_context *, unsigned mode,
@@ -226,5 +237,9 @@ extern void nv40_draw_elements(struct pipe_context *pipe,
 /* nv40_clear.c */
 extern void nv40_clear(struct pipe_context *pipe, unsigned buffers,
 		       const float *rgba, double depth, unsigned stencil);
+
+/* nv40_context.c */
+struct pipe_context *
+nv40_create(struct pipe_screen *pscreen, void *priv);
 
 #endif

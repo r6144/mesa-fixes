@@ -1,6 +1,6 @@
 #include "pipe/p_state.h"
 #include "pipe/p_defines.h"
-#include "pipe/p_inlines.h"
+#include "util/u_inlines.h"
 
 #include "tgsi/tgsi_parse.h"
 
@@ -139,13 +139,13 @@ nv30_sampler_state_create(struct pipe_context *pipe,
 
 	ps->en = 0;
 
-	if (cso->max_anisotropy >= 8.0) {
+	if (cso->max_anisotropy >= 8) {
 		ps->en |= NV34TCL_TX_ENABLE_ANISO_8X;
 	} else
-	if (cso->max_anisotropy >= 4.0) {
+	if (cso->max_anisotropy >= 4) {
 		ps->en |= NV34TCL_TX_ENABLE_ANISO_4X;
 	} else
-	if (cso->max_anisotropy >= 2.0) {
+	if (cso->max_anisotropy >= 2) {
 		ps->en |= NV34TCL_TX_ENABLE_ANISO_2X;
 	}
 
@@ -391,11 +391,11 @@ nv30_rasterizer_state_create(struct pipe_context *pipe,
 	}
 
 	so_method(so, rankine, NV34TCL_POINT_SPRITE, 1);
-	if (cso->point_sprite) {
+	if (cso->point_quad_rasterization) {
 		unsigned psctl = (1 << 0), i;
 
 		for (i = 0; i < 8; i++) {
-			if (cso->sprite_coord_mode[i] != PIPE_SPRITE_COORD_NONE)
+			if ((cso->sprite_coord_enable >> i) & 1)
 				psctl |= (1 << (8 + i));
 		}
 
@@ -435,7 +435,7 @@ nv30_depth_stencil_alpha_state_create(struct pipe_context *pipe,
 {
 	struct nv30_context *nv30 = nv30_context(pipe);
 	struct nv30_zsa_state *zsaso = CALLOC(1, sizeof(*zsaso));
-	struct nouveau_stateobj *so = so_new(5, 21, 0);
+	struct nouveau_stateobj *so = so_new(6, 20, 0);
 	struct nouveau_grobj *rankine = nv30->screen->rankine;
 
 	so_method(so, rankine, NV34TCL_DEPTH_FUNC, 3);
@@ -449,11 +449,11 @@ nv30_depth_stencil_alpha_state_create(struct pipe_context *pipe,
 	so_data  (so, float_to_ubyte(cso->alpha.ref_value));
 
 	if (cso->stencil[0].enabled) {
-		so_method(so, rankine, NV34TCL_STENCIL_FRONT_ENABLE, 8);
+		so_method(so, rankine, NV34TCL_STENCIL_FRONT_ENABLE, 3);
 		so_data  (so, cso->stencil[0].enabled ? 1 : 0);
 		so_data  (so, cso->stencil[0].writemask);
 		so_data  (so, nvgl_comparison_op(cso->stencil[0].func));
-		so_data  (so, cso->stencil[0].ref_value);
+		so_method(so, rankine, NV34TCL_STENCIL_FRONT_FUNC_MASK, 4);
 		so_data  (so, cso->stencil[0].valuemask);
 		so_data  (so, nvgl_stencil_op(cso->stencil[0].fail_op));
 		so_data  (so, nvgl_stencil_op(cso->stencil[0].zfail_op));
@@ -464,11 +464,11 @@ nv30_depth_stencil_alpha_state_create(struct pipe_context *pipe,
 	}
 
 	if (cso->stencil[1].enabled) {
-		so_method(so, rankine, NV34TCL_STENCIL_BACK_ENABLE, 8);
+		so_method(so, rankine, NV34TCL_STENCIL_BACK_ENABLE, 3);
 		so_data  (so, cso->stencil[1].enabled ? 1 : 0);
 		so_data  (so, cso->stencil[1].writemask);
 		so_data  (so, nvgl_comparison_op(cso->stencil[1].func));
-		so_data  (so, cso->stencil[1].ref_value);
+		so_method(so, rankine, NV34TCL_STENCIL_BACK_FUNC_MASK, 4);
 		so_data  (so, cso->stencil[1].valuemask);
 		so_data  (so, nvgl_stencil_op(cso->stencil[1].fail_op));
 		so_data  (so, nvgl_stencil_op(cso->stencil[1].zfail_op));
@@ -583,6 +583,16 @@ nv30_set_blend_color(struct pipe_context *pipe,
 }
 
 static void
+nv30_set_stencil_ref(struct pipe_context *pipe,
+		     const struct pipe_stencil_ref *sr)
+{
+	struct nv30_context *nv30 = nv30_context(pipe);
+
+	nv30->stencil_ref = *sr;
+	nv30->dirty |= NV30_NEW_SR;
+}
+
+static void
 nv30_set_clip_state(struct pipe_context *pipe,
 		    const struct pipe_clip_state *clip)
 {
@@ -659,15 +669,34 @@ nv30_set_vertex_buffers(struct pipe_context *pipe, unsigned count,
 	/*nv30->draw_dirty |= NV30_NEW_ARRAYS;*/
 }
 
+static void *
+nv30_vtxelts_state_create(struct pipe_context *pipe,
+			  unsigned num_elements,
+			  const struct pipe_vertex_element *elements)
+{
+	struct nv30_vtxelt_state *cso = CALLOC_STRUCT(nv30_vtxelt_state);
+
+	assert(num_elements < 16); /* not doing fallbacks yet */
+	cso->num_elements = num_elements;
+	memcpy(cso->pipe, elements, num_elements * sizeof(*elements));
+
+/*	nv30_vtxelt_construct(cso);*/
+
+	return (void *)cso;
+}
+
 static void
-nv30_set_vertex_elements(struct pipe_context *pipe, unsigned count,
-			 const struct pipe_vertex_element *ve)
+nv30_vtxelts_state_delete(struct pipe_context *pipe, void *hwcso)
+{
+	FREE(hwcso);
+}
+
+static void
+nv30_vtxelts_state_bind(struct pipe_context *pipe, void *hwcso)
 {
 	struct nv30_context *nv30 = nv30_context(pipe);
 
-	memcpy(nv30->vtxelt, ve, sizeof(*ve) * count);
-	nv30->vtxelt_nr = count;
-
+	nv30->vtxelt = hwcso;
 	nv30->dirty |= NV30_NEW_ARRAYS;
 	/*nv30->draw_dirty |= NV30_NEW_ARRAYS;*/
 }
@@ -704,6 +733,7 @@ nv30_init_state_functions(struct nv30_context *nv30)
 	nv30->pipe.delete_fs_state = nv30_fp_state_delete;
 
 	nv30->pipe.set_blend_color = nv30_set_blend_color;
+        nv30->pipe.set_stencil_ref = nv30_set_stencil_ref;
 	nv30->pipe.set_clip_state = nv30_set_clip_state;
 	nv30->pipe.set_constant_buffer = nv30_set_constant_buffer;
 	nv30->pipe.set_framebuffer_state = nv30_set_framebuffer_state;
@@ -711,7 +741,10 @@ nv30_init_state_functions(struct nv30_context *nv30)
 	nv30->pipe.set_scissor_state = nv30_set_scissor_state;
 	nv30->pipe.set_viewport_state = nv30_set_viewport_state;
 
+	nv30->pipe.create_vertex_elements_state = nv30_vtxelts_state_create;
+	nv30->pipe.delete_vertex_elements_state = nv30_vtxelts_state_delete;
+	nv30->pipe.bind_vertex_elements_state = nv30_vtxelts_state_bind;
+
 	nv30->pipe.set_vertex_buffers = nv30_set_vertex_buffers;
-	nv30->pipe.set_vertex_elements = nv30_set_vertex_elements;
 }
 

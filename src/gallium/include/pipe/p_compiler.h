@@ -31,13 +31,10 @@
 
 #include "p_config.h"
 
-#ifndef XFree86Server
 #include <stdlib.h>
 #include <string.h>
-#else
-#include "xf86_ansic.h"
-#include "xf86_libc.h"
-#endif
+#include <stddef.h>
+#include <stdarg.h>
 
 
 #if defined(_WIN32) && !defined(__WIN32__)
@@ -104,8 +101,7 @@ typedef unsigned char boolean;
 
 /* Function visibility */
 #ifndef PUBLIC
-#  if (defined(__GNUC__) && (__GNUC__ * 100 + __GNUC_MINOR__) >= 303) \
-	|| (defined(__SUNPRO_C) && (__SUNPRO_C >= 0x590))
+#  if defined(__GNUC__) || (defined(__SUNPRO_C) && (__SUNPRO_C >= 0x590))
 #    define PUBLIC __attribute__((visibility("default")))
 #  else
 #    define PUBLIC
@@ -117,13 +113,16 @@ typedef unsigned char boolean;
  * If we're not using gcc, define __FUNCTION__ as a cpp symbol here.
  */
 #ifndef __FUNCTION__
-# if (!defined(__GNUC__) || (__GNUC__ < 2))
+# if !defined(__GNUC__)
 #  if (__STDC_VERSION__ >= 199901L) /* C99 */ || \
     (defined(__SUNPRO_C) && defined(__C99FEATURES__))
 #   define __FUNCTION__ __func__
 #  else
 #   define __FUNCTION__ "<unknown>"
 #  endif
+# endif
+# if defined(_MSC_VER) && _MSC_VER < 1300
+#  define __FUNCTION__ "<unknown>"
 # endif
 #endif
 
@@ -136,6 +135,14 @@ typedef unsigned char boolean;
 #define PIPE_CDECL __cdecl
 #else
 #define PIPE_CDECL
+#endif
+
+
+
+#if defined(__GNUC__)
+#define PIPE_DEPRECATED  __attribute__((__deprecated__))
+#else
+#define PIPE_DEPRECATED
 #endif
 
 

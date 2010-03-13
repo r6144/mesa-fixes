@@ -32,23 +32,29 @@
 #include "pipe/p_state.h"
 
 
+#define LP_MAX_TEXTURE_2D_LEVELS 13  /* 4K x 4K for now */
+#define LP_MAX_TEXTURE_3D_LEVELS 10  /* 512 x 512 x 512 for now */
+
+
 struct pipe_context;
 struct pipe_screen;
 struct llvmpipe_context;
-struct llvmpipe_displaytarget;
+
+struct sw_displaytarget;
+
 
 struct llvmpipe_texture
 {
    struct pipe_texture base;
 
-   unsigned long level_offset[PIPE_MAX_TEXTURE_LEVELS];
-   unsigned stride[PIPE_MAX_TEXTURE_LEVELS];
+   unsigned long level_offset[LP_MAX_TEXTURE_2D_LEVELS];
+   unsigned stride[LP_MAX_TEXTURE_2D_LEVELS];
 
    /**
     * Display target, for textures with the PIPE_TEXTURE_USAGE_DISPLAY_TARGET
     * usage.
     */
-   struct llvmpipe_displaytarget *dt;
+   struct sw_displaytarget *dt;
 
    /**
     * Malloc'ed data for regular textures, or a mapping to dt above.
@@ -57,6 +63,7 @@ struct llvmpipe_texture
 
    unsigned timestamp;
 };
+
 
 struct llvmpipe_transfer
 {
@@ -73,6 +80,14 @@ llvmpipe_texture(struct pipe_texture *pt)
    return (struct llvmpipe_texture *) pt;
 }
 
+
+static INLINE const struct llvmpipe_texture *
+llvmpipe_texture_const(const struct pipe_texture *pt)
+{
+   return (const struct llvmpipe_texture *) pt;
+}
+
+
 static INLINE struct llvmpipe_transfer *
 llvmpipe_transfer(struct pipe_transfer *pt)
 {
@@ -81,10 +96,9 @@ llvmpipe_transfer(struct pipe_transfer *pt)
 
 
 extern void
-llvmpipe_init_texture_funcs( struct llvmpipe_context *llvmpipe );
-
-extern void
 llvmpipe_init_screen_texture_funcs(struct pipe_screen *screen);
 
+extern void
+llvmpipe_init_context_texture_funcs(struct pipe_context *pipe);
 
-#endif /* LP_TEXTURE */
+#endif /* LP_TEXTURE_H */

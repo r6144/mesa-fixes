@@ -92,7 +92,7 @@ i810FillInModes( __DRIscreen *psp,
 			       depth_bits_array, stencil_bits_array,
 			       depth_buffer_factor,
 			       back_buffer_modes, back_buffer_factor,
-                               msaa_samples_array, 1);
+                               msaa_samples_array, 1, GL_TRUE);
     if (configs == NULL) {
 	fprintf( stderr, "[%s:%u] Error creating FBConfig!\n",
 		 __func__, __LINE__ );
@@ -131,12 +131,12 @@ static drmBufMapPtr i810_create_empty_buffers(void)
 {
    drmBufMapPtr retval;
 
-   retval = (drmBufMapPtr)ALIGN_MALLOC(sizeof(drmBufMap), 32);
+   retval = (drmBufMapPtr)_mesa_align_malloc(sizeof(drmBufMap), 32);
    if(retval == NULL) return NULL;
    memset(retval, 0, sizeof(drmBufMap));
-   retval->list = (drmBufPtr)ALIGN_MALLOC(sizeof(drmBuf) * I810_DMA_BUF_NR, 32);
+   retval->list = (drmBufPtr)_mesa_align_malloc(sizeof(drmBuf) * I810_DMA_BUF_NR, 32);
    if(retval->list == NULL) {
-      ALIGN_FREE(retval);
+      _mesa_align_free(retval);
       return NULL;
    }
    memset(retval->list, 0, sizeof(drmBuf) * I810_DMA_BUF_NR);

@@ -198,7 +198,9 @@ static void r100_init_vtbl(radeonContextPtr radeon)
    radeon->vtbl.fallback = radeonFallback;
    radeon->vtbl.free_context = r100_vtbl_free_context;
    radeon->vtbl.emit_query_finish = r100_emit_query_finish;
+   radeon->vtbl.check_blit = r100_check_blit;
    radeon->vtbl.blit = r100_blit;
+   radeon->vtbl.is_format_renderable = radeonIsFormatRenderable;
 }
 
 /* Create the device specific context.
@@ -279,6 +281,7 @@ r100CreateContext( const __GLcontextModes *glVisual,
 						 "texture_units");
    ctx->Const.MaxTextureImageUnits = ctx->Const.MaxTextureUnits;
    ctx->Const.MaxTextureCoordUnits = ctx->Const.MaxTextureUnits;
+   ctx->Const.MaxCombinedTextureImageUnits = ctx->Const.MaxTextureUnits;
 
    i = driQueryOptioni( &rmesa->radeon.optionCache, "allow_large_textures");
 
@@ -316,6 +319,8 @@ r100CreateContext( const __GLcontextModes *glVisual,
    rmesa->boxes = 0;
 
    ctx->Const.MaxDrawBuffers = 1;
+   ctx->Const.MaxColorAttachments = 1;
+   ctx->Const.MaxRenderbufferSize = 2048;
 
    _mesa_set_mvp_with_dp4( ctx, GL_TRUE );
 

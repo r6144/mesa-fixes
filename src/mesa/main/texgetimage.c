@@ -156,7 +156,7 @@ get_tex_depth_stencil(GLcontext *ctx, GLuint dimensions,
          void *dest = _mesa_image_address(dimensions, &ctx->Pack, pixels,
                                           width, height, format, type,
                                           img, row, 0);
-         _mesa_memcpy(dest, src, width * sizeof(GLuint));
+         memcpy(dest, src, width * sizeof(GLuint));
          if (ctx->Pack.SwapBytes) {
             _mesa_swap4((GLuint *) dest, width);
          }
@@ -187,7 +187,7 @@ get_tex_ycbcr(GLcontext *ctx, GLuint dimensions,
          void *dest = _mesa_image_address(dimensions, &ctx->Pack, pixels,
                                           width, height, format, type,
                                           img, row, 0);
-         _mesa_memcpy(dest, src, width * sizeof(GLushort));
+         memcpy(dest, src, width * sizeof(GLushort));
 
          /* check for byte swapping */
          if ((texImage->TexFormat == MESA_FORMAT_YCBCR
@@ -560,7 +560,7 @@ _mesa_get_compressed_teximage(GLcontext *ctx, GLenum target, GLint level,
                                                   texImage->Width,
                                                   texImage->Height,
                                                   texImage->Depth);
-      _mesa_memcpy(img, texImage->Data, size);
+      memcpy(img, texImage->Data, size);
    }
    else {
       GLuint bw, bh;
@@ -590,7 +590,7 @@ getteximage_error_check(GLcontext *ctx, GLenum target, GLint level,
 {
    struct gl_texture_object *texObj;
    struct gl_texture_image *texImage;
-   const GLuint maxLevels = _mesa_max_texture_levels(ctx, target);
+   const GLint maxLevels = _mesa_max_texture_levels(ctx, target);
    GLenum baseFormat;
 
    if (maxLevels == 0) {
@@ -776,7 +776,7 @@ getcompressedteximage_error_check(GLcontext *ctx, GLenum target, GLint level,
 {
    struct gl_texture_object *texObj;
    struct gl_texture_image *texImage;
-   const GLuint maxLevels = _mesa_max_texture_levels(ctx, target);
+   const GLint maxLevels = _mesa_max_texture_levels(ctx, target);
 
    if (maxLevels == 0) {
       _mesa_error(ctx, GL_INVALID_ENUM, "glGetCompressedTexImage(target=0x%x)",

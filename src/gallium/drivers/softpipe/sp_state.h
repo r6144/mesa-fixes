@@ -100,6 +100,11 @@ struct sp_geometry_shader {
    struct draw_geometry_shader *draw_data;
 };
 
+struct sp_velems_state {
+   unsigned count;
+   struct pipe_vertex_element velem[PIPE_MAX_ATTRIBS];
+};
+
 
 void *
 softpipe_create_blend_state(struct pipe_context *,
@@ -132,13 +137,16 @@ void softpipe_bind_rasterizer_state(struct pipe_context *, void *);
 void softpipe_delete_rasterizer_state(struct pipe_context *, void *);
 
 void softpipe_set_framebuffer_state( struct pipe_context *,
-			     const struct pipe_framebuffer_state * );
+                                     const struct pipe_framebuffer_state * );
 
 void softpipe_set_blend_color( struct pipe_context *pipe,
                                const struct pipe_blend_color *blend_color );
 
+void softpipe_set_stencil_ref( struct pipe_context *pipe,
+                               const struct pipe_stencil_ref *stencil_ref );
+
 void softpipe_set_clip_state( struct pipe_context *,
-			     const struct pipe_clip_state * );
+                              const struct pipe_clip_state * );
 
 void softpipe_set_constant_buffer(struct pipe_context *,
                                   uint shader, uint index,
@@ -157,8 +165,14 @@ void *softpipe_create_gs_state(struct pipe_context *,
 void softpipe_bind_gs_state(struct pipe_context *, void *);
 void softpipe_delete_gs_state(struct pipe_context *, void *);
 
+void *softpipe_create_vertex_elements_state(struct pipe_context *,
+                                            unsigned count,
+                                            const struct pipe_vertex_element *);
+void softpipe_bind_vertex_elements_state(struct pipe_context *, void *);
+void softpipe_delete_vertex_elements_state(struct pipe_context *, void *);
+
 void softpipe_set_polygon_stipple( struct pipe_context *,
-				  const struct pipe_poly_stipple * );
+                                   const struct pipe_poly_stipple * );
 
 void softpipe_set_scissor_state( struct pipe_context *,
                                  const struct pipe_scissor_state * );
@@ -174,10 +188,6 @@ softpipe_set_vertex_sampler_textures(struct pipe_context *,
 
 void softpipe_set_viewport_state( struct pipe_context *,
                                   const struct pipe_viewport_state * );
-
-void softpipe_set_vertex_elements(struct pipe_context *,
-                                  unsigned count,
-                                  const struct pipe_vertex_element *);
 
 void softpipe_set_vertex_buffers(struct pipe_context *,
                                  unsigned count,

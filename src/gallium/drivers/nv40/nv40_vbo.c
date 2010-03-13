@@ -1,6 +1,7 @@
 #include "pipe/p_context.h"
 #include "pipe/p_state.h"
-#include "pipe/p_inlines.h"
+#include "util/u_inlines.h"
+#include "util/u_format.h"
 
 #include "nv40_context.h"
 #include "nv40_state.h"
@@ -34,7 +35,7 @@ nv40_vbo_format_to_hw(enum pipe_format pipe, unsigned *fmt, unsigned *ncomp)
 		*fmt = NV40TCL_VTXFMT_TYPE_USHORT;
 		break;
 	default:
-		NOUVEAU_ERR("Unknown format %s\n", pf_name(pipe));
+		NOUVEAU_ERR("Unknown format %s\n", util_format_name(pipe));
 		return 1;
 	}
 
@@ -60,7 +61,7 @@ nv40_vbo_format_to_hw(enum pipe_format pipe, unsigned *fmt, unsigned *ncomp)
 		*ncomp = 4;
 		break;
 	default:
-		NOUVEAU_ERR("Unknown format %s\n", pf_name(pipe));
+		NOUVEAU_ERR("Unknown format %s\n", util_format_name(pipe));
 		return 1;
 	}
 
@@ -186,7 +187,7 @@ nv40_draw_arrays(struct pipe_context *pipe,
 
 		nv40_state_emit(nv40);
 
-		vc = nouveau_vbuf_split(chan->pushbuf->remaining, 6, 256,
+		vc = nouveau_vbuf_split(AVAIL_RING(chan), 6, 256,
 					mode, start, count, &restart);
 		if (!vc) {
 			FIRE_RING(chan);
@@ -240,7 +241,7 @@ nv40_draw_elements_u08(struct nv40_context *nv40, void *ib,
 
 		nv40_state_emit(nv40);
 
-		vc = nouveau_vbuf_split(chan->pushbuf->remaining, 6, 2,
+		vc = nouveau_vbuf_split(AVAIL_RING(chan), 6, 2,
 					mode, start, count, &restart);
 		if (vc == 0) {
 			FIRE_RING(chan);
@@ -291,7 +292,7 @@ nv40_draw_elements_u16(struct nv40_context *nv40, void *ib,
 
 		nv40_state_emit(nv40);
 
-		vc = nouveau_vbuf_split(chan->pushbuf->remaining, 6, 2,
+		vc = nouveau_vbuf_split(AVAIL_RING(chan), 6, 2,
 					mode, start, count, &restart);
 		if (vc == 0) {
 			FIRE_RING(chan);
@@ -342,7 +343,7 @@ nv40_draw_elements_u32(struct nv40_context *nv40, void *ib,
 
 		nv40_state_emit(nv40);
 
-		vc = nouveau_vbuf_split(chan->pushbuf->remaining, 5, 1,
+		vc = nouveau_vbuf_split(AVAIL_RING(chan), 5, 1,
 					mode, start, count, &restart);
 		if (vc == 0) {
 			FIRE_RING(chan);
@@ -382,7 +383,7 @@ nv40_draw_elements_inline(struct pipe_context *pipe,
 	map = pipe_buffer_map(pscreen, ib, PIPE_BUFFER_USAGE_CPU_READ);
 	if (!ib) {
 		NOUVEAU_ERR("failed mapping ib\n");
-		return FALSE;
+		return;
 	}
 
 	switch (ib_size) {
@@ -418,13 +419,13 @@ nv40_draw_elements_vbo(struct pipe_context *pipe,
 
 		nv40_state_emit(nv40);
 
-		vc = nouveau_vbuf_split(chan->pushbuf->remaining, 6, 256,
+		vc = nouveau_vbuf_split(AVAIL_RING(chan), 6, 256,
 					mode, start, count, &restart);
 		if (!vc) {
 			FIRE_RING(chan);
 			continue;
 		}
-		
+
 		BEGIN_RING(chan, curie, NV40TCL_BEGIN_END, 1);
 		OUT_RING  (chan, nvgl_primitive(mode));
 
@@ -492,16 +493,16 @@ nv40_vbo_validate(struct nv40_context *nv40)
 	int hw;
 
 	vtxbuf = so_new(3, 17, 18);
-	so_method(vtxbuf, curie, NV40TCL_VTXBUF_ADDRESS(0), nv40->vtxelt_nr);
+	so_method(vtxbuf, curie, NV40TCL_VTXBUF_ADDRESS(0), nv40->vtxelt->num_elements);
 	vtxfmt = so_new(1, 16, 0);
-	so_method(vtxfmt, curie, NV40TCL_VTXFMT(0), nv40->vtxelt_nr);
+	so_method(vtxfmt, curie, NV40TCL_VTXFMT(0), nv40->vtxelt->num_elements);
 
-	for (hw = 0; hw < nv40->vtxelt_nr; hw++) {
+	for (hw = 0; hw < nv40->vtxelt->num_elements; hw++) {
 		struct pipe_vertex_element *ve;
 		struct pipe_vertex_buffer *vb;
 		unsigned type, ncomp;
 
-		ve = &nv40->vtxelt[hw];
+		ve = &nv40->vtxelt->pipe[hw];
 		vb = &nv40->vtxbuf[ve->vertex_buffer_index];
 
 		if (!vb->stride) {

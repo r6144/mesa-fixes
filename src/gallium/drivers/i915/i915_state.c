@@ -30,7 +30,7 @@
 
 
 #include "draw/draw_context.h"
-#include "pipe/p_inlines.h"
+#include "util/u_inlines.h"
 #include "util/u_math.h"
 #include "util/u_memory.h"
 #include "tgsi/tgsi_parse.h"
@@ -190,7 +190,7 @@ static void i915_delete_blend_state(struct pipe_context *pipe, void *blend)
 }
 
 static void i915_set_blend_color( struct pipe_context *pipe,
-			     const struct pipe_blend_color *blend_color )
+                                  const struct pipe_blend_color *blend_color )
 {
    struct i915_context *i915 = i915_context(pipe);
    draw_flush(i915->draw);
@@ -198,6 +198,17 @@ static void i915_set_blend_color( struct pipe_context *pipe,
    i915->blend_color = *blend_color;
 
    i915->dirty |= I915_NEW_BLEND;
+}
+
+static void i915_set_stencil_ref( struct pipe_context *pipe,
+                                  const struct pipe_stencil_ref *stencil_ref )
+{
+   struct i915_context *i915 = i915_context(pipe);
+   draw_flush(i915->draw);
+
+   i915->stencil_ref = *stencil_ref;
+
+   i915->dirty |= I915_NEW_DEPTH_STENCIL;
 }
 
 static void *
@@ -217,10 +228,10 @@ i915_create_sampler_state(struct pipe_context *pipe,
    minFilt = translate_img_filter( sampler->min_img_filter );
    magFilt = translate_img_filter( sampler->mag_img_filter );
    
-   if (sampler->max_anisotropy > 1.0)
+   if (sampler->max_anisotropy > 1)
       minFilt = magFilt = FILTER_ANISOTROPIC;
 
-   if (sampler->max_anisotropy > 2.0) {
+   if (sampler->max_anisotropy > 2) {
       cso->state[0] |= SS2_MAX_ANISO_4;
    }
 
@@ -334,11 +345,9 @@ i915_create_depth_stencil_state(struct pipe_context *pipe,
       int fop  = i915_translate_stencil_op(depth_stencil->stencil[0].fail_op);
       int dfop = i915_translate_stencil_op(depth_stencil->stencil[0].zfail_op);
       int dpop = i915_translate_stencil_op(depth_stencil->stencil[0].zpass_op);
-      int ref  = depth_stencil->stencil[0].ref_value & 0xff;
 
       cso->stencil_LIS5 |= (S5_STENCIL_TEST_ENABLE |
                             S5_STENCIL_WRITE_ENABLE |
-                            (ref  << S5_STENCIL_REF_SHIFT) |
                             (test << S5_STENCIL_TEST_FUNC_SHIFT) |
                             (fop  << S5_STENCIL_FAIL_SHIFT) |
                             (dfop << S5_STENCIL_PASS_Z_FAIL_SHIFT) |
@@ -350,7 +359,6 @@ i915_create_depth_stencil_state(struct pipe_context *pipe,
       int fop   = i915_translate_stencil_op(depth_stencil->stencil[1].fail_op);
       int dfop  = i915_translate_stencil_op(depth_stencil->stencil[1].zfail_op);
       int dpop  = i915_translate_stencil_op(depth_stencil->stencil[1].zpass_op);
-      int ref   = depth_stencil->stencil[1].ref_value & 0xff;
       int tmask = depth_stencil->stencil[1].valuemask & 0xff;
       int wmask = depth_stencil->stencil[1].writemask & 0xff;
 
@@ -359,7 +367,6 @@ i915_create_depth_stencil_state(struct pipe_context *pipe,
                      BFO_ENABLE_STENCIL_TWO_SIDE |
                      BFO_ENABLE_STENCIL_REF |
                      BFO_STENCIL_TWO_SIDE |
-                     (ref  << BFO_STENCIL_REF_SHIFT) |
                      (test << BFO_STENCIL_TEST_SHIFT) |
                      (fop  << BFO_STENCIL_FAIL_SHIFT) |
                      (dfop << BFO_STENCIL_PASS_Z_FAIL_SHIFT) |
@@ -735,21 +742,45 @@ static void i915_set_vertex_buffers(struct pipe_context *pipe,
    draw_set_vertex_buffers(i915->draw, count, buffers);
 }
 
-static void i915_set_vertex_elements(struct pipe_context *pipe,
-                                     unsigned count,
-                                     const struct pipe_vertex_element *elements)
+static void *
+i915_create_vertex_elements_state(struct pipe_context *pipe,
+                                  unsigned count,
+                                  const struct pipe_vertex_element *attribs)
+{
+   struct i915_velems_state *velems;
+   assert(count <= PIPE_MAX_ATTRIBS);
+   velems = (struct i915_velems_state *) MALLOC(sizeof(struct i915_velems_state));
+   if (velems) {
+      velems->count = count;
+      memcpy(velems->velem, attribs, sizeof(*attribs) * count);
+   }
+   return velems;
+}
+
+static void
+i915_bind_vertex_elements_state(struct pipe_context *pipe,
+                                void *velems)
 {
    struct i915_context *i915 = i915_context(pipe);
+   struct i915_velems_state *i915_velems = (struct i915_velems_state *) velems;
+
    /* Because we change state before the draw_set_vertex_buffers call
     * we need a flush here, just to be sure.
     */
    draw_flush(i915->draw);
 
-   i915->num_vertex_elements = count;
    /* pass-through to draw module */
-   draw_set_vertex_elements(i915->draw, count, elements);
+   if (i915_velems) {
+      draw_set_vertex_elements(i915->draw,
+            i915_velems->count, i915_velems->velem);
+   }
 }
 
+static void
+i915_delete_vertex_elements_state(struct pipe_context *pipe, void *velems)
+{
+   FREE( velems );
+}
 
 void
 i915_init_state_functions( struct i915_context *i915 )
@@ -775,8 +806,12 @@ i915_init_state_functions( struct i915_context *i915 )
    i915->base.create_vs_state = i915_create_vs_state;
    i915->base.bind_vs_state = i915_bind_vs_state;
    i915->base.delete_vs_state = i915_delete_vs_state;
+   i915->base.create_vertex_elements_state = i915_create_vertex_elements_state;
+   i915->base.bind_vertex_elements_state = i915_bind_vertex_elements_state;
+   i915->base.delete_vertex_elements_state = i915_delete_vertex_elements_state;
 
    i915->base.set_blend_color = i915_set_blend_color;
+   i915->base.set_stencil_ref = i915_set_stencil_ref;
    i915->base.set_clip_state = i915_set_clip_state;
    i915->base.set_constant_buffer = i915_set_constant_buffer;
    i915->base.set_framebuffer_state = i915_set_framebuffer_state;
@@ -786,5 +821,4 @@ i915_init_state_functions( struct i915_context *i915 )
    i915->base.set_fragment_sampler_textures = i915_set_sampler_textures;
    i915->base.set_viewport_state = i915_set_viewport_state;
    i915->base.set_vertex_buffers = i915_set_vertex_buffers;
-   i915->base.set_vertex_elements = i915_set_vertex_elements;
 }

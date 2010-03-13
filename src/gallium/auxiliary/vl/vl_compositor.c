@@ -28,7 +28,7 @@
 #include "vl_compositor.h"
 #include <assert.h>
 #include <pipe/p_context.h>
-#include <pipe/p_inlines.h>
+#include <util/u_inlines.h>
 #include <tgsi/tgsi_parse.h>
 #include <tgsi/tgsi_build.h>
 #include <util/u_memory.h>
@@ -230,6 +230,7 @@ static bool
 init_pipe_state(struct vl_compositor *c)
 {
    struct pipe_sampler_state sampler;
+   struct pipe_vertex_element vertex_elems[2];
 
    assert(c);
 
@@ -245,22 +246,33 @@ init_pipe_state(struct vl_compositor *c)
    sampler.compare_mode = PIPE_TEX_COMPARE_NONE;
    sampler.compare_func = PIPE_FUNC_ALWAYS;
    sampler.normalized_coords = 1;
-   /*sampler.prefilter = ;*/
    /*sampler.lod_bias = ;*/
    /*sampler.min_lod = ;*/
    /*sampler.max_lod = ;*/
    /*sampler.border_color[i] = ;*/
    /*sampler.max_anisotropy = ;*/
    c->sampler = c->pipe->create_sampler_state(c->pipe, &sampler);
-	
+
+   vertex_elems[0].src_offset = 0;
+   vertex_elems[0].instance_divisor = 0;
+   vertex_elems[0].vertex_buffer_index = 0;
+   vertex_elems[0].src_format = PIPE_FORMAT_R32G32_FLOAT;
+   vertex_elems[1].src_offset = 0;
+   vertex_elems[1].instance_divisor = 0;
+   vertex_elems[1].vertex_buffer_index = 1;
+   vertex_elems[1].src_format = PIPE_FORMAT_R32G32_FLOAT;
+   c->vertex_elems = c->pipe->create_vertex_elements_state(c->pipe, 2, vertex_elems);
+
+
    return true;
 }
 
 static void cleanup_pipe_state(struct vl_compositor *c)
 {
    assert(c);
-	
+
    c->pipe->delete_sampler_state(c->pipe, c->sampler);
+   c->pipe->delete_vertex_elements_state(c->pipe, c->vertex_elems);
 }
 
 static bool
@@ -315,12 +327,6 @@ init_buffers(struct vl_compositor *c)
 
    pipe_buffer_unmap(c->pipe->screen, c->vertex_bufs[0].buffer);
 
-   c->vertex_elems[0].src_offset = 0;
-   c->vertex_elems[0].instance_divisor = 0;
-   c->vertex_elems[0].vertex_buffer_index = 0;
-   c->vertex_elems[0].nr_components = 2;
-   c->vertex_elems[0].src_format = PIPE_FORMAT_R32G32_FLOAT;
-
    /*
     * Create our texcoord buffer and texcoord buffer element
     * Texcoord buffer contains the TCs for mapping the rendered surface to the 4 vertices
@@ -344,12 +350,6 @@ init_buffers(struct vl_compositor *c)
    );
 
    pipe_buffer_unmap(c->pipe->screen, c->vertex_bufs[1].buffer);
-
-   c->vertex_elems[1].src_offset = 0;
-   c->vertex_elems[1].instance_divisor = 0;
-   c->vertex_elems[1].vertex_buffer_index = 1;
-   c->vertex_elems[1].nr_components = 2;
-   c->vertex_elems[1].src_format = PIPE_FORMAT_R32G32_FLOAT;
 
    /*
     * Create our vertex shader's constant buffer
@@ -484,7 +484,7 @@ void vl_compositor_render(struct vl_compositor          *compositor,
    compositor->pipe->bind_vs_state(compositor->pipe, compositor->vertex_shader);
    compositor->pipe->bind_fs_state(compositor->pipe, compositor->fragment_shader);
    compositor->pipe->set_vertex_buffers(compositor->pipe, 2, compositor->vertex_bufs);
-   compositor->pipe->set_vertex_elements(compositor->pipe, 2, compositor->vertex_elems);
+   compositor->pipe->bind_vertex_elements_state(compositor->pipe, compositor->vertex_elems);
    compositor->pipe->set_constant_buffer(compositor->pipe, PIPE_SHADER_VERTEX, 0, compositor->vs_const_buf);
    compositor->pipe->set_constant_buffer(compositor->pipe, PIPE_SHADER_FRAGMENT, 0, compositor->fs_const_buf);
 

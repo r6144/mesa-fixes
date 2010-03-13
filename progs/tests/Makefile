@@ -41,6 +41,7 @@ SOURCES = \
 	copypixrate.c \
 	crossbar.c \
 	cva.c \
+	cylwrap.c \
 	drawbuffers.c \
 	drawbuffers2.c \
 	exactrast.c \
@@ -48,6 +49,7 @@ SOURCES = \
 	floattex.c \
 	fbotest1.c \
 	fbotest2.c \
+	fbotest3.c \
 	fillrate.c \
 	fog.c \
 	fogcoord.c \
@@ -118,6 +120,7 @@ SOURCES = \
 	vpwarpmesh.c \
 	yuvrect.c \
 	yuvsquare.c \
+	zbitmap.c \
 	zcomp.c \
 	zdrawpix.c \
 	zreaddraw.c
@@ -155,7 +158,7 @@ clean:
 # auto code generation
 getprocaddress: getprocaddress.c getproclist.h
 
-getproclist.h: $(TOP)/src/mesa/glapi/gl_API.xml getprocaddress.c getprocaddress.py
+getproclist.h: $(TOP)/src/mesa/glapi/gen/gl_API.xml getprocaddress.c getprocaddress.py
 	python getprocaddress.py > getproclist.h
 
 arraytexture: arraytexture.o readtex.o

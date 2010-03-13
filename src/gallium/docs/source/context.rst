@@ -24,6 +24,7 @@ CSO objects handled by the context object:
 * :ref:`Depth, Stencil, & Alpha`: ``*_depth_stencil_alpha_state``
 * :ref:`Shader`: These have two sets of methods. ``*_fs_state`` is for
   fragment shaders, and ``*_vs_state`` is for vertex shaders.
+* :ref:`Vertex Elements`: ``*_vertex_elements_state``
 
 
 Resource Binding State
@@ -49,8 +50,9 @@ Non-CSO State
 
 These pieces of state are too small, variable, and/or trivial to have CSO
 objects. They all follow simple, one-method binding calls, e.g.
-``set_edgeflags``.
-
+``set_blend_color``.
+* ``set_stencil_ref`` sets the stencil front and back reference values
+  which are used as comparison values in stencil test.
 * ``set_blend_color``
 * ``set_clip_state``
 * ``set_polygon_stipple``
@@ -59,7 +61,6 @@ objects. They all follow simple, one-method binding calls, e.g.
   not have the scissor test enabled, then the scissor bounds never need to
   be set since they will not be used.
 * ``set_viewport_state``
-* ``set_vertex_elements``
 
 
 Clearing

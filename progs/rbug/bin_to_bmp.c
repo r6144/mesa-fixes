@@ -22,6 +22,8 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include <stdio.h>
+
 #include "pipe/p_compiler.h"
 #include "pipe/p_format.h"
 #include "pipe/p_state.h"
@@ -30,9 +32,10 @@
 #include "util/u_debug.h"
 #include "util/u_format.h"
 #include "util/u_network.h"
+#include "util/u_string.h"
 #include "util/u_tile.h"
 
-static uint8_t* read(const char *filename, unsigned size);
+static uint8_t* rbug_read(const char *filename, unsigned size);
 static void dump(unsigned src_width, unsigned src_height,
                  unsigned src_stride, enum pipe_format src_format,
                  uint8_t *data, unsigned src_size);
@@ -45,9 +48,9 @@ int main(int argc, char** argv)
    unsigned stride = width * 4;
    unsigned size = stride * height;
    const char *filename = "mybin.bin";
-   enum pipe_format format = PIPE_FORMAT_A8R8G8B8_UNORM;
+   enum pipe_format format = PIPE_FORMAT_B8G8R8A8_UNORM;
 
-   dump(width, height, stride, format, read(filename, size), size);
+   dump(width, height, stride, format, rbug_read(filename, size), size);
 
    return 0;
 }
@@ -72,7 +75,7 @@ static void dump(unsigned width, unsigned height,
       rgba = MALLOC(dst_size);
    }
 
-   util_snprintf(filename, 512, "%s.bmp", pf_name(src_format));
+   util_snprintf(filename, 512, "%s.bmp", util_format_name(src_format));
 
    if (util_format_is_compressed(src_format)) {
       debug_printf("skipping: %s\n", filename);
@@ -92,7 +95,7 @@ static void dump(unsigned width, unsigned height,
    FREE(rgba);
 }
 
-static uint8_t* read(const char *filename, unsigned size)
+static uint8_t* rbug_read(const char *filename, unsigned size)
 {
    uint8_t *data;
    FILE *file = fopen(filename, "rb");

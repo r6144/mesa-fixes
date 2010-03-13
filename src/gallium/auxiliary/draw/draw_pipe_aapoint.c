@@ -53,6 +53,10 @@
 #include "draw_pipe.h"
 
 
+/** Approx number of new tokens for instructions in aa_transform_inst() */
+#define NUM_NEW_TOKENS 200
+
+
 /*
  * Enabling NORMALIZE might give _slightly_ better results.
  * Basically, it controls whether we compute distance as d=sqrt(x*x+y*y) or
@@ -81,16 +85,19 @@ struct aapoint_stage
 {
    struct draw_stage stage;
 
-   int psize_slot;
+   /** half of pipe_rasterizer_state::point_size */
    float radius;
+
+   /** vertex attrib slot containing point size */
+   int psize_slot;
 
    /** this is the vertex attrib slot for the new texcoords */
    uint tex_slot;
+
+   /** vertex attrib slot containing position */
    uint pos_slot;
 
-   /*
-    * Currently bound state
-    */
+   /** Currently bound fragment shader */
    struct aapoint_fragment_shader *fs;
 
    /*
@@ -491,11 +498,10 @@ generate_aapoint_fs(struct aapoint_stage *aapoint)
    const struct pipe_shader_state *orig_fs = &aapoint->fs->state;
    struct pipe_shader_state aapoint_fs;
    struct aa_transform_context transform;
-
-#define MAX 1000
+   const uint newLen = tgsi_num_tokens(orig_fs->tokens) + NUM_NEW_TOKENS;
 
    aapoint_fs = *orig_fs; /* copy to init */
-   aapoint_fs.tokens = MALLOC(sizeof(struct tgsi_token) * MAX);
+   aapoint_fs.tokens = tgsi_alloc_tokens(newLen);
    if (aapoint_fs.tokens == NULL)
       return FALSE;
 
@@ -511,7 +517,7 @@ generate_aapoint_fs(struct aapoint_stage *aapoint)
 
    tgsi_transform_shader(orig_fs->tokens,
                          (struct tgsi_token *) aapoint_fs.tokens,
-                         MAX, &transform.base);
+                         newLen, &transform.base);
 
 #if 0 /* DEBUG */
    printf("draw_aapoint, orig shader:\n");
@@ -575,8 +581,8 @@ aapoint_point(struct draw_stage *stage, struct prim_header *header)
    const struct aapoint_stage *aapoint = aapoint_stage(stage);
    struct prim_header tri;
    struct vertex_header *v[4];
-   uint texPos = aapoint->tex_slot;
-   uint pos_slot = aapoint->pos_slot;
+   const uint tex_slot = aapoint->tex_slot;
+   const uint pos_slot = aapoint->pos_slot;
    float radius, *pos, *tex;
    uint i;
    float k;
@@ -643,16 +649,16 @@ aapoint_point(struct draw_stage *stage, struct prim_header *header)
    pos[1] += radius;
 
    /* new texcoords */
-   tex = v[0]->data[texPos];
+   tex = v[0]->data[tex_slot];
    ASSIGN_4V(tex, -1, -1, k, 1);
 
-   tex = v[1]->data[texPos];
+   tex = v[1]->data[tex_slot];
    ASSIGN_4V(tex,  1, -1, k, 1);
 
-   tex = v[2]->data[texPos];
+   tex = v[2]->data[tex_slot];
    ASSIGN_4V(tex,  1,  1, k, 1);
 
-   tex = v[3]->data[texPos];
+   tex = v[3]->data[tex_slot];
    ASSIGN_4V(tex, -1,  1, k, 1);
 
    /* emit 2 tris for the quad strip */
@@ -858,7 +864,7 @@ draw_install_aapoint_stage(struct draw_context *draw,
     */
    aapoint = draw_aapoint_stage( draw );
    if (aapoint == NULL)
-      goto fail;
+      return FALSE;
 
    aapoint->pipe = pipe;
 
@@ -875,10 +881,4 @@ draw_install_aapoint_stage(struct draw_context *draw,
    draw->pipeline.aapoint = &aapoint->stage;
 
    return TRUE;
-
- fail:
-   if (aapoint)
-      aapoint->stage.destroy( &aapoint->stage );
-
-   return FALSE;
 }

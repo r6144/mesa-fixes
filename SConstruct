@@ -79,9 +79,15 @@ Help(opts.GenerateHelpText(env))
 # replicate options values in local variables
 debug = env['debug']
 dri = env['dri']
-llvm = env['llvm']
 machine = env['machine']
 platform = env['platform']
+drawllvm = 'llvmpipe' in env['drivers']
+
+# LLVM support in the Draw module
+if drawllvm:
+        env.Tool('llvm')
+        if not env.has_key('LLVM_VERSION'):
+           drawllvm = False
 
 # derived options
 x86 = machine == 'x86'
@@ -94,7 +100,7 @@ Export([
 	'x86', 
 	'ppc', 
 	'dri', 
-	'llvm',
+	'drawllvm',
 	'platform',
 	'gcc',
 	'msvc',
@@ -104,12 +110,19 @@ Export([
 #######################################################################
 # Environment setup
 
+# Always build trace and identity drivers
+if 'trace' not in env['drivers']:
+    env['drivers'].append('trace')
+if 'identity' not in env['drivers']:
+    env['drivers'].append('identity')
+
 # Includes
 env.Append(CPPPATH = [
 	'#/include',
 	'#/src/gallium/include',
 	'#/src/gallium/auxiliary',
 	'#/src/gallium/drivers',
+	'#/src/gallium/winsys',
 ])
 
 if env['msvc']:
@@ -165,13 +178,9 @@ if dri:
 		'GLX_INDIRECT_RENDERING',
 	])
 
-# LLVM
-if llvm:
-	# See also http://www.scons.org/wiki/UsingPkgConfig
-	env.ParseConfig('llvm-config --cflags --ldflags --libs backend bitreader engine instrumentation interpreter ipo')
-	env.Append(CPPDEFINES = ['MESA_LLVM'])
-        # Force C++ linkage
-	env['LINK'] = env['CXX']
+# LLVM support in the Draw module
+if drawllvm:
+    env.Append(CPPDEFINES = ['DRAW_LLVM'])
 
 # libGL
 if platform in ('linux', 'freebsd', 'darwin'):
@@ -223,8 +232,10 @@ SConscript(
 	duplicate = 0 # http://www.scons.org/doc/0.97/HTML/scons-user/x2261.html
 )
 
+env.Default('src')
+
 SConscript(
-	'progs/SConscript',
-	variant_dir = os.path.join('progs', env['build']),
-	duplicate = 0 # http://www.scons.org/doc/0.97/HTML/scons-user/x2261.html
+    'progs/SConscript',
+    variant_dir = os.path.join('progs', env['build']),
+    duplicate = 0 # http://www.scons.org/doc/0.97/HTML/scons-user/x2261.html
 )

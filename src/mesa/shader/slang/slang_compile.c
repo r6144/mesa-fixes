@@ -55,7 +55,7 @@
 
 
 /** re-defined below, should be the same though */
-#define TYPE_SPECIFIER_COUNT 32
+#define TYPE_SPECIFIER_COUNT 36
 
 
 /**
@@ -65,7 +65,7 @@ static GLboolean
 legal_identifier(slang_atom name)
 {
    /* "gl_" is a reserved prefix */
-   if (_mesa_strncmp((char *) name, "gl_", 3) == 0) {
+   if (strncmp((char *) name, "gl_", 3) == 0) {
       return GL_FALSE;
    }
    return GL_TRUE;
@@ -167,7 +167,7 @@ static void
 parse_identifier_str(slang_parse_ctx * C, char **id)
 {
    *id = (char *) C->I;
-   C->I += _mesa_strlen(*id) + 1;
+   C->I += strlen(*id) + 1;
 }
 
 static slang_atom
@@ -176,7 +176,7 @@ parse_identifier(slang_parse_ctx * C)
    const char *id;
 
    id = (const char *) C->I;
-   C->I += _mesa_strlen(id) + 1;
+   C->I += strlen(id) + 1;
    return slang_atom_pool_atom(C->atoms, id);
 }
 
@@ -239,7 +239,7 @@ parse_general_number(slang_parse_ctx *ctx, float *number)
    }
 
    parse_identifier_str(ctx, &flt);
-   flt = strdup(flt);
+   flt = _mesa_strdup(flt);
    if (!flt) {
       return 0;
    }
@@ -298,9 +298,9 @@ parse_float(slang_parse_ctx * C, float *number)
       parse_identifier_str(C, &fractional);
       parse_identifier_str(C, &exponent);
 
-      whole = (char *) _slang_alloc((_mesa_strlen(integral) +
-                                     _mesa_strlen(fractional) +
-                                     _mesa_strlen(exponent) + 3) * sizeof(char));
+      whole = (char *) _slang_alloc((strlen(integral) +
+                                     strlen(fractional) +
+                                     strlen(exponent) + 3) * sizeof(char));
       if (whole == NULL) {
          slang_info_log_memory(C->L);
          RETURN0;
@@ -636,6 +636,38 @@ parse_type_centroid(slang_parse_ctx * C, slang_type_centroid *centroid)
 }
 
 
+/* Layout qualifiers */
+#define LAYOUT_QUALIFIER_NONE                      0
+#define LAYOUT_QUALIFIER_UPPER_LEFT                1
+#define LAYOUT_QUALIFIER_PIXEL_CENTER_INTEGER      2
+
+static int
+parse_layout_qualifiers(slang_parse_ctx * C, slang_layout_qualifier *layout)
+{
+   *layout = 0x0;
+
+   /* the layout qualifiers come as a list of LAYOUT_QUALIFER_x tokens,
+    * terminated by LAYOUT_QUALIFIER_NONE.
+    */
+   while (1) {
+      GLuint c = *C->I++;
+      switch (c) {
+      case LAYOUT_QUALIFIER_NONE:
+         /* end of list of qualifiers */
+         return 1;
+      case LAYOUT_QUALIFIER_UPPER_LEFT:
+         *layout |= SLANG_LAYOUT_UPPER_LEFT_BIT;
+         break;
+      case LAYOUT_QUALIFIER_PIXEL_CENTER_INTEGER:
+         *layout |= SLANG_LAYOUT_PIXEL_CENTER_INTEGER_BIT;
+         break;
+      default:
+         assert(0 && "Bad layout qualifier");
+      }
+   }
+}
+
+
 /* type qualifier */
 #define TYPE_QUALIFIER_NONE 0
 #define TYPE_QUALIFIER_CONST 1
@@ -710,13 +742,18 @@ parse_type_qualifier(slang_parse_ctx * C, slang_type_qualifier * qual)
 #define TYPE_SPECIFIER_MAT42 29
 #define TYPE_SPECIFIER_MAT34 30
 #define TYPE_SPECIFIER_MAT43 31
-#define TYPE_SPECIFIER_COUNT 32
+#define TYPE_SPECIFIER_SAMPLER_1D_ARRAY 32
+#define TYPE_SPECIFIER_SAMPLER_2D_ARRAY 33
+#define TYPE_SPECIFIER_SAMPLER_1D_ARRAY_SHADOW 34
+#define TYPE_SPECIFIER_SAMPLER_2D_ARRAY_SHADOW 35
+#define TYPE_SPECIFIER_COUNT 36
 
 static int
 parse_type_specifier(slang_parse_ctx * C, slang_output_ctx * O,
                      slang_type_specifier * spec)
 {
-   switch (*C->I++) {
+   int type = *C->I++;
+   switch (type) {
    case TYPE_SPECIFIER_VOID:
       spec->type = SLANG_SPEC_VOID;
       break;
@@ -784,28 +821,40 @@ parse_type_specifier(slang_parse_ctx * C, slang_output_ctx * O,
       spec->type = SLANG_SPEC_MAT43;
       break;
    case TYPE_SPECIFIER_SAMPLER1D:
-      spec->type = SLANG_SPEC_SAMPLER1D;
+      spec->type = SLANG_SPEC_SAMPLER_1D;
       break;
    case TYPE_SPECIFIER_SAMPLER2D:
-      spec->type = SLANG_SPEC_SAMPLER2D;
+      spec->type = SLANG_SPEC_SAMPLER_2D;
       break;
    case TYPE_SPECIFIER_SAMPLER3D:
-      spec->type = SLANG_SPEC_SAMPLER3D;
+      spec->type = SLANG_SPEC_SAMPLER_3D;
       break;
    case TYPE_SPECIFIER_SAMPLERCUBE:
-      spec->type = SLANG_SPEC_SAMPLERCUBE;
+      spec->type = SLANG_SPEC_SAMPLER_CUBE;
       break;
    case TYPE_SPECIFIER_SAMPLER2DRECT:
-      spec->type = SLANG_SPEC_SAMPLER2DRECT;
+      spec->type = SLANG_SPEC_SAMPLER_RECT;
       break;
    case TYPE_SPECIFIER_SAMPLER1DSHADOW:
-      spec->type = SLANG_SPEC_SAMPLER1DSHADOW;
+      spec->type = SLANG_SPEC_SAMPLER_1D_SHADOW;
       break;
    case TYPE_SPECIFIER_SAMPLER2DSHADOW:
-      spec->type = SLANG_SPEC_SAMPLER2DSHADOW;
+      spec->type = SLANG_SPEC_SAMPLER_2D_SHADOW;
       break;
    case TYPE_SPECIFIER_SAMPLER2DRECTSHADOW:
-      spec->type = SLANG_SPEC_SAMPLER2DRECTSHADOW;
+      spec->type = SLANG_SPEC_SAMPLER_RECT_SHADOW;
+      break;
+   case TYPE_SPECIFIER_SAMPLER_1D_ARRAY:
+      spec->type = SLANG_SPEC_SAMPLER_1D_ARRAY;
+      break;
+   case TYPE_SPECIFIER_SAMPLER_2D_ARRAY:
+      spec->type = SLANG_SPEC_SAMPLER_2D_ARRAY;
+      break;
+   case TYPE_SPECIFIER_SAMPLER_1D_ARRAY_SHADOW:
+      spec->type = SLANG_SPEC_SAMPLER_1D_ARRAY_SHADOW;
+      break;
+   case TYPE_SPECIFIER_SAMPLER_2D_ARRAY_SHADOW:
+      spec->type = SLANG_SPEC_SAMPLER_2D_ARRAY_SHADOW;
       break;
    case TYPE_SPECIFIER_STRUCT:
       spec->type = SLANG_SPEC_STRUCT;
@@ -907,9 +956,12 @@ static int
 parse_fully_specified_type(slang_parse_ctx * C, slang_output_ctx * O,
                            slang_fully_specified_type * type)
 {
+   if (!parse_layout_qualifiers(C, &type->layout))
+      RETURN0;
+
    if (!parse_type_variant(C, &type->variant))
       RETURN0;
-  
+
    if (!parse_type_centroid(C, &type->centroid))
       RETURN0;
 
@@ -2029,6 +2081,30 @@ initialize_global(slang_assemble_ctx * A, slang_variable * var)
 
 
 /**
+ * Check if it's OK to re-declare a variable with the given new type.
+ * This happens when applying layout qualifiers to gl_FragCoord or
+ * (re)setting an array size.
+ * If redeclaration is OK, return a pointer to the incoming variable
+ * updated with new type info.  Else return NULL;
+ */
+static slang_variable *
+redeclare_variable(slang_variable *var, 
+                   const slang_fully_specified_type *type)
+{
+   if (slang_fully_specified_types_compatible(&var->type, type)) {
+      /* replace orig var layout with new layout */
+      var->type.layout = type->layout;
+
+      /* XXX there may be other type updates in the future here */
+
+      return var;
+   }
+   else
+      return NULL;
+}
+
+
+/**
  * Parse the initializer for a variable declaration.
  */
 static int
@@ -2036,7 +2112,7 @@ parse_init_declarator(slang_parse_ctx * C, slang_output_ctx * O,
                       const slang_fully_specified_type * type)
 {
    GET_CURRENT_CONTEXT(ctx); /* a hack */
-   slang_variable *var;
+   slang_variable *var = NULL, *prevDecl;
    slang_atom a_name;
 
    /* empty init declatator (without name, e.g. "float ;") */
@@ -2046,29 +2122,42 @@ parse_init_declarator(slang_parse_ctx * C, slang_output_ctx * O,
    a_name = parse_identifier(C);
 
    /* check if name is already in this scope */
-   if (_slang_variable_locate(O->vars, a_name, GL_FALSE)) {
-      slang_info_log_error(C->L,
+   prevDecl = _slang_variable_locate(O->vars, a_name, C->global_scope);
+   if (prevDecl) {
+      /* A var with this name has already been declared.
+       * Check if redeclaring the var with a different type/layout is legal.
+       */
+      if (C->global_scope) {
+         var = redeclare_variable(prevDecl, type);
+      }
+      if (!var) {
+         slang_info_log_error(C->L,
                    "declaration of '%s' conflicts with previous declaration",
                    (char *) a_name);
-      RETURN0;
+         RETURN0;
+      }
    }
 
-   /* make room for the new variable and initialize it */
-   var = slang_variable_scope_grow(O->vars);
    if (!var) {
-      slang_info_log_memory(C->L);
-      RETURN0;
-   }
+      /* make room for a new variable and initialize it */
+      var = slang_variable_scope_grow(O->vars);
+      if (!var) {
+         slang_info_log_memory(C->L);
+         RETURN0;
+      }
 
-   /* copy the declarator type qualifier/etc info, parse the identifier */
-   var->type.qualifier = type->qualifier;
-   var->type.centroid = type->centroid;
-   var->type.precision = type->precision;
-   var->type.variant = type->variant;
-   var->type.array_len = type->array_len;
-   var->a_name = a_name;
-   if (var->a_name == SLANG_ATOM_NULL)
-      RETURN0;
+      /* copy the declarator type qualifier/etc info, parse the identifier */
+      var->type.qualifier = type->qualifier;
+      var->type.centroid = type->centroid;
+      var->type.precision = type->precision;
+      var->type.specifier = type->specifier;/*new*/
+      var->type.variant = type->variant;
+      var->type.layout = type->layout;
+      var->type.array_len = type->array_len;
+      var->a_name = a_name;
+      if (var->a_name == SLANG_ATOM_NULL)
+         RETURN0;
+   }
 
    switch (*C->I++) {
    case VARIABLE_NONE:
@@ -2169,6 +2258,21 @@ parse_init_declarator(slang_parse_ctx * C, slang_output_ctx * O,
             RETURN0;
       }
    }
+
+   if (var->type.qualifier == SLANG_QUAL_FIXEDINPUT &&
+       var->a_name == slang_atom_pool_atom(C->atoms, "gl_FragCoord")) {
+      /* set the program's PixelCenterInteger, OriginUpperLeft fields */
+      struct gl_fragment_program *fragProg =
+         (struct gl_fragment_program *) O->program;
+
+      if (var->type.layout & SLANG_LAYOUT_UPPER_LEFT_BIT) {
+         fragProg->OriginUpperLeft = GL_TRUE;
+      }
+      if (var->type.layout & SLANG_LAYOUT_PIXEL_CENTER_INTEGER_BIT) {
+         fragProg->PixelCenterInteger = GL_TRUE;
+      }
+   }
+
    return 1;
 }
 
@@ -2355,6 +2459,10 @@ parse_default_precision(slang_parse_ctx * C, slang_output_ctx * O)
    case TYPE_SPECIFIER_SAMPLER2DSHADOW:
    case TYPE_SPECIFIER_SAMPLER2DRECT:
    case TYPE_SPECIFIER_SAMPLER2DRECTSHADOW:
+   case TYPE_SPECIFIER_SAMPLER_1D_ARRAY:
+   case TYPE_SPECIFIER_SAMPLER_2D_ARRAY:
+   case TYPE_SPECIFIER_SAMPLER_1D_ARRAY_SHADOW:
+   case TYPE_SPECIFIER_SAMPLER_2D_ARRAY_SHADOW:
       /* OK */
       break;
    default:
@@ -2477,8 +2585,7 @@ parse_code_unit(slang_parse_ctx * C, slang_code_unit * unit,
          {
             slang_function *func;
             success = parse_function(C, &o, 1, &func);
-            if (success &&
-                _mesa_strcmp((char *) func->header.a_name, "main") == 0) {
+            if (success && strcmp((char *) func->header.a_name, "main") == 0) {
                /* found main() */
                mainFunc = func;
             }
@@ -2608,12 +2715,17 @@ compile_with_grammar(const char *source,
       return GL_FALSE;
    }
 
-   if (sl_pp_context_add_extension(context, "ARB_draw_buffers", "GL_ARB_draw_buffers") ||
-       sl_pp_context_add_extension(context, "ARB_texture_rectangle", "GL_ARB_texture_rectangle")) {
+   if (sl_pp_context_add_extension(context, "GL_ARB_draw_buffers") ||
+       sl_pp_context_add_extension(context, "GL_ARB_texture_rectangle")) {
       slang_info_log_error(infolog, "%s", sl_pp_context_error_message(context));
       sl_pp_context_destroy(context);
       return GL_FALSE;
    }
+
+   if (type == SLANG_UNIT_FRAGMENT_SHADER) {
+      sl_pp_context_add_extension(context, "GL_ARB_fragment_coord_conventions");
+   }
+
 
 #if FEATURE_es2_glsl
    if (sl_pp_context_add_predefined(context, "GL_ES", "1") ||
@@ -2858,7 +2970,7 @@ _slang_compile(GLcontext *ctx, struct gl_shader *shader)
 
    /* free shader's prev info log */
    if (shader->InfoLog) {
-      _mesa_free(shader->InfoLog);
+      free(shader->InfoLog);
       shader->InfoLog = NULL;
    }
 

@@ -177,7 +177,7 @@ static void r300SetupIndexBuffer(GLcontext *ctx, const struct _mesa_index_buffer
 		radeon_bo_map(r300->ind_buf.bo, 1);
 		assert(r300->ind_buf.bo->ptr != NULL);
 		dst_ptr = ADD_POINTERS(r300->ind_buf.bo->ptr, r300->ind_buf.bo_offset);
-		_mesa_memcpy(dst_ptr, src_ptr, size);
+		memcpy(dst_ptr, src_ptr, size);
 
 		radeon_bo_unmap(r300->ind_buf.bo);
 		r300->ind_buf.is_32bit = (mesa_ind_buf->type == GL_UNSIGNED_INT);
@@ -314,7 +314,7 @@ static void r300AlignDataToDword(GLcontext *ctx, const struct gl_client_array *i
 		int i;
 
 		for (i = 0; i < count; ++i) {
-			_mesa_memcpy(dst_ptr, src_ptr, input->StrideB);
+			memcpy(dst_ptr, src_ptr, input->StrideB);
 			src_ptr += input->StrideB;
 			dst_ptr += dst_stride;
 		}
@@ -332,7 +332,7 @@ static void r300TranslateAttrib(GLcontext *ctx, GLuint attr, int count, const st
 {
 	r300ContextPtr r300 = R300_CONTEXT(ctx);
 	struct r300_vertex_buffer *vbuf = &r300->vbuf;
-	struct vertex_attribute r300_attr;
+	struct vertex_attribute r300_attr = { 0 };
 	GLenum type;
 	GLuint stride;
 
@@ -605,13 +605,23 @@ static void r300FreeData(GLcontext *ctx)
 	}
 }
 
-static GLuint r300PredictTryDrawPrimsSize(GLcontext *ctx, GLuint nr_prims)
+static GLuint r300PredictTryDrawPrimsSize(GLcontext *ctx,
+		GLuint nr_prims, const struct _mesa_prim *prim)
 {
 	struct r300_context *r300 = R300_CONTEXT(ctx);
 	struct r300_vertex_buffer *vbuf = &r300->vbuf;
 	GLboolean flushed;
 	GLuint dwords;
 	GLuint state_size;
+	int i;
+	GLuint extra_prims = 0;
+
+	/* Check for primitive splitting. */
+	for (i = 0; i < nr_prims; ++i) {
+		const GLuint num_verts =  r300NumVerts(r300, prim[i].count, prim[i].mode);
+		extra_prims += num_verts/(65535 - 32);
+	}
+	nr_prims += extra_prims;
 
 	dwords = 2*CACHE_FLUSH_BUFSZ;
 	dwords += PRE_EMIT_STATE_BUFSZ;
@@ -667,7 +677,7 @@ static GLboolean r300TryDrawPrims(GLcontext *ctx,
 
 	/* ensure we have the cmd buf space in advance to cover
 	 * the state + DMA AOS pointers */
-	GLuint emit_end = r300PredictTryDrawPrimsSize(ctx, nr_prims)
+	GLuint emit_end = r300PredictTryDrawPrimsSize(ctx, nr_prims, prim)
 		+ r300->radeon.cmdbuf.cs->cdw;
 
 	r300SetupIndexBuffer(ctx, ib);

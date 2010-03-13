@@ -109,7 +109,6 @@ static const struct dri_extension card_extensions[] = {
   {"GL_EXT_blend_func_separate",	GL_EXT_blend_func_separate_functions},
   {"GL_EXT_blend_minmax",		GL_EXT_blend_minmax_functions},
   {"GL_EXT_blend_subtract",		NULL},
-  {"GL_EXT_packed_depth_stencil",	NULL},
   {"GL_EXT_fog_coord",			GL_EXT_fog_coord_functions },
   {"GL_EXT_gpu_program_parameters",     GL_EXT_gpu_program_parameters_functions},
   {"GL_EXT_provoking_vertex",           GL_EXT_provoking_vertex_functions },
@@ -320,7 +319,14 @@ static void r300_init_vtbl(radeonContextPtr radeon)
 	} else
 		radeon->vtbl.emit_query_finish = r300_emit_query_finish;
 
-    radeon->vtbl.blit = r300_blit;
+	radeon->vtbl.check_blit = r300_check_blit;
+	radeon->vtbl.blit = r300_blit;
+
+	if (radeon->radeonScreen->chip_family >= CHIP_FAMILY_RV515) {
+		radeon->vtbl.is_format_renderable = r500IsFormatRenderable;
+	} else {
+		radeon->vtbl.is_format_renderable = r300IsFormatRenderable;
+	}
 }
 
 static void r300InitConstValues(GLcontext *ctx, radeonScreenPtr screen)
@@ -333,6 +339,10 @@ static void r300InitConstValues(GLcontext *ctx, radeonScreenPtr screen)
 	    driQueryOptioni(&r300->radeon.optionCache, "texture_coord_units");
 	ctx->Const.MaxTextureUnits = MIN2(ctx->Const.MaxTextureImageUnits,
 		 ctx->Const.MaxTextureCoordUnits);
+	ctx->Const.MaxCombinedTextureImageUnits =
+		ctx->Const.MaxVertexTextureImageUnits +
+		ctx->Const.MaxTextureImageUnits;
+
 
 	ctx->Const.MaxTextureMaxAnisotropy = 16.0;
 	ctx->Const.MaxTextureLodBias = 16.0;
@@ -341,11 +351,13 @@ static void r300InitConstValues(GLcontext *ctx, radeonScreenPtr screen)
 		ctx->Const.MaxTextureLevels = 13;
 		ctx->Const.MaxCubeTextureLevels = 13;
 		ctx->Const.MaxTextureRectSize = 4096;
+		ctx->Const.MaxRenderbufferSize = 4096;
 	}
 	else {
 		ctx->Const.MaxTextureLevels = 12;
 		ctx->Const.MaxCubeTextureLevels = 12;
 		ctx->Const.MaxTextureRectSize = 2048;
+		ctx->Const.MaxRenderbufferSize = 2048;
 	}
 
 	ctx->Const.MinPointSize = 1.0;
@@ -359,6 +371,7 @@ static void r300InitConstValues(GLcontext *ctx, radeonScreenPtr screen)
 	ctx->Const.MaxLineWidthAA = R300_LINESIZE_MAX;
 
 	ctx->Const.MaxDrawBuffers = 1;
+	ctx->Const.MaxColorAttachments = 1;
 
 	/* currently bogus data */
 	if (r300->options.hw_tcl_enabled) {
@@ -448,6 +461,9 @@ static void r300InitGLExtensions(GLcontext *ctx)
 	}
 	if (r300->radeon.radeonScreen->chip_family >= CHIP_FAMILY_RV350)
   		_mesa_enable_extension(ctx, "GL_ARB_half_float_vertex");
+
+	if (r300->radeon.radeonScreen->chip_family >= CHIP_FAMILY_RV515)
+		_mesa_enable_extension(ctx, "GL_EXT_packed_depth_stencil");
 }
 
 static void r300InitIoctlFuncs(struct dd_function_table *functions)
@@ -484,7 +500,7 @@ GLboolean r300CreateContext(const __GLcontextModes * glVisual,
 
 	_mesa_init_driver_functions(&functions);
 	r300InitIoctlFuncs(&functions);
-	r300InitStateFuncs(&functions);
+	r300InitStateFuncs(&r300->radeon, &functions);
 	r300InitTextureFuncs(&r300->radeon, &functions);
 	r300InitShaderFuncs(&functions);
 	radeonInitQueryObjFunctions(&functions);

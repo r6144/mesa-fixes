@@ -25,9 +25,10 @@
  * 
  **************************************************************************/
 
-#include "pipe/p_inlines.h"
+#include "util/u_inlines.h"
 #include "util/u_memory.h"
 #include "util/u_math.h"
+#include "util/u_format.h"
 #include "cell_context.h"
 #include "cell_gen_fragment.h"
 #include "cell_state.h"
@@ -207,8 +208,8 @@ cell_emit_state(struct cell_context *cell)
       fb->width = cell->framebuffer.width;
       fb->height = cell->framebuffer.height;
 #if 0
-      printf("EMIT color format %s\n", pf_name(fb->color_format));
-      printf("EMIT depth format %s\n", pf_name(fb->depth_format));
+      printf("EMIT color format %s\n", util_format_name(fb->color_format));
+      printf("EMIT depth format %s\n", util_format_name(fb->depth_format));
 #endif
    }
 
@@ -244,16 +245,13 @@ cell_emit_state(struct cell_context *cell)
       uint i, j;
       float *buf = cell_batch_alloc16(cell, ROUNDUP16(32 + num_const * sizeof(float)));
       uint32_t *ibuf = (uint32_t *) buf;
-      const float *constants = pipe_buffer_map(cell->pipe.screen,
-                                               cell->constants[shader],
-                                               PIPE_BUFFER_USAGE_CPU_READ);
+      const float *constants = cell->mapped_constants[shader];
       ibuf[0] = CELL_CMD_STATE_FS_CONSTANTS;
       ibuf[4] = num_const;
       j = 8;
       for (i = 0; i < num_const; i++) {
          buf[j++] = constants[i];
       }
-      pipe_buffer_unmap(cell->pipe.screen, cell->constants[shader]);
    }
 
    if (cell->dirty & (CELL_NEW_FRAMEBUFFER |

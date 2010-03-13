@@ -44,13 +44,21 @@
 #define SL_PP_MAX_PREDEFINED  16
 
 struct sl_pp_extension {
-   int name;         /*< VENDOR_extension_name */
-   int name_string;  /*< GL_VENDOR_extension_name */
+   int name;   /*< GL_VENDOR_extension_name */
 };
 
 struct sl_pp_predefined {
    int name;
    int value;
+};
+
+union sl_pp_if_state {
+   struct {
+      unsigned int condition:1;
+      unsigned int went_thru_else:1;
+      unsigned int had_true_cond:1;
+   } u;
+   unsigned int value;
 };
 
 struct sl_pp_context {
@@ -68,7 +76,7 @@ struct sl_pp_context {
    struct sl_pp_predefined predefined[SL_PP_MAX_PREDEFINED];
    unsigned int num_predefined;
 
-   unsigned int if_stack[SL_PP_MAX_IF_NESTING];
+   union sl_pp_if_state if_stack[SL_PP_MAX_IF_NESTING];
    unsigned int if_ptr;
    unsigned int if_value;
 

@@ -30,7 +30,7 @@
 
 
 #include "pipe/p_compiler.h"
-#include "pipe/p_thread.h"
+#include "os/os_thread.h"
 #include "util/u_handle_table.h"
 #include "stw_icd.h"
 #include "stw_pixelformat.h"
@@ -48,10 +48,6 @@ struct stw_device
    
    struct pipe_screen *screen;
    
-#ifdef DEBUG
-   boolean trace_running;
-#endif
-
    LUID AdapterLuid;
 
    struct stw_pixelformat_info pixelformats[STW_MAX_PIXELFORMATS];

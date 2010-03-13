@@ -51,7 +51,7 @@ struct st_context {
    void set_blend( const struct pipe_blend_state *state ) {
       cso_set_blend($self->cso, state);
    }
-   
+
    void set_fragment_sampler( unsigned index, const struct pipe_sampler_state *state ) {
       cso_single_sampler($self->cso, index, state);
       cso_single_sampler_done($self->cso);
@@ -130,9 +130,13 @@ struct st_context {
    /*
     * Parameter-like state (or properties)
     */
-   
+
    void set_blend_color(const struct pipe_blend_color *state ) {
       cso_set_blend_color($self->cso, state);
+   }
+
+   void set_stencil_ref(const struct pipe_stencil_ref *state ) {
+      cso_set_stencil_ref($self->cso, state);
    }
 
    void set_clip(const struct pipe_clip_state *state ) {
@@ -218,9 +222,9 @@ struct st_context {
    void set_vertex_elements(unsigned num) 
    {
       $self->num_vertex_elements = num;
-      $self->pipe->set_vertex_elements($self->pipe, 
-                                       $self->num_vertex_elements, 
-                                       $self->vertex_elements);
+      cso_set_vertex_elements($self->cso,
+                              $self->num_vertex_elements, 
+                              $self->vertex_elements);
    }
 
    /*

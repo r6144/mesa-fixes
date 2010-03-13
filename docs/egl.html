@@ -28,7 +28,7 @@ cards.</p>
 
 <ol>
 <li>
-<p>Run <code>configure</code> with the desired state trackers and and enable
+<p>Run <code>configure</code> with the desired state trackers and enable
 the Gallium driver for your hardware.  For example</p>
 
 <pre>
@@ -126,10 +126,21 @@ test your build.  For example,</p>
 runtime</p>
 
 <ul>
+<li><code>EGL_DRIVERS_PATH</code>
+
+<p>By default, the main library will look for drivers in the directory where
+the drivers are installed to.  This variable specifies a list of
+colon-separated directories where the main library will look for drivers, in
+addition to the default directory.  This variable is ignored for setuid/setgid
+binaries.</p>
+
+</li>
+
 <li><code>EGL_DRIVER</code>
 
-<p>This variable forces the specified EGL driver to be loaded.  It comes in
-handy when one wants to test a specific driver.</p>
+<p>This variable specifies a full path to an EGL driver and it forces the
+specified EGL driver to be loaded.  It comes in handy when one wants to test a
+specific driver.  This variable is ignored for setuid/setgid binaries.</p>
 
 </li>
 
@@ -195,25 +206,20 @@ It is accelerated when the GLX is.  As such, it cannot provide functions that
 is not available in GLX or GLX extensions.</p>
 </li>
 
-<li><code>egl_xdri</code>
+<li><code>egl_dri2</code>
 
 <p>This driver supports the X Window System as its window system.  It functions
-as a DRI driver loader and can load DRI/DRI2/DRISW drivers.  Unlike
-<code>egl_glx</code>, it has no dependency on <code>libGL</code>.  It talks to
-the X server directly using DRI or DRI2 protocols.  It also talks minimal GLX
-protocol for things like available visuals or fbconfigs.  With direct access to
-the DRI drivers, it has the potential to support more EGL functions that are
-not possible with <code>egl_glx</code>.</p>
+as a DRI2 driver loader.  Unlike <code>egl_glx</code>, it has no dependency on
+<code>libGL</code>.  It talks to the X server directly using DRI2 protocol.</p>
 
 </li>
 <li><code>egl_dri</code>
 
 <p>This driver lacks maintenance and does <em>not</em> build.  It is similiar
-to <code>egl_xdri</code> in that it functions as a DRI driver loader.  But
-unlike <code>egl_xdri</code>, it supports Linux framebuffer devices as its
-window system and supports EGL_MESA_screen_surface extension.  It loads only
-DRI1 drivers.  As DRI1 drivers is phasing out, it might be better to rewrite
-the driver to support KMS and DRI2.</p>
+to <code>egl_dri2</code> in that it functions as a DRI(1) driver loader.  But
+unlike <code>egl_dri2</code>, it supports Linux framebuffer devices as its
+window system and supports EGL_MESA_screen_surface extension.  As DRI1 drivers
+are phasing out, it might eventually be replaced by <code>egl_dri2</code>.</p>
 
 </li>
 </ul>
@@ -261,14 +267,56 @@ uninitialized display.</p>
 resources.  The drivers are responsible to the correct behavior as defined by
 EGL.</p>
 
+<h3><code>EGL_RENDER_BUFFER</code></h3>
+
+<p>In EGL, the color buffer a context should try to render to is decided by the
+binding surface.  It should try to render to the front buffer if the binding
+surface has <code>EGL_RENDER_BUFFER</code> set to
+<code>EGL_SINGLE_BUFFER</code>;  If the same context is later bound to a
+surface with <code>EGL_RENDER_BUFFER</code> set to
+<code>EGL_BACK_BUFFER</code>, the context should try to render to the back
+buffer.  However, the context is allowed to make the final decision as to which
+color buffer it wants to or is able to render to.</p>
+
+<p>For pbuffer surfaces, the render buffer is always
+<code>EGL_BACK_BUFFER</code>.  And for pixmap surfaces, the render buffer is
+always <code>EGL_SINGLE_BUFFER</code>.  Unlike window surfaces, EGL spec
+requires their <code>EGL_RENDER_BUFFER</code> values to be honored.  As a
+result, a driver should never set <code>EGL_PIXMAP_BIT</code> or
+<code>EGL_PBUFFER_BIT</code> bits of a config if the contexts created with the
+config won't be able to honor the <code>EGL_RENDER_BUFFER</code> of pixmap or
+pbuffer surfaces.</p>
+
+<p>It should also be noted that pixmap and pbuffer surfaces are assumed to be
+single-buffered, in that <code>eglSwapBuffers</code> has no effect on them.  It
+is desirable that a driver allocates a private color buffer for each pbuffer
+surface created.  If the window system the driver supports has native pbuffers,
+or if the native pixmaps have more than one color buffers, the driver should
+carefully attach the native color buffers to the EGL surfaces, re-route them if
+required.</p>
+
+<p>There is no defined behavior as to, for example, how
+<code>glDrawBuffer</code> interacts with <code>EGL_RENDER_BUFFER</code>.  Right
+now, it is desired that the draw buffer in a client API be fixed for pixmap and
+pbuffer surfaces.  Therefore, the driver is responsible to guarantee that the
+client API renders to the specified render buffer for pixmap and pbuffer
+surfaces.</p>
+
+<h3><code>EGLDisplay</code> Mutex</h3>
+
+The <code>EGLDisplay</code> will be locked before calling any of the dispatch
+functions (well, except for GetProcAddress which does not take an
+<code>EGLDisplay</code>).  This guarantees that the same dispatch function will
+not be called with the sample display at the same time.  If a driver has access
+to an <code>EGLDisplay</code> without going through the EGL APIs, the driver
+should as well lock the display before using it.
+
 <h3>TODOs</h3>
 
 <ul>
-<li>Thread safety</li>
 <li>Pass the conformance tests</li>
 <li>Better automatic driver selection: <code>EGL_DISPLAY</code> loads all
 drivers and might eat too much memory.</li>
-<li>Stop using <code>glxinit.c</code> and sources from <code>src/glx/x11/</code></li>
 
 </ul>
 

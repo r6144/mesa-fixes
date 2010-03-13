@@ -25,6 +25,7 @@
 #include <dlfcn.h>
 #include <sys/types.h>
 #include <dirent.h>
+#include <unistd.h>
 #endif
 
 
@@ -55,21 +56,7 @@ close_library(HMODULE lib)
 static const char *
 library_suffix(void)
 {
-   return "dll";
-}
-
-
-static EGLBoolean
-make_library_path(char *buf, unsigned int size, const char *name)
-{
-   EGLBoolean need_suffix;
-   const char *suffix = ".dll";
-   int ret;
-
-   need_suffix = (strchr(name, '.') == NULL);
-   ret = snprintf(buf, size, "%s%s", name, (need_suffix) ? suffix : "");
-
-   return ((unsigned int) ret < size);
+   return ".dll";
 }
 
 
@@ -96,29 +83,12 @@ close_library(void *lib)
 static const char *
 library_suffix(void)
 {
-   return "so";
-}
-
-
-static EGLBoolean
-make_library_path(char *buf, unsigned int size, const char *name)
-{
-   EGLBoolean need_dir, need_suffix;
-   const char *suffix = ".so";
-   int ret;
-
-   need_dir = (strchr(name, '/') == NULL);
-   need_suffix = (strchr(name, '.') == NULL);
-
-   ret = snprintf(buf, size, "%s%s%s",
-         (need_dir) ? _EGL_DRIVER_SEARCH_DIR"/" : "", name,
-         (need_suffix) ? suffix : "");
-
-   return ((unsigned int) ret < size);
+   return ".so";
 }
 
 
 #else /* _EGL_PLATFORM_NO_OS */
+
 
 static const char DefaultDriverName[] = "builtin";
 
@@ -140,14 +110,6 @@ static const char *
 library_suffix(void)
 {
    return NULL;
-}
-
-
-static EGLBoolean
-make_library_path(char *buf, unsigned int size, const char *name)
-{
-   int ret = snprintf(buf, size, name);
-   return ((unsigned int) ret < size);
 }
 
 
@@ -182,7 +144,13 @@ _eglOpenLibrary(const char *driverPath, lib_handle *handle)
       mainFunc = (_EGLMain_t) GetProcAddress(lib, "_eglMain");
 #elif defined(_EGL_PLATFORM_POSIX)
    if (lib) {
-      mainFunc = (_EGLMain_t) dlsym(lib, "_eglMain");
+      union {
+         _EGLMain_t func;
+         void *ptr;
+      } tmp = { NULL };
+      /* direct cast gives a warning when compiled with -pedantic */
+      tmp.ptr = dlsym(lib, "_eglMain");
+      mainFunc = tmp.func;
       if (!mainFunc)
          error = dlerror();
    }
@@ -275,6 +243,10 @@ _eglMatchDriver(_EGLDisplay *dpy)
    _EGLDriver *best_drv = NULL;
    EGLint best_score = -1, i;
 
+   /*
+    * this function is called after preloading and the drivers never change
+    * after preloading.
+    */
    for (i = 0; i < _eglGlobal.NumDrivers; i++) {
       _EGLDriver *drv = _eglGlobal.Drivers[i];
       EGLint score;
@@ -299,6 +271,188 @@ _eglMatchDriver(_EGLDisplay *dpy)
 
 
 /**
+ * A loader function for use with _eglPreloadForEach.  The loader data is the
+ * filename of the driver.   This function stops on the first valid driver.
+ */
+static EGLBoolean
+_eglLoaderFile(const char *dir, size_t len, void *loader_data)
+{
+   _EGLDriver *drv;
+   char path[1024];
+   const char *filename = (const char *) loader_data;
+   size_t flen = strlen(filename);
+
+   /* make a full path */
+   if (len + flen + 2 > sizeof(path))
+      return EGL_TRUE;
+   if (len) {
+      memcpy(path, dir, len);
+      path[len++] = '/';
+   }
+   memcpy(path + len, filename, flen);
+   len += flen;
+   path[len] = '\0';
+
+   drv = _eglLoadDriver(path, NULL);
+   /* fix the path and load again */
+   if (!drv && library_suffix()) {
+      const char *suffix = library_suffix();
+      size_t slen = strlen(suffix);
+      const char *p;
+      EGLBoolean need_suffix;
+
+      p = filename + flen - slen;
+      need_suffix = (p < filename || strcmp(p, suffix) != 0);
+      if (need_suffix && len + slen + 1 <= sizeof(path)) {
+         strcpy(path + len, suffix);
+         drv = _eglLoadDriver(path, NULL);
+      }
+   }
+   if (!drv)
+      return EGL_TRUE;
+
+   /* remember the driver and stop */
+   _eglGlobal.Drivers[_eglGlobal.NumDrivers++] = drv;
+   return EGL_FALSE;
+}
+
+
+/**
+ * A loader function for use with _eglPreloadForEach.  The loader data is the
+ * pattern (prefix) of the files to look for.
+ */
+static EGLBoolean
+_eglLoaderPattern(const char *dir, size_t len, void *loader_data)
+{
+#if defined(_EGL_PLATFORM_POSIX)
+   const char *prefix, *suffix;
+   size_t prefix_len, suffix_len;
+   DIR *dirp;
+   struct dirent *dirent;
+   char path[1024];
+
+   if (len + 2 > sizeof(path))
+      return EGL_TRUE;
+   if (len) {
+      memcpy(path, dir, len);
+      path[len++] = '/';
+   }
+   path[len] = '\0';
+
+   dirp = opendir(path);
+   if (!dirp)
+      return EGL_TRUE;
+
+   prefix = (const char *) loader_data;
+   prefix_len = strlen(prefix);
+   suffix = library_suffix();
+   suffix_len = (suffix) ? strlen(suffix) : 0;
+
+   while ((dirent = readdir(dirp))) {
+      _EGLDriver *drv;
+      size_t dirent_len = strlen(dirent->d_name);
+      const char *p;
+
+      /* match the prefix */
+      if (strncmp(dirent->d_name, prefix, prefix_len) != 0)
+         continue;
+      /* match the suffix */
+      if (suffix) {
+         p = dirent->d_name + dirent_len - suffix_len;
+         if (p < dirent->d_name || strcmp(p, suffix) != 0)
+            continue;
+      }
+
+      /* make a full path and load the driver */
+      if (len + dirent_len + 1 <= sizeof(path)) {
+         strcpy(path + len, dirent->d_name);
+         drv = _eglLoadDriver(path, NULL);
+         if (drv)
+            _eglGlobal.Drivers[_eglGlobal.NumDrivers++] = drv;
+      }
+   }
+
+   closedir(dirp);
+
+   return EGL_TRUE;
+#else /* _EGL_PLATFORM_POSIX */
+   /* stop immediately */
+   return EGL_FALSE;
+#endif
+}
+
+
+/**
+ * Run the preload function on each driver directory and return the number of
+ * drivers loaded.
+ *
+ * The process may end prematurely if the callback function returns false.
+ */
+static EGLint
+_eglPreloadForEach(const char *search_path,
+                   EGLBoolean (*loader)(const char *, size_t, void *),
+                   void *loader_data)
+{
+   const char *cur, *next;
+   size_t len;
+   EGLint num_drivers = _eglGlobal.NumDrivers;
+
+   cur = search_path;
+   while (cur) {
+      next = strchr(cur, ':');
+      len = (next) ? next - cur : strlen(cur);
+
+      if (!loader(cur, len, loader_data))
+         break;
+
+      cur = (next) ? next + 1 : NULL;
+   }
+
+   return (_eglGlobal.NumDrivers - num_drivers);
+}
+
+
+/**
+ * Return a list of colon-separated driver directories.
+ */
+static const char *
+_eglGetSearchPath(void)
+{
+   static const char *search_path;
+
+#if defined(_EGL_PLATFORM_POSIX) || defined(_EGL_PLATFORM_WINDOWS)
+   if (!search_path) {
+      static char buffer[1024];
+      const char *p;
+      int ret;
+
+      p = getenv("EGL_DRIVERS_PATH");
+#if defined(_EGL_PLATFORM_POSIX)
+      if (p && (geteuid() != getuid() || getegid() != getgid())) {
+         _eglLog(_EGL_DEBUG,
+               "ignore EGL_DRIVERS_PATH for setuid/setgid binaries");
+         p = NULL;
+      }
+#endif /* _EGL_PLATFORM_POSIX */
+
+      if (p) {
+         ret = snprintf(buffer, sizeof(buffer),
+               "%s:%s", p, _EGL_DRIVER_SEARCH_DIR);
+         if (ret > 0 && ret < sizeof(buffer))
+            search_path = buffer;
+      }
+   }
+   if (!search_path)
+      search_path = _EGL_DRIVER_SEARCH_DIR;
+#else
+   search_path = "";
+#endif
+
+   return search_path;
+}
+
+
+/**
  * Preload a user driver.
  *
  * A user driver can be specified by EGL_DRIVER.
@@ -306,30 +460,29 @@ _eglMatchDriver(_EGLDisplay *dpy)
 static EGLBoolean
 _eglPreloadUserDriver(void)
 {
-#if defined(_EGL_PLATFORM_POSIX) || defined(_EGL_PLATFORM_WINDOWS)
-   _EGLDriver *drv;
-   char path[1024];
+   const char *search_path = _eglGetSearchPath();
    char *env;
 
    env = getenv("EGL_DRIVER");
+#if defined(_EGL_PLATFORM_POSIX)
+   if (env && strchr(env, '/')) {
+      search_path = "";
+      if ((geteuid() != getuid() || getegid() != getgid())) {
+         _eglLog(_EGL_DEBUG,
+               "ignore EGL_DRIVER for setuid/setgid binaries");
+         env = NULL;
+      }
+   }
+#endif /* _EGL_PLATFORM_POSIX */
    if (!env)
       return EGL_FALSE;
 
-   if (!make_library_path(path, sizeof(path), env))
-      return EGL_FALSE;
-
-   drv = _eglLoadDriver(path, NULL);
-   if (!drv) {
+   if (!_eglPreloadForEach(search_path, _eglLoaderFile, (void *) env)) {
       _eglLog(_EGL_WARNING, "EGL_DRIVER is set to an invalid driver");
       return EGL_FALSE;
    }
 
-   _eglGlobal.Drivers[_eglGlobal.NumDrivers++] = drv;
-
    return EGL_TRUE;
-#else /* _EGL_PLATFORM_POSIX || _EGL_PLATFORM_WINDOWS */
-   return EGL_FALSE;
-#endif
 }
 
 
@@ -345,11 +498,9 @@ _eglPreloadUserDriver(void)
 static EGLBoolean
 _eglPreloadDisplayDrivers(void)
 {
-#if defined(_EGL_PLATFORM_POSIX)
-   const char *dpy, *suffix;
-   char path[1024], prefix[32];
-   DIR *dirp;
-   struct dirent *dirent;
+   const char *dpy;
+   char prefix[32];
+   int ret;
 
    dpy = getenv("EGL_DISPLAY");
    if (!dpy || !dpy[0])
@@ -357,42 +508,12 @@ _eglPreloadDisplayDrivers(void)
    if (!dpy || !dpy[0])
       return EGL_FALSE;
 
-   snprintf(prefix, sizeof(prefix), "egl_%s_", dpy);
-   suffix = library_suffix();
-
-   dirp = opendir(_EGL_DRIVER_SEARCH_DIR);
-   if (!dirp)
+   ret = snprintf(prefix, sizeof(prefix), "egl_%s_", dpy);
+   if (ret < 0 || ret >= sizeof(prefix))
       return EGL_FALSE;
 
-   while ((dirent = readdir(dirp))) {
-      _EGLDriver *drv;
-      const char *p;
-
-      /* match the prefix */
-      if (strncmp(dirent->d_name, prefix, strlen(prefix)) != 0)
-         continue;
-
-      /* match the suffix */
-      p = strrchr(dirent->d_name, '.');
-      if ((p && !suffix) || (!p && suffix))
-         continue;
-      else if (p && suffix && strcmp(p + 1, suffix) != 0)
-         continue;
-
-      snprintf(path, sizeof(path),
-            _EGL_DRIVER_SEARCH_DIR"/%s", dirent->d_name);
-
-      drv = _eglLoadDriver(path, NULL);
-      if (drv)
-         _eglGlobal.Drivers[_eglGlobal.NumDrivers++] = drv;
-   }
-
-   closedir(dirp);
-
-   return (_eglGlobal.NumDrivers > 0);
-#else /* _EGL_PLATFORM_POSIX */
-   return EGL_FALSE;
-#endif
+   return (_eglPreloadForEach(_eglGetSearchPath(),
+            _eglLoaderPattern, (void *) prefix) > 0);
 }
 
 
@@ -402,19 +523,8 @@ _eglPreloadDisplayDrivers(void)
 static EGLBoolean
 _eglPreloadDefaultDriver(void)
 {
-   _EGLDriver *drv;
-   char path[1024];
-
-   if (!make_library_path(path, sizeof(path), DefaultDriverName))
-      return EGL_FALSE;
-
-   drv = _eglLoadDriver(path, NULL);
-   if (!drv)
-      return EGL_FALSE;
-
-   _eglGlobal.Drivers[_eglGlobal.NumDrivers++] = drv;
-
-   return EGL_TRUE;
+   return (_eglPreloadForEach(_eglGetSearchPath(),
+            _eglLoaderFile, (void *) DefaultDriverName) > 0);
 }
 
 
@@ -429,13 +539,20 @@ _eglPreloadDrivers(void)
 {
    EGLBoolean loaded;
 
+   /* protect the preloading process */
+   _eglLockMutex(_eglGlobal.Mutex);
+
    /* already preloaded */
-   if (_eglGlobal.NumDrivers)
+   if (_eglGlobal.NumDrivers) {
+      _eglUnlockMutex(_eglGlobal.Mutex);
       return EGL_TRUE;
+   }
 
    loaded = (_eglPreloadUserDriver() ||
              _eglPreloadDisplayDrivers() ||
              _eglPreloadDefaultDriver());
+
+   _eglUnlockMutex(_eglGlobal.Mutex);
 
    return loaded;
 }
@@ -448,6 +565,8 @@ void
 _eglUnloadDrivers(void)
 {
    EGLint i;
+
+   /* this is called at atexit time */
    for (i = 0; i < _eglGlobal.NumDrivers; i++) {
       _EGLDriver *drv = _eglGlobal.Drivers[i];
       lib_handle handle = drv->LibHandle;

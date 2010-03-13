@@ -48,8 +48,6 @@
 
 
 struct pipe_context;
-struct gallivm_prog;
-struct gallivm_cpu_engine;
 struct draw_vertex_shader;
 struct draw_context;
 struct draw_stage;
@@ -193,10 +191,6 @@ struct draw_context
       uint num_samplers;
       struct tgsi_sampler **samplers;
 
-      /* This (and the tgsi_exec_machine struct) probably need to be moved somewhere private.
-       */
-      struct gallivm_cpu_engine *engine;   
-
       /* Here's another one:
        */
       struct aos_machine *aos_machine; 
@@ -280,8 +274,8 @@ void draw_gs_destroy( struct draw_context *draw );
 /*******************************************************************************
  * Common shading code:
  */
-int draw_current_shader_outputs(struct draw_context *draw);
-int draw_current_shader_position_output(struct draw_context *draw);
+uint draw_current_shader_outputs(const struct draw_context *draw);
+uint draw_current_shader_position_output(const struct draw_context *draw);
 
 /*******************************************************************************
  * Vertex processing (was passthrough) code:

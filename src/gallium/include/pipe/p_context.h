@@ -177,6 +177,12 @@ struct pipe_context {
    void   (*bind_gs_state)(struct pipe_context *, void *);
    void   (*delete_gs_state)(struct pipe_context *, void *);
 
+   void * (*create_vertex_elements_state)(struct pipe_context *,
+                                          unsigned num_elements,
+                                          const struct pipe_vertex_element *);
+   void   (*bind_vertex_elements_state)(struct pipe_context *, void *);
+   void   (*delete_vertex_elements_state)(struct pipe_context *, void *);
+
    /*@}*/
 
    /**
@@ -186,8 +192,11 @@ struct pipe_context {
    void (*set_blend_color)( struct pipe_context *,
                             const struct pipe_blend_color * );
 
+   void (*set_stencil_ref)( struct pipe_context *,
+                            const struct pipe_stencil_ref * );
+
    void (*set_clip_state)( struct pipe_context *,
-			   const struct pipe_clip_state * );
+                            const struct pipe_clip_state * );
 
    void (*set_constant_buffer)( struct pipe_context *,
                                 uint shader, uint index,
@@ -217,9 +226,6 @@ struct pipe_context {
                                unsigned num_buffers,
                                const struct pipe_vertex_buffer * );
 
-   void (*set_vertex_elements)( struct pipe_context *,
-                                unsigned num_elements,
-                                const struct pipe_vertex_element * );
    /*@}*/
 
 
@@ -300,6 +306,33 @@ struct pipe_context {
     */
    unsigned int (*is_buffer_referenced)(struct pipe_context *pipe,
 					struct pipe_buffer *buf);
+
+
+
+   /**
+    * Get a transfer object for transferring data to/from a texture.
+    *
+    * Transfers are (by default) context-private and allow uploads to be
+    * interleaved with
+    */
+   struct pipe_transfer *(*get_tex_transfer)(struct pipe_context *,
+                                             struct pipe_texture *texture,
+                                             unsigned face, unsigned level,
+                                             unsigned zslice,
+                                             enum pipe_transfer_usage usage,
+                                             unsigned x, unsigned y,
+                                             unsigned w, unsigned h);
+
+   void (*tex_transfer_destroy)(struct pipe_context *,
+                                struct pipe_transfer *);
+   
+   void *(*transfer_map)( struct pipe_context *,
+                          struct pipe_transfer *transfer );
+
+   void (*transfer_unmap)( struct pipe_context *,
+                           struct pipe_transfer *transfer );
+
+
 };
 
 

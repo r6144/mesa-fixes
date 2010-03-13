@@ -37,6 +37,7 @@
 #include "pipe/p_context.h"
 #include "pipe/p_defines.h"
 #include "pipe/p_shader_tokens.h"
+#include "util/u_inlines.h"
 
 #include "util/u_format.h"
 #include "util/u_math.h"
@@ -48,6 +49,9 @@
 #include "draw_context.h"
 #include "draw_pipe.h"
 
+
+/** Approx number of new tokens for instructions in pstip_transform_inst() */
+#define NUM_NEW_TOKENS 50
 
 
 /**
@@ -171,12 +175,7 @@ pstip_transform_immed(struct tgsi_transform_context *ctx,
 static int
 free_bit(uint bitfield)
 {
-   int i;
-   for (i = 0; i < 32; i++) {
-      if ((bitfield & (1 << i)) == 0)
-         return i;
-   }
-   return -1;
+   return ffs(~bitfield) - 1;
 }
 
 
@@ -332,11 +331,10 @@ generate_pstip_fs(struct pstip_stage *pstip)
    /*struct draw_context *draw = pstip->stage.draw;*/
    struct pipe_shader_state pstip_fs;
    struct pstip_transform_context transform;
-
-#define MAX 1000
+   const uint newLen = tgsi_num_tokens(orig_fs->tokens) + NUM_NEW_TOKENS;
 
    pstip_fs = *orig_fs; /* copy to init */
-   pstip_fs.tokens = MALLOC(sizeof(struct tgsi_token) * MAX);
+   pstip_fs.tokens = tgsi_alloc_tokens(newLen);
    if (pstip_fs.tokens == NULL)
       return FALSE;
 
@@ -351,7 +349,7 @@ generate_pstip_fs(struct pstip_stage *pstip)
 
    tgsi_transform_shader(orig_fs->tokens,
                          (struct tgsi_token *) pstip_fs.tokens,
-                         MAX, &transform.base);
+                         newLen, &transform.base);
 
 #if 0 /* DEBUG */
    tgsi_dump(orig_fs->tokens, 0);
@@ -376,19 +374,21 @@ pstip_update_texture(struct pstip_stage *pstip)
 {
    static const uint bit31 = 1 << 31;
    struct pipe_context *pipe = pstip->pipe;
-   struct pipe_screen *screen = pipe->screen;
    struct pipe_transfer *transfer;
    const uint *stipple = pstip->state.stipple->stipple;
    uint i, j;
    ubyte *data;
 
    /* XXX: want to avoid flushing just because we use stipple: 
+    *
+    * Flush should no longer be necessary if driver is properly
+    * interleaving drawing and transfers on a given context:
     */
    pipe->flush( pipe, PIPE_FLUSH_TEXTURE_CACHE, NULL );
 
-   transfer = screen->get_tex_transfer(screen, pstip->texture, 0, 0, 0,
-                                       PIPE_TRANSFER_WRITE, 0, 0, 32, 32);
-   data = screen->transfer_map(screen, transfer);
+   transfer = pipe->get_tex_transfer(pipe, pstip->texture, 0, 0, 0,
+				     PIPE_TRANSFER_WRITE, 0, 0, 32, 32);
+   data = pipe->transfer_map(pipe, transfer);
 
    /*
     * Load alpha texture.
@@ -410,8 +410,8 @@ pstip_update_texture(struct pstip_stage *pstip)
    }
 
    /* unmap */
-   screen->transfer_unmap(screen, transfer);
-   screen->tex_transfer_destroy(transfer);
+   pipe->transfer_unmap(pipe, transfer);
+   pipe->tex_transfer_destroy(pipe, transfer);
 }
 
 

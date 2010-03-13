@@ -37,8 +37,10 @@
 
 #include "util/u_memory.h"
 #include "util/u_cpu_detect.h"
+#include "gallivm/lp_bld_init.h"
+#include "lp_debug.h"
 #include "lp_screen.h"
-#include "lp_bld_intr.h"
+#include "gallivm/lp_bld_intr.h"
 #include "lp_jit.h"
 
 
@@ -49,12 +51,17 @@ lp_jit_init_globals(struct llvmpipe_screen *screen)
 
    /* struct lp_jit_texture */
    {
-      LLVMTypeRef elem_types[4];
+      LLVMTypeRef elem_types[6];
 
       elem_types[LP_JIT_TEXTURE_WIDTH]  = LLVMInt32Type();
       elem_types[LP_JIT_TEXTURE_HEIGHT] = LLVMInt32Type();
-      elem_types[LP_JIT_TEXTURE_STRIDE] = LLVMInt32Type();
-      elem_types[LP_JIT_TEXTURE_DATA]   = LLVMPointerType(LLVMInt8Type(), 0);
+      elem_types[LP_JIT_TEXTURE_DEPTH] = LLVMInt32Type();
+      elem_types[LP_JIT_TEXTURE_LAST_LEVEL] = LLVMInt32Type();
+      elem_types[LP_JIT_TEXTURE_ROW_STRIDE] =
+         LLVMArrayType(LLVMInt32Type(), LP_MAX_TEXTURE_2D_LEVELS);
+      elem_types[LP_JIT_TEXTURE_DATA] =
+         LLVMArrayType(LLVMPointerType(LLVMInt8Type(), 0),
+                       LP_MAX_TEXTURE_2D_LEVELS);
 
       texture_type = LLVMStructType(elem_types, Elements(elem_types), 0);
 
@@ -64,9 +71,15 @@ lp_jit_init_globals(struct llvmpipe_screen *screen)
       LP_CHECK_MEMBER_OFFSET(struct lp_jit_texture, height,
                              screen->target, texture_type,
                              LP_JIT_TEXTURE_HEIGHT);
-      LP_CHECK_MEMBER_OFFSET(struct lp_jit_texture, stride,
+      LP_CHECK_MEMBER_OFFSET(struct lp_jit_texture, depth,
                              screen->target, texture_type,
-                             LP_JIT_TEXTURE_STRIDE);
+                             LP_JIT_TEXTURE_DEPTH);
+      LP_CHECK_MEMBER_OFFSET(struct lp_jit_texture, last_level,
+                             screen->target, texture_type,
+                             LP_JIT_TEXTURE_LAST_LEVEL);
+      LP_CHECK_MEMBER_OFFSET(struct lp_jit_texture, row_stride,
+                             screen->target, texture_type,
+                             LP_JIT_TEXTURE_ROW_STRIDE);
       LP_CHECK_MEMBER_OFFSET(struct lp_jit_texture, data,
                              screen->target, texture_type,
                              LP_JIT_TEXTURE_DATA);
@@ -78,13 +91,16 @@ lp_jit_init_globals(struct llvmpipe_screen *screen)
 
    /* struct lp_jit_context */
    {
-      LLVMTypeRef elem_types[4];
+      LLVMTypeRef elem_types[8];
       LLVMTypeRef context_type;
 
       elem_types[0] = LLVMPointerType(LLVMFloatType(), 0); /* constants */
-      elem_types[1] = LLVMFloatType();                     /* alpha_ref_value */
-      elem_types[2] = LLVMPointerType(LLVMInt8Type(), 0);  /* blend_color */
-      elem_types[3] = LLVMArrayType(texture_type, PIPE_MAX_SAMPLERS); /* textures */
+      elem_types[1] = LLVMFloatType();                     /* alpha_ref_value */      elem_types[2] = LLVMFloatType();                     /* scissor_xmin */
+      elem_types[3] = LLVMFloatType();                     /* scissor_ymin */
+      elem_types[4] = LLVMFloatType();                     /* scissor_xmax */
+      elem_types[5] = LLVMFloatType();                     /* scissor_ymax */
+      elem_types[6] = LLVMPointerType(LLVMInt8Type(), 0);  /* blend_color */
+      elem_types[7] = LLVMArrayType(texture_type, PIPE_MAX_SAMPLERS); /* textures */
 
       context_type = LLVMStructType(elem_types, Elements(elem_types), 0);
 
@@ -92,8 +108,16 @@ lp_jit_init_globals(struct llvmpipe_screen *screen)
                              screen->target, context_type, 0);
       LP_CHECK_MEMBER_OFFSET(struct lp_jit_context, alpha_ref_value,
                              screen->target, context_type, 1);
-      LP_CHECK_MEMBER_OFFSET(struct lp_jit_context, blend_color,
+      LP_CHECK_MEMBER_OFFSET(struct lp_jit_context, scissor_xmin,
                              screen->target, context_type, 2);
+      LP_CHECK_MEMBER_OFFSET(struct lp_jit_context, scissor_ymin,
+                             screen->target, context_type, 3);
+      LP_CHECK_MEMBER_OFFSET(struct lp_jit_context, scissor_xmax,
+                             screen->target, context_type, 4);
+      LP_CHECK_MEMBER_OFFSET(struct lp_jit_context, scissor_ymax,
+                             screen->target, context_type, 5);
+      LP_CHECK_MEMBER_OFFSET(struct lp_jit_context, blend_color,
+                             screen->target, context_type, 6);
       LP_CHECK_MEMBER_OFFSET(struct lp_jit_context, textures,
                              screen->target, context_type,
                              LP_JIT_CONTEXT_TEXTURES_INDEX);
@@ -136,8 +160,7 @@ lp_jit_screen_init(struct llvmpipe_screen *screen)
    util_cpu_caps.has_sse4_1 = 0;
 #endif
 
-   LLVMLinkInJIT();
-   LLVMInitializeNativeTarget();
+   lp_build_init();
 
    screen->module = LLVMModuleCreateWithName("llvmpipe");
 
@@ -153,20 +176,23 @@ lp_jit_screen_init(struct llvmpipe_screen *screen)
 
    screen->pass = LLVMCreateFunctionPassManager(screen->provider);
    LLVMAddTargetData(screen->target, screen->pass);
-   /* These are the passes currently listed in llvm-c/Transforms/Scalar.h,
-    * but there are more on SVN. */
-   /* TODO: Add more passes */
-   LLVMAddConstantPropagationPass(screen->pass);
-   if(util_cpu_caps.has_sse4_1) {
-      /* FIXME: There is a bug in this pass, whereby the combination of fptosi
-       * and sitofp (necessary for trunc/floor/ceil/round implementation)
-       * somehow becomes invalid code.
-       */
-      LLVMAddInstructionCombiningPass(screen->pass);
+
+   if ((LP_DEBUG & DEBUG_NO_LLVM_OPT) == 0) {
+      /* These are the passes currently listed in llvm-c/Transforms/Scalar.h,
+       * but there are more on SVN. */
+      /* TODO: Add more passes */
+      LLVMAddConstantPropagationPass(screen->pass);
+      if(util_cpu_caps.has_sse4_1) {
+         /* FIXME: There is a bug in this pass, whereby the combination of fptosi
+          * and sitofp (necessary for trunc/floor/ceil/round implementation)
+          * somehow becomes invalid code.
+          */
+         LLVMAddInstructionCombiningPass(screen->pass);
+      }
+      LLVMAddPromoteMemoryToRegisterPass(screen->pass);
+      LLVMAddGVNPass(screen->pass);
+      LLVMAddCFGSimplificationPass(screen->pass);
    }
-   LLVMAddPromoteMemoryToRegisterPass(screen->pass);
-   LLVMAddGVNPass(screen->pass);
-   LLVMAddCFGSimplificationPass(screen->pass);
 
    lp_jit_init_globals(screen);
 }

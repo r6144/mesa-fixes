@@ -9,7 +9,6 @@ struct nv50_screen {
 
 	struct nouveau_winsys *nvws;
 
-	unsigned cur_pctx;
 	struct nv50_context *cur_ctx;
 
 	struct nouveau_grobj *tesla;
@@ -29,6 +28,8 @@ struct nv50_screen {
 	struct nouveau_bo *tsc;
 
 	struct nouveau_stateobj *static_init;
+
+	boolean force_push;
 };
 
 static INLINE struct nv50_screen *

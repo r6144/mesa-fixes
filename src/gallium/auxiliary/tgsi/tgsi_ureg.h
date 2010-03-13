@@ -30,6 +30,7 @@
 
 #include "pipe/p_compiler.h"
 #include "pipe/p_shader_tokens.h"
+#include "util/u_debug.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -149,10 +150,24 @@ ureg_property_fs_coord_pixel_center(struct ureg_program *ureg,
  */
 
 struct ureg_src
-ureg_DECL_fs_input( struct ureg_program *,
-                    unsigned semantic_name,
-                    unsigned semantic_index,
-                    unsigned interp_mode );
+ureg_DECL_fs_input_cyl(struct ureg_program *,
+                       unsigned semantic_name,
+                       unsigned semantic_index,
+                       unsigned interp_mode,
+                       unsigned cylindrical_wrap);
+
+static INLINE struct ureg_src
+ureg_DECL_fs_input(struct ureg_program *ureg,
+                   unsigned semantic_name,
+                   unsigned semantic_index,
+                   unsigned interp_mode)
+{
+   return ureg_DECL_fs_input_cyl(ureg,
+                                 semantic_name,
+                                 semantic_index,
+                                 interp_mode,
+                                 0);
+}
 
 struct ureg_src
 ureg_DECL_vs_input( struct ureg_program *,
@@ -160,7 +175,9 @@ ureg_DECL_vs_input( struct ureg_program *,
 
 struct ureg_src
 ureg_DECL_gs_input(struct ureg_program *,
-                   unsigned index);
+                   unsigned index,
+                   unsigned semantic_name,
+                   unsigned semantic_index);
 
 struct ureg_src
 ureg_DECL_system_value(struct ureg_program *,

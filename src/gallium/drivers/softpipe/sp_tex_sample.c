@@ -55,7 +55,7 @@
 static INLINE float
 frac(float f)
 {
-   return f - util_ifloor(f);
+   return f - floorf(f);
 }
 
 
@@ -201,11 +201,9 @@ wrap_nearest_mirror_repeat(const float s[4], unsigned size, int icoord[4])
    const float max = 1.0F - min;
    for (ch = 0; ch < 4; ch++) {
       const int flr = util_ifloor(s[ch]);
-      float u;
+      float u = frac(s[ch]);
       if (flr & 1)
-         u = 1.0F - (s[ch] - (float) flr);
-      else
-         u = s[ch] - (float) flr;
+         u = 1.0F - u;
       if (u < min)
          icoord[ch] = 0;
       else if (u > max)
@@ -358,11 +356,9 @@ wrap_linear_mirror_repeat(const float s[4], unsigned size,
    uint ch;
    for (ch = 0; ch < 4; ch++) {
       const int flr = util_ifloor(s[ch]);
-      float u;
+      float u = frac(s[ch]);
       if (flr & 1)
-         u = 1.0F - (s[ch] - (float) flr);
-      else
-         u = s[ch] - (float) flr;
+         u = 1.0F - u;
       u = u * size - 0.5F;
       icoord0[ch] = util_ifloor(u);
       icoord1[ch] = icoord0[ch] + 1;
@@ -441,8 +437,7 @@ wrap_linear_mirror_clamp_to_border(const float s[4], unsigned size,
 
 
 /**
- * For RECT textures / unnormalized texcoords
- * Only a subset of wrap modes supported.
+ * PIPE_TEX_WRAP_CLAMP for nearest sampling, unnormalized coords.
  */
 static void
 wrap_nearest_unorm_clamp(const float s[4], unsigned size, int icoord[4])
@@ -456,11 +451,25 @@ wrap_nearest_unorm_clamp(const float s[4], unsigned size, int icoord[4])
 
 
 /**
- * Handles clamp_to_edge and clamp_to_border:
+ * PIPE_TEX_WRAP_CLAMP_TO_BORDER for nearest sampling, unnormalized coords.
  */
 static void
 wrap_nearest_unorm_clamp_to_border(const float s[4], unsigned size,
                                    int icoord[4])
+{
+   uint ch;
+   for (ch = 0; ch < 4; ch++) {
+      icoord[ch]= util_ifloor( CLAMP(s[ch], -0.5F, (float) size + 0.5F) );
+   }
+}
+
+
+/**
+ * PIPE_TEX_WRAP_CLAMP_TO_EDGE for nearest sampling, unnormalized coords.
+ */
+static void
+wrap_nearest_unorm_clamp_to_edge(const float s[4], unsigned size,
+                                 int icoord[4])
 {
    uint ch;
    for (ch = 0; ch < 4; ch++) {
@@ -470,8 +479,7 @@ wrap_nearest_unorm_clamp_to_border(const float s[4], unsigned size,
 
 
 /**
- * For RECT textures / unnormalized texcoords.
- * Only a subset of wrap modes supported.
+ * PIPE_TEX_WRAP_CLAMP for linear sampling, unnormalized coords.
  */
 static void
 wrap_linear_unorm_clamp(const float s[4], unsigned size,
@@ -488,13 +496,36 @@ wrap_linear_unorm_clamp(const float s[4], unsigned size,
 }
 
 
+/**
+ * PIPE_TEX_WRAP_CLAMP_TO_BORDER for linear sampling, unnormalized coords.
+ */
 static void
 wrap_linear_unorm_clamp_to_border(const float s[4], unsigned size,
                                   int icoord0[4], int icoord1[4], float w[4])
 {
    uint ch;
    for (ch = 0; ch < 4; ch++) {
-      float u = CLAMP(s[ch], 0.5F, (float) size - 0.5F);
+      float u = CLAMP(s[ch], -0.5F, (float) size + 0.5F);
+      u -= 0.5F;
+      icoord0[ch] = util_ifloor(u);
+      icoord1[ch] = icoord0[ch] + 1;
+      if (icoord1[ch] > (int) size - 1)
+         icoord1[ch] = size - 1;
+      w[ch] = frac(u);
+   }
+}
+
+
+/**
+ * PIPE_TEX_WRAP_CLAMP_TO_EDGE for linear sampling, unnormalized coords.
+ */
+static void
+wrap_linear_unorm_clamp_to_edge(const float s[4], unsigned size,
+                                int icoord0[4], int icoord1[4], float w[4])
+{
+   uint ch;
+   for (ch = 0; ch < 4; ch++) {
+      float u = CLAMP(s[ch], +0.5F, (float) size - 0.5F);
       u -= 0.5F;
       icoord0[ch] = util_ifloor(u);
       icoord1[ch] = icoord0[ch] + 1;
@@ -1327,6 +1358,11 @@ mip_filter_linear(struct tgsi_sampler *tgsi_sampler,
 }
 
 
+/**
+ * Compute nearest mipmap level from texcoords.
+ * Then sample the texture level for four elements of a quad.
+ * \param c0  the LOD bias factors, or absolute LODs (depending on control)
+ */
 static void
 mip_filter_nearest(struct tgsi_sampler *tgsi_sampler,
                    const float s[QUAD_SIZE],
@@ -1563,8 +1599,8 @@ sample_compare(struct tgsi_sampler *tgsi_sampler,
 
 
 /**
- * Compute which cube face is referenced by each texcoord and put that
- * info into the sampler faces[] array.  Then sample the cube faces
+ * Use 3D texcoords to choose a cube face, then sample the 2D cube faces.
+ * Put face info into the sampler faces[] array.
  */
 static void
 sample_cube(struct tgsi_sampler *tgsi_sampler,
@@ -1581,8 +1617,8 @@ sample_cube(struct tgsi_sampler *tgsi_sampler,
 
    /*
      major axis
-     direction     target                             sc     tc    ma
-     ----------    -------------------------------    ---    ---   ---
+     direction    target                             sc     tc    ma
+     ----------   -------------------------------    ---    ---   ---
      +rx          TEXTURE_CUBE_MAP_POSITIVE_X_EXT    -rz    -ry   rx
      -rx          TEXTURE_CUBE_MAP_NEGATIVE_X_EXT    +rz    -ry   rx
      +ry          TEXTURE_CUBE_MAP_POSITIVE_Y_EXT    +rx    +rz   ry
@@ -1590,62 +1626,55 @@ sample_cube(struct tgsi_sampler *tgsi_sampler,
      +rz          TEXTURE_CUBE_MAP_POSITIVE_Z_EXT    +rx    -ry   rz
      -rz          TEXTURE_CUBE_MAP_NEGATIVE_Z_EXT    -rx    -ry   rz
    */
-   for (j = 0; j < QUAD_SIZE; j++) {
-      float rx = s[j];
-      float ry = t[j];
-      float rz = p[j];
+
+   /* Choose the cube face and compute new s/t coords for the 2D face.
+    *
+    * Use the same cube face for all four pixels in the quad.
+    *
+    * This isn't ideal, but if we want to use a different cube face
+    * per pixel in the quad, we'd have to also compute the per-face
+    * LOD here too.  That's because the four post-face-selection
+    * texcoords are no longer related to each other (they're
+    * per-face!)  so we can't use subtraction to compute the partial
+    * deriviates to compute the LOD.  Doing so (near cube edges
+    * anyway) gives us pretty much random values.
+    */
+   {
+      /* use the average of the four pixel's texcoords to choose the face */
+      const float rx = 0.25 * (s[0] + s[1] + s[2] + s[3]);
+      const float ry = 0.25 * (t[0] + t[1] + t[2] + t[3]);
+      const float rz = 0.25 * (p[0] + p[1] + p[2] + p[3]);
       const float arx = fabsf(rx), ary = fabsf(ry), arz = fabsf(rz);
-      unsigned face;
-      float sc, tc, ma;
 
       if (arx >= ary && arx >= arz) {
-         if (rx >= 0.0F) {
-            face = PIPE_TEX_FACE_POS_X;
-            sc = -rz;
-            tc = -ry;
-            ma = arx;
-         }
-         else {
-            face = PIPE_TEX_FACE_NEG_X;
-            sc = rz;
-            tc = -ry;
-            ma = arx;
+         float sign = (rx >= 0.0F) ? 1.0F : -1.0F;
+         uint face = (rx >= 0.0F) ? PIPE_TEX_FACE_POS_X : PIPE_TEX_FACE_NEG_X;
+         for (j = 0; j < QUAD_SIZE; j++) {
+            const float ima = -0.5F / fabsf(s[j]);
+            ssss[j] = sign *  p[j] * ima + 0.5F;
+            tttt[j] =         t[j] * ima + 0.5F;
+            samp->faces[j] = face;
          }
       }
       else if (ary >= arx && ary >= arz) {
-         if (ry >= 0.0F) {
-            face = PIPE_TEX_FACE_POS_Y;
-            sc = rx;
-            tc = rz;
-            ma = ary;
-         }
-         else {
-            face = PIPE_TEX_FACE_NEG_Y;
-            sc = rx;
-            tc = -rz;
-            ma = ary;
+         float sign = (ry >= 0.0F) ? 1.0F : -1.0F;
+         uint face = (ry >= 0.0F) ? PIPE_TEX_FACE_POS_Y : PIPE_TEX_FACE_NEG_Y;
+         for (j = 0; j < QUAD_SIZE; j++) {
+            const float ima = -0.5F / fabsf(t[j]);
+            ssss[j] =        -s[j] * ima + 0.5F;
+            tttt[j] = sign * -p[j] * ima + 0.5F;
+            samp->faces[j] = face;
          }
       }
       else {
-         if (rz > 0.0F) {
-            face = PIPE_TEX_FACE_POS_Z;
-            sc = rx;
-            tc = -ry;
-            ma = arz;
+         float sign = (rz >= 0.0F) ? 1.0F : -1.0F;
+         uint face = (rz >= 0.0F) ? PIPE_TEX_FACE_POS_Z : PIPE_TEX_FACE_NEG_Z;
+         for (j = 0; j < QUAD_SIZE; j++) {
+            const float ima = -0.5 / fabsf(p[j]);
+            ssss[j] = sign * -s[j] * ima + 0.5F;
+            tttt[j] =         t[j] * ima + 0.5F;
+            samp->faces[j] = face;
          }
-         else {
-            face = PIPE_TEX_FACE_NEG_Z;
-            sc = -rx;
-            tc = -ry;
-            ma = arz;
-         }
-      }
-
-      {
-	 const float ima = 1.0 / ma;
-	 ssss[j] = ( sc * ima + 1.0F ) * 0.5F;
-	 tttt[j] = ( tc * ima + 1.0F ) * 0.5F;
-	 samp->faces[j] = face;
       }
    }
 
@@ -1665,6 +1694,7 @@ get_nearest_unorm_wrap(unsigned mode)
    case PIPE_TEX_WRAP_CLAMP:
       return wrap_nearest_unorm_clamp;
    case PIPE_TEX_WRAP_CLAMP_TO_EDGE:
+      return wrap_nearest_unorm_clamp_to_edge;
    case PIPE_TEX_WRAP_CLAMP_TO_BORDER:
       return wrap_nearest_unorm_clamp_to_border;
    default:
@@ -1708,6 +1738,7 @@ get_linear_unorm_wrap(unsigned mode)
    case PIPE_TEX_WRAP_CLAMP:
       return wrap_linear_unorm_clamp;
    case PIPE_TEX_WRAP_CLAMP_TO_EDGE:
+      return wrap_linear_unorm_clamp_to_edge;
    case PIPE_TEX_WRAP_CLAMP_TO_BORDER:
       return wrap_linear_unorm_clamp_to_border;
    default:

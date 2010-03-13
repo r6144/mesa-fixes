@@ -48,6 +48,13 @@ C_SOURCES = \
 	draw/draw_vs_sse.c \
 	indices/u_indices_gen.c \
 	indices/u_unfilled_gen.c \
+	os/os_misc.c \
+	os/os_stream_log.c \
+	os/os_stream_stdc.c \
+	os/os_stream_str.c \
+	os/os_stream_null.c \
+	os/os_time.c \
+	pipebuffer/pb_buffer_fenced.c \
 	pipebuffer/pb_buffer_malloc.c \
 	pipebuffer/pb_bufmgr_alt.c \
 	pipebuffer/pb_bufmgr_cache.c \
@@ -87,9 +94,10 @@ C_SOURCES = \
 	translate/translate.c \
 	translate/translate_cache.c \
 	util/u_debug.c \
-	util/u_debug_dump.c \
 	util/u_debug_symbol.c \
 	util/u_debug_stack.c \
+	util/u_dump_defines.c \
+	util/u_dump_state.c \
 	util/u_bitmask.c \
 	util/u_blit.c \
 	util/u_blitter.c \
@@ -97,9 +105,9 @@ C_SOURCES = \
 	util/u_cpu_detect.c \
 	util/u_dl.c \
 	util/u_draw_quad.c \
-	util/u_format.c \
 	util/u_format_access.c \
 	util/u_format_table.c \
+	util/u_format_tests.c \
 	util/u_gen_mipmap.c \
 	util/u_handle_table.c \
 	util/u_hash_table.c \
@@ -113,12 +121,9 @@ C_SOURCES = \
 	util/u_ringbuffer.c \
 	util/u_simple_shaders.c \
 	util/u_snprintf.c \
-	util/u_stream_stdc.c \
-	util/u_stream_wd.c \
 	util/u_surface.c \
 	util/u_texture.c \
 	util/u_tile.c \
-	util/u_time.c \
 	util/u_timed_winsys.c \
 	util/u_upload_mgr.c \
 	util/u_simple_screen.c \
@@ -126,42 +131,57 @@ C_SOURCES = \
 	vl/vl_mpeg12_mc_renderer.c \
 	vl/vl_compositor.c \
 	vl/vl_csc.c \
-	vl/vl_shader_build.c
+	vl/vl_shader_build.c \
+	target-helpers/wrap_screen.c
 
 GALLIVM_SOURCES = \
-	gallivm/gallivm.cpp  \
-	gallivm/gallivm_cpu.cpp \
-	gallivm/instructions.cpp  \
-	gallivm/loweringpass.cpp \
-	gallivm/tgsitollvm.cpp \
-	gallivm/storage.cpp \
-	gallivm/storagesoa.cpp \
-	gallivm/instructionssoa.cpp
+        gallivm/lp_bld_alpha.c \
+        gallivm/lp_bld_arit.c \
+        gallivm/lp_bld_blend_aos.c \
+        gallivm/lp_bld_blend_logicop.c \
+        gallivm/lp_bld_blend_soa.c \
+        gallivm/lp_bld_const.c \
+        gallivm/lp_bld_conv.c \
+        gallivm/lp_bld_debug.c \
+        gallivm/lp_bld_depth.c \
+        gallivm/lp_bld_flow.c \
+        gallivm/lp_bld_format_aos.c \
+        gallivm/lp_bld_format_query.c \
+        gallivm/lp_bld_format_soa.c \
+        gallivm/lp_bld_interp.c \
+        gallivm/lp_bld_intr.c \
+        gallivm/lp_bld_logic.c \
+        gallivm/lp_bld_pack.c \
+        gallivm/lp_bld_sample.c \
+        gallivm/lp_bld_sample_soa.c \
+        gallivm/lp_bld_struct.c \
+        gallivm/lp_bld_swizzle.c \
+        gallivm/lp_bld_tgsi_soa.c \
+        gallivm/lp_bld_type.c
 
-INC_SOURCES = \
-	gallivm/gallivm_builtins.cpp \
-	gallivm/gallivmsoabuiltins.cpp
+GALLIVM_CPP_SOURCES = \
+        gallivm/lp_bld_init.cpp
 
-# XXX: gallivm doesn't build correctly so disable for now
-#ifeq ($(MESA_LLVM),1)
-#DEFINES += -D__STDC_CONSTANT_MACROS -D__STDC_LIMIT_MACROS
-#CPP_SOURCES += \
-#	$(GALLIVM_SOURCES)
-#endif
+GENERATED_SOURCES = \
+	indices/u_indices_gen.c \
+	indices/u_unfilled_gen.c \
+	util/u_format_access.c \
+	util/u_format_pack.h \
+	util/u_format_table.c
+
+
+ifeq ($(MESA_LLVM),1)
+C_SOURCES += \
+	$(GALLIVM_SOURCES)
+CPP_SOURCES += \
+	$(GALLIVM_CPP_SOURCES)
+endif
+
+
+LIBRARY_DEFINES += -D__STDC_CONSTANT_MACROS
 
 
 include ../Makefile.template
-
-
-gallivm/gallivm_builtins.cpp: gallivm/llvm_builtins.c
-	clang --emit-llvm < $< |llvm-as|opt -std-compile-opts > temp1.bin
-	(echo "static const unsigned char llvm_builtins_data[] = {"; od -txC temp1.bin | sed -e "s/^[0-9]*//" -e s"/ \([0-9a-f][0-9a-f]\)/0x\1,/g" -e"\$$d" | sed -e"\$$s/,$$/,0x00};/") >$@
-	rm temp1.bin
-
-gallivm/gallivmsoabuiltins.cpp: gallivm/soabuiltins.c
-	clang --emit-llvm < $< |llvm-as|opt -std-compile-opts > temp2.bin
-	(echo "static const unsigned char soabuiltins_data[] = {"; od -txC temp2.bin | sed -e "s/^[0-9]*//" -e s"/ \([0-9a-f][0-9a-f]\)/0x\1,/g" -e"\$$d" | sed -e"\$$s/,$$/,0x00};/") >$@
-	rm temp2.bin
 
 
 indices/u_indices_gen.c: indices/u_indices_gen.py
@@ -173,5 +193,9 @@ indices/u_unfilled_gen.c: indices/u_unfilled_gen.py
 util/u_format_table.c: util/u_format_table.py util/u_format_parse.py util/u_format.csv
 	python util/u_format_table.py util/u_format.csv > $@
 
+util/u_format_pack.h: util/u_format_pack.py util/u_format_parse.py util/u_format.csv
+	python util/u_format_pack.py util/u_format.csv > $@
+
 util/u_format_access.c: util/u_format_access.py util/u_format_parse.py util/u_format.csv
 	python util/u_format_access.py util/u_format.csv > $@
+

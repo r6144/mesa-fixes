@@ -32,7 +32,6 @@
 
 #include "brw_context.h"
 #include "brw_screen.h"
-#include "brw_util.h"
 #include "brw_wm.h"
 #include "brw_state.h"
 #include "brw_debug.h"
@@ -255,10 +254,10 @@ static void brw_wm_populate_key( struct brw_context *brw,
    for (i = 0; i < brw->curr.num_textures; i++) {
       const struct brw_texture *tex = brw_texture(brw->curr.texture[i]);
 	 
-      if (tex->base.format == PIPE_FORMAT_YCBCR)
+      if (tex->base.format == PIPE_FORMAT_UYVY)
 	 key->yuvtex_mask |= 1 << i;
 
-      if (tex->base.format == PIPE_FORMAT_YCBCR_REV)
+      if (tex->base.format == PIPE_FORMAT_YUYV)
 	 key->yuvtex_swap_mask |= 1 << i;
 
       /* XXX: shadow texture

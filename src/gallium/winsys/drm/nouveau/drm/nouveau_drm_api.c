@@ -2,6 +2,7 @@
 #include "pipe/p_state.h"
 #include "util/u_format.h"
 #include "util/u_memory.h"
+#include "util/u_inlines.h"
 
 #include "nouveau_drm_api.h"
 
@@ -20,9 +21,10 @@ dri_surface_from_handle(struct drm_api *api, struct pipe_screen *pscreen,
 	struct pipe_surface *ps = NULL;
 	struct pipe_texture *pt = NULL;
 	struct pipe_texture tmpl;
+	struct winsys_handle whandle;
 
 	memset(&tmpl, 0, sizeof(tmpl));
-	tmpl.tex_usage = PIPE_TEXTURE_USAGE_PRIMARY;
+	tmpl.tex_usage = PIPE_TEXTURE_USAGE_SCANOUT;
 	tmpl.target = PIPE_TEXTURE_2D;
 	tmpl.last_level = 0;
 	tmpl.depth0 = 1;
@@ -30,8 +32,11 @@ dri_surface_from_handle(struct drm_api *api, struct pipe_screen *pscreen,
 	tmpl.width0 = width;
 	tmpl.height0 = height;
 
-	pt = api->texture_from_shared_handle(api, pscreen, &tmpl,
-					     "front buffer", pitch, handle);
+	memset(&whandle, 0, sizeof(whandle));
+	whandle.stride = pitch;
+	whandle.handle = handle;
+
+	pt = pscreen->texture_from_handle(pscreen, &tmpl, &whandle);
 	if (!pt)
 		return NULL;
 
@@ -60,7 +65,6 @@ nouveau_drm_destroy_winsys(struct pipe_winsys *s)
 	struct nouveau_winsys *nv_winsys = nouveau_winsys(s);
 	struct nouveau_screen *nv_screen= nouveau_screen(nv_winsys->pscreen);
 	nouveau_device_close(&nv_screen->device);
-	FREE(nv_winsys->pctx);
 	FREE(nv_winsys);
 }
 
@@ -81,15 +85,6 @@ nouveau_drm_create_screen(struct drm_api *api, int fd,
 		return NULL;
 
 	switch (dev->chipset & 0xf0) {
-	case 0x00:
-		init = nv04_screen_create;
-		break;
-	case 0x10:
-		init = nv10_screen_create;
-		break;
-	case 0x20:
-		init = nv20_screen_create;
-		break;
 	case 0x30:
 		init = nv30_screen_create;
 		break;
@@ -128,9 +123,9 @@ nouveau_drm_create_screen(struct drm_api *api, int fd,
 		enum pipe_format format;
 
 		if (nvdri->bpp == 16)
-			format = PIPE_FORMAT_R5G6B5_UNORM;
+			format = PIPE_FORMAT_B5G6R5_UNORM;
 		else
-			format = PIPE_FORMAT_A8R8G8B8_UNORM;
+			format = PIPE_FORMAT_B8G8R8A8_UNORM;
 
 		nvws->front = dri_surface_from_handle(api, nvws->pscreen,
 						      nvdri->front_offset,
@@ -151,127 +146,10 @@ nouveau_drm_create_screen(struct drm_api *api, int fd,
 	return nvws->pscreen;
 }
 
-static struct pipe_context *
-nouveau_drm_create_context(struct drm_api *api, struct pipe_screen *pscreen)
-{
-	struct nouveau_winsys *nvws = nouveau_winsys_screen(pscreen);
-	struct pipe_context *(*init)(struct pipe_screen *, unsigned);
-	unsigned chipset = nouveau_screen(pscreen)->device->chipset;
-	int i;
-
-	switch (chipset & 0xf0) {
-	case 0x00:
-		init = nv04_create;
-		break;
-	case 0x10:
-		init = nv10_create;
-		break;
-	case 0x20:
-		init = nv20_create;
-		break;
-	case 0x30:
-		init = nv30_create;
-		break;
-	case 0x40:
-	case 0x60:
-		init = nv40_create;
-		break;
-	case 0x50:
-	case 0x80:
-	case 0x90:
-	case 0xa0:
-		init = nv50_create;
-		break;
-	default:
-		debug_printf("%s: unknown chipset nv%02x\n", __func__, chipset);
-		return NULL;
-	}
-
-	/* Find a free slot for a pipe context, allocate a new one if needed */
-	for (i = 0; i < nvws->nr_pctx; i++) {
-		if (nvws->pctx[i] == NULL)
-			break;
-	}
-
-	if (i == nvws->nr_pctx) {
-		nvws->nr_pctx++;
-		nvws->pctx = realloc(nvws->pctx,
-				      sizeof(*nvws->pctx) * nvws->nr_pctx);
-	}
-
-	nvws->pctx[i] = init(pscreen, i);
-	return nvws->pctx[i];
-}
-
-static struct pipe_texture *
-nouveau_drm_pt_from_name(struct drm_api *api, struct pipe_screen *pscreen,
-			 struct pipe_texture *templ, const char *name,
-			 unsigned stride, unsigned handle)
-{
-	struct nouveau_device *dev = nouveau_screen(pscreen)->device;
-	struct pipe_texture *pt;
-	struct pipe_buffer *pb;
-	int ret;
-
-	pb = CALLOC(1, sizeof(struct pipe_buffer) + sizeof(struct nouveau_bo*));
-	if (!pb)
-		return NULL;
-
-	ret = nouveau_bo_handle_ref(dev, handle, (struct nouveau_bo**)(pb+1));
-	if (ret) {
-		debug_printf("%s: ref name 0x%08x failed with %d\n",
-			     __func__, handle, ret);
-		FREE(pb);
-		return NULL;
-	}
-
-	pipe_reference_init(&pb->reference, 1);
-	pb->screen = pscreen;
-	pb->alignment = 0;
-	pb->usage = PIPE_BUFFER_USAGE_GPU_READ_WRITE |
-		    PIPE_BUFFER_USAGE_CPU_READ_WRITE;
-	pb->size = nouveau_bo(pb)->size;
-	pt = pscreen->texture_blanket(pscreen, templ, &stride, pb);
-	pipe_buffer_reference(&pb, NULL);
-	return pt;
-}
-
-static boolean
-nouveau_drm_name_from_pt(struct drm_api *api, struct pipe_screen *pscreen,
-			 struct pipe_texture *pt, unsigned *stride,
-			 unsigned *handle)
-{
-	struct nouveau_miptree *mt = nouveau_miptree(pt);
-
-	if (!mt || !mt->bo)
-		return false;
-
-	return nouveau_bo_handle_get(mt->bo, handle) == 0;
-}
-
-static boolean
-nouveau_drm_handle_from_pt(struct drm_api *api, struct pipe_screen *pscreen,
-			   struct pipe_texture *pt, unsigned *stride,
-			   unsigned *handle)
-{
-	struct nouveau_miptree *mt = nouveau_miptree(pt);
-
-	if (!mt || !mt->bo)
-		return false;
-
-	*handle = mt->bo->handle;
-	*stride = util_format_get_stride(mt->base.format, mt->base.width0);
-	return true;
-}
-
 struct drm_api drm_api_hooks = {
 	.name = "nouveau",
 	.driver_name = "nouveau",
 	.create_screen = nouveau_drm_create_screen,
-	.create_context = nouveau_drm_create_context,
-	.texture_from_shared_handle = nouveau_drm_pt_from_name,
-	.shared_handle_from_texture = nouveau_drm_name_from_pt,
-	.local_handle_from_texture = nouveau_drm_handle_from_pt,
 };
 
 struct drm_api *

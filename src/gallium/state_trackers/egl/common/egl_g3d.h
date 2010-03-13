@@ -34,6 +34,7 @@
 #include "eglcontext.h"
 #include "eglsurface.h"
 #include "eglconfig.h"
+#include "eglimage.h"
 #include "eglscreen.h"
 #include "eglmode.h"
 
@@ -81,47 +82,27 @@ struct egl_g3d_config {
    const struct native_config *native;
 };
 
+struct egl_g3d_image {
+   _EGLImage base;
+   struct pipe_texture *texture;
+   unsigned face;
+   unsigned level;
+   unsigned zslice;
+};
+
 struct egl_g3d_screen {
    _EGLScreen base;
    const struct native_connector *native;
    const struct native_mode **native_modes;
 };
 
-static INLINE struct egl_g3d_driver *
-egl_g3d_driver(_EGLDriver *drv)
-{
-   return (struct egl_g3d_driver *) drv;
-}
+/* standard typecasts */
+_EGL_DRIVER_STANDARD_TYPECASTS(egl_g3d)
+_EGL_DRIVER_TYPECAST(egl_g3d_screen, _EGLScreen, obj)
+_EGL_DRIVER_TYPECAST(egl_g3d_image, _EGLImage, obj)
 
-static INLINE struct egl_g3d_display *
-egl_g3d_display(_EGLDisplay *dpy)
-{
-   /* note that it is not direct casting */
-   return (struct egl_g3d_display *) dpy->DriverData;
-}
 
-static INLINE struct egl_g3d_context *
-egl_g3d_context(_EGLContext *ctx)
-{
-   return (struct egl_g3d_context *) ctx;
-}
-
-static INLINE struct egl_g3d_surface *
-egl_g3d_surface(_EGLSurface *surf)
-{
-   return (struct egl_g3d_surface *) surf;
-}
-
-static INLINE struct egl_g3d_config *
-egl_g3d_config(_EGLConfig *conf)
-{
-   return (struct egl_g3d_config *) conf;
-}
-
-static INLINE struct egl_g3d_screen *
-egl_g3d_screen(_EGLScreen *scr)
-{
-   return (struct egl_g3d_screen *) scr;
-}
+_EGLConfig *
+egl_g3d_find_pixmap_config(_EGLDisplay *dpy, EGLNativePixmapType pix);
 
 #endif /* _EGL_G3D_H_ */

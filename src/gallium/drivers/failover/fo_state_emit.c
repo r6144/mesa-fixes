@@ -65,7 +65,10 @@ failover_state_emit( struct failover_context *failover )
 
    if (failover->dirty & FO_NEW_DEPTH_STENCIL)
       failover->sw->bind_depth_stencil_alpha_state( failover->sw,
-						    failover->depth_stencil->sw_state );
+                                                    failover->depth_stencil->sw_state );
+
+   if (failover->dirty & FO_NEW_STENCIL_REF)
+      failover->sw->set_stencil_ref( failover->sw, &failover->stencil_ref );
 
    if (failover->dirty & FO_NEW_FRAMEBUFFER)
       failover->sw->set_framebuffer_state( failover->sw, &failover->framebuffer );
@@ -77,6 +80,10 @@ failover_state_emit( struct failover_context *failover )
    if (failover->dirty & FO_NEW_VERTEX_SHADER)
       failover->sw->bind_vs_state( failover->sw,
                                    failover->vertex_shader->sw_state );
+
+   if (failover->dirty & FO_NEW_VERTEX_ELEMENT)
+      failover->sw->bind_vertex_elements_state( failover->sw,
+                                                failover->vertex_elements->sw_state );
 
    if (failover->dirty & FO_NEW_STIPPLE)
       failover->sw->set_polygon_stipple( failover->sw, &failover->poly_stipple );
@@ -111,12 +118,6 @@ failover_state_emit( struct failover_context *failover )
       failover->sw->set_vertex_buffers( failover->sw,
                                         failover->num_vertex_buffers,
                                         failover->vertex_buffers );
-   }
-
-   if (failover->dirty & FO_NEW_VERTEX_ELEMENT) {
-      failover->sw->set_vertex_elements( failover->sw,
-                                         failover->num_vertex_elements,
-                                         failover->vertex_elements );
    }
 
    failover->dirty = 0;

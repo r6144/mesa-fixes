@@ -373,17 +373,11 @@ static GLboolean r600GetTexFormat(struct gl_texture_object *tObj, gl_format mesa
 		  break;
 		*/
 	case MESA_FORMAT_RGB_DXT1: /* not supported yet */
-
-		break;
 	case MESA_FORMAT_RGBA_DXT1: /* not supported yet */
-
-		break;
 	case MESA_FORMAT_RGBA_DXT3: /* not supported yet */
-
-		break;
 	case MESA_FORMAT_RGBA_DXT5: /* not supported yet */
+	        return GL_FALSE;
 
-		break;
 	case MESA_FORMAT_RGBA_FLOAT32:
 		SETfield(t->SQ_TEX_RESOURCE1, FMT_32_32_32_32_FLOAT,
 			 SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_shift, SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_mask);
@@ -701,8 +695,8 @@ void r600SetDepthTexMode(struct gl_texture_object *tObj)
 
 	t = radeon_tex_obj(tObj);
 
-	r600GetTexFormat(tObj, tObj->Image[0][tObj->BaseLevel]->TexFormat);
-
+	if(!r600GetTexFormat(tObj, tObj->Image[0][tObj->BaseLevel]->TexFormat))
+	  t->validated = GL_FALSE;
 }
 
 /**
@@ -711,7 +705,7 @@ void r600SetDepthTexMode(struct gl_texture_object *tObj)
  * \param rmesa Context pointer
  * \param t the r300 texture object
  */
-static void setup_hardware_state(GLcontext * ctx, struct gl_texture_object *texObj, int unit)
+static GLboolean setup_hardware_state(GLcontext * ctx, struct gl_texture_object *texObj, int unit)
 {
 	context_t *rmesa = R700_CONTEXT(ctx);
 	radeonTexObj *t = radeon_tex_obj(texObj);
@@ -721,15 +715,15 @@ static void setup_hardware_state(GLcontext * ctx, struct gl_texture_object *texO
 	if (rmesa->radeon.radeonScreen->driScreen->dri2.enabled &&
 	    t->image_override &&
 	    t->bo)
-		return;
+		return GL_TRUE;
 
 	firstImage = t->base.Image[0][t->minLod];
 
 	if (!t->image_override) {
 		if (!r600GetTexFormat(texObj, firstImage->TexFormat)) {
-			radeon_error("unexpected texture format in %s\n",
-				      __FUNCTION__);
-			return;
+			radeon_warning("unsupported texture format in %s\n",
+				       __FUNCTION__);
+			return GL_FALSE;
 		}
 	}
 
@@ -754,7 +748,7 @@ static void setup_hardware_state(GLcontext * ctx, struct gl_texture_object *texO
 		break;
         default:
 		radeon_error("unexpected texture target type in %s\n", __FUNCTION__);
-		return;
+		return GL_FALSE;
 	}
 
 	row_align = rmesa->radeon.texture_row_align - 1;
@@ -799,6 +793,7 @@ static void setup_hardware_state(GLcontext * ctx, struct gl_texture_object *texO
 		CLEARfield(t->SQ_TEX_SAMPLER0, DEPTH_COMPARE_FUNCTION_mask);
 	}
 
+	return GL_TRUE;
 }
 
 /**
@@ -815,7 +810,8 @@ static GLboolean r600_validate_texture(GLcontext * ctx, struct gl_texture_object
 
 	/* Configure the hardware registers (more precisely, the cached version
 	 * of the hardware registers). */
-	setup_hardware_state(ctx, texObj, unit);
+	if (!setup_hardware_state(ctx, texObj, unit))
+	        return GL_FALSE;
 
 	t->validated = GL_TRUE;
 	return GL_TRUE;
@@ -988,7 +984,7 @@ void r600SetTexBuffer2(__DRIcontext *pDRICtx, GLint target, GLint glx_texture_fo
 
 	type = GL_BGRA;
 	format = GL_UNSIGNED_BYTE;
-	internalFormat = (glx_texture_format == GLX_TEXTURE_FORMAT_RGB_EXT ? 3 : 4);
+	internalFormat = (glx_texture_format == __DRI_TEXTURE_FORMAT_RGB ? 3 : 4);
 
 	radeon = pDRICtx->driverPrivate;
 	rmesa = pDRICtx->driverPrivate;
@@ -1037,7 +1033,7 @@ void r600SetTexBuffer2(__DRIcontext *pDRICtx, GLint target, GLint glx_texture_fo
 	pitch_val = rb->pitch;
 	switch (rb->cpp) {
 	case 4:
-		if (glx_texture_format == GLX_TEXTURE_FORMAT_RGB_EXT) {
+		if (glx_texture_format == __DRI_TEXTURE_FORMAT_RGB) {
 			SETfield(t->SQ_TEX_RESOURCE1, FMT_8_8_8_8,
 				 SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_shift, SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_mask);
 
@@ -1116,5 +1112,5 @@ void r600SetTexBuffer2(__DRIcontext *pDRICtx, GLint target, GLint glx_texture_fo
 
 void r600SetTexBuffer(__DRIcontext *pDRICtx, GLint target, __DRIdrawable *dPriv)
 {
-        r600SetTexBuffer2(pDRICtx, target, GLX_TEXTURE_FORMAT_RGBA_EXT, dPriv);
+        r600SetTexBuffer2(pDRICtx, target, __DRI_TEXTURE_FORMAT_RGBA, dPriv);
 }

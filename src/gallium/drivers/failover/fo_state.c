@@ -28,6 +28,8 @@
 /* Authors:  Keith Whitwell <keith@tungstengraphics.com>
  */
 
+#include "util/u_inlines.h"
+
 #include "fo_context.h"
 
 
@@ -88,7 +90,7 @@ failover_delete_blend_state( struct pipe_context *pipe,
 
 static void
 failover_set_blend_color( struct pipe_context *pipe,
-			  const struct pipe_blend_color *blend_color )
+                          const struct pipe_blend_color *blend_color )
 {
    struct failover_context *failover = failover_context(pipe);
 
@@ -98,9 +100,21 @@ failover_set_blend_color( struct pipe_context *pipe,
    failover->hw->set_blend_color( failover->hw, blend_color );
 }
 
+static void
+failover_set_stencil_ref( struct pipe_context *pipe,
+                          const struct pipe_stencil_ref *stencil_ref )
+{
+   struct failover_context *failover = failover_context(pipe);
+
+   failover->stencil_ref = *stencil_ref;
+   failover->dirty |= FO_NEW_STENCIL_REF;
+   failover->sw->set_stencil_ref( failover->sw, stencil_ref );
+   failover->hw->set_stencil_ref( failover->hw, stencil_ref );
+}
+
 static void 
 failover_set_clip_state( struct pipe_context *pipe,
-			 const struct pipe_clip_state *clip )
+                         const struct pipe_clip_state *clip )
 {
    struct failover_context *failover = failover_context(pipe);
 
@@ -241,9 +255,52 @@ failover_delete_vs_state(struct pipe_context *pipe,
    free(state);
 }
 
+
+
+static void *
+failover_create_vertex_elements_state( struct pipe_context *pipe,
+                                       unsigned count,
+                                       const struct pipe_vertex_element *velems )
+{
+   struct fo_state *state = malloc(sizeof(struct fo_state));
+   struct failover_context *failover = failover_context(pipe);
+
+   state->sw_state = failover->sw->create_vertex_elements_state(failover->sw, count, velems);
+   state->hw_state = failover->hw->create_vertex_elements_state(failover->hw, count, velems);
+
+   return state;
+}
+
+static void
+failover_bind_vertex_elements_state(struct pipe_context *pipe,
+                                    void *velems )
+{
+   struct failover_context *failover = failover_context(pipe);
+   struct fo_state *state = (struct fo_state*)velems;
+
+   failover->vertex_elements = state;
+   failover->dirty |= FO_NEW_VERTEX_ELEMENT;
+   failover->sw->bind_vertex_elements_state( failover->sw, velems );
+   failover->hw->bind_vertex_elements_state( failover->hw, velems );
+}
+
+static void
+failover_delete_vertex_elements_state( struct pipe_context *pipe,
+                                       void *velems )
+{
+   struct fo_state *state = (struct fo_state*)velems;
+   struct failover_context *failover = failover_context(pipe);
+
+   failover->sw->delete_vertex_elements_state(failover->sw, state->sw_state);
+   failover->hw->delete_vertex_elements_state(failover->hw, state->hw_state);
+   state->sw_state = 0;
+   state->hw_state = 0;
+   free(state);
+}
+
 static void 
 failover_set_polygon_stipple( struct pipe_context *pipe,
-			      const struct pipe_poly_stipple *stipple )
+                              const struct pipe_poly_stipple *stipple )
 {
    struct failover_context *failover = failover_context(pipe);
 
@@ -476,22 +533,6 @@ failover_set_vertex_buffers(struct pipe_context *pipe,
 }
 
 
-static void
-failover_set_vertex_elements(struct pipe_context *pipe,
-                             unsigned count,
-                             const struct pipe_vertex_element *vertex_elements)
-{
-   struct failover_context *failover = failover_context(pipe);
-
-   memcpy(failover->vertex_elements, vertex_elements,
-          count * sizeof(vertex_elements[0]));
-
-   failover->dirty |= FO_NEW_VERTEX_ELEMENT;
-   failover->num_vertex_elements = count;
-   failover->sw->set_vertex_elements( failover->sw, count, vertex_elements );
-   failover->hw->set_vertex_elements( failover->hw, count, vertex_elements );
-}
-
 void
 failover_set_constant_buffer(struct pipe_context *pipe,
                              uint shader, uint index,
@@ -529,8 +570,12 @@ failover_init_state_functions( struct failover_context *failover )
    failover->pipe.create_vs_state = failover_create_vs_state;
    failover->pipe.bind_vs_state   = failover_bind_vs_state;
    failover->pipe.delete_vs_state = failover_delete_vs_state;
+   failover->pipe.create_vertex_elements_state = failover_create_vertex_elements_state;
+   failover->pipe.bind_vertex_elements_state = failover_bind_vertex_elements_state;
+   failover->pipe.delete_vertex_elements_state = failover_delete_vertex_elements_state;
 
    failover->pipe.set_blend_color = failover_set_blend_color;
+   failover->pipe.set_stencil_ref = failover_set_stencil_ref;
    failover->pipe.set_clip_state = failover_set_clip_state;
    failover->pipe.set_framebuffer_state = failover_set_framebuffer_state;
    failover->pipe.set_polygon_stipple = failover_set_polygon_stipple;
@@ -539,6 +584,5 @@ failover_init_state_functions( struct failover_context *failover )
    failover->pipe.set_vertex_sampler_textures = failover_set_vertex_sampler_textures;
    failover->pipe.set_viewport_state = failover_set_viewport_state;
    failover->pipe.set_vertex_buffers = failover_set_vertex_buffers;
-   failover->pipe.set_vertex_elements = failover_set_vertex_elements;
    failover->pipe.set_constant_buffer = failover_set_constant_buffer;
 }

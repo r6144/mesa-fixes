@@ -4,6 +4,7 @@
 
 #include "egltypedefs.h"
 #include "egldefines.h"
+#include "eglmutex.h"
 
 
 enum _egl_resource_type {
@@ -13,6 +14,8 @@ enum _egl_resource_type {
 
    _EGL_NUM_RESOURCES
 };
+/* this cannot and need not go into egltypedefs.h */
+typedef enum _egl_resource_type _EGLResourceType;
 
 
 /**
@@ -53,6 +56,8 @@ struct _egl_display
    /* used to link displays */
    _EGLDisplay *Next;
 
+   _EGLMutex Mutex;
+
    EGLNativeDisplayType NativeDisplay;
 
    EGLBoolean Initialized; /**< True if the display is initialized */
@@ -85,19 +90,7 @@ _eglFiniDisplay(void);
 
 
 extern _EGLDisplay *
-_eglNewDisplay(EGLNativeDisplayType displayName);
-
-
-extern EGLDisplay
-_eglLinkDisplay(_EGLDisplay *dpy);
-
-
-extern void
-_eglUnlinkDisplay(_EGLDisplay *dpy);
-
-
-extern _EGLDisplay *
-_eglFindDisplay(EGLNativeDisplayType nativeDisplay);
+_eglFindDisplay(EGLNativeDisplayType displayName);
 
 
 PUBLIC void
@@ -108,36 +101,12 @@ PUBLIC void
 _eglCleanupDisplay(_EGLDisplay *disp);
 
 
-#ifndef _EGL_SKIP_HANDLE_CHECK
-
-
 extern EGLBoolean
 _eglCheckDisplayHandle(EGLDisplay dpy);
 
 
 PUBLIC EGLBoolean
 _eglCheckResource(void *res, _EGLResourceType type, _EGLDisplay *dpy);
-
-
-#else /* !_EGL_SKIP_HANDLE_CHECK */
-
-/* Only do a quick check.  This is NOT standard compliant. */
-
-static INLINE EGLBoolean
-_eglCheckDisplayHandle(EGLDisplay dpy)
-{
-   return ((_EGLDisplay *) dpy != NULL);
-}
-
-
-static INLINE EGLBoolean
-_eglCheckResource(void *res, _EGLResourceType type, _EGLDisplay *dpy);
-{
-   return (((_EGLResource *) res)->Display == dpy);
-}
-
-
-#endif /* _EGL_SKIP_HANDLE_CHECK */
 
 
 /**
@@ -161,16 +130,6 @@ static INLINE EGLDisplay
 _eglGetDisplayHandle(_EGLDisplay *dpy)
 {
    return (EGLDisplay) ((dpy) ? dpy : EGL_NO_DISPLAY);
-}
-
-
-/**
- * Return true if the display is linked.
- */
-static INLINE EGLBoolean
-_eglIsDisplayLinked(_EGLDisplay *dpy)
-{
-   return (EGLBoolean) (_eglGetDisplayHandle(dpy) != EGL_NO_DISPLAY);
 }
 
 

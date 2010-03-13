@@ -120,6 +120,11 @@
 #define TYPE_CENTER                                95
 #define TYPE_CENTROID                              96
 
+/* layout qualifiers */
+#define LAYOUT_QUALIFIER_NONE                      0
+#define LAYOUT_QUALIFIER_UPPER_LEFT                1
+#define LAYOUT_QUALIFIER_PIXEL_CENTER_INTEGER      2
+
 /* type specifier */
 #define TYPE_SPECIFIER_VOID                        0
 #define TYPE_SPECIFIER_BOOL                        1
@@ -155,6 +160,12 @@
 #define TYPE_SPECIFIER_MAT42                       29
 #define TYPE_SPECIFIER_MAT34                       30
 #define TYPE_SPECIFIER_MAT43                       31
+
+/* GL_EXT_texture_array */
+#define TYPE_SPECIFIER_SAMPLER_1D_ARRAY            32
+#define TYPE_SPECIFIER_SAMPLER_2D_ARRAY            33
+#define TYPE_SPECIFIER_SAMPLER_1D_ARRAY_SHADOW     34
+#define TYPE_SPECIFIER_SAMPLER_2D_ARRAY_SHADOW     35
 
 /* type specifier array */
 #define TYPE_SPECIFIER_NONARRAY                    0
@@ -276,6 +287,10 @@ struct parse_dict {
    int sampler2DShadow;
    int sampler2DRect;
    int sampler2DRectShadow;
+   int sampler1DArray;
+   int sampler2DArray;
+   int sampler1DArrayShadow;
+   int sampler2DArrayShadow;
 
    int invariant;
 
@@ -297,6 +312,10 @@ struct parse_dict {
    int out;
    int inout;
 
+   int layout;
+   int origin_upper_left;
+   int pixel_center_integer;
+
    int _struct;
 
    int __constructor;
@@ -316,6 +335,9 @@ struct parse_dict {
 
    int _false;
    int _true;
+
+   int all;
+   int _GL_ARB_fragment_coord_conventions;
 };
 
 
@@ -333,6 +355,8 @@ struct parse_context {
 
    unsigned int shader_type;
    unsigned int parsing_builtin;
+
+   unsigned int fragment_coord_conventions:1;
 
    char error[256];
    int process_error;
@@ -373,7 +397,8 @@ _error(struct parse_context *ctx,
        const char *msg)
 {
    if (ctx->error[0] == '\0') {
-      strcpy(ctx->error, msg);
+      strncpy(ctx->error, msg, sizeof(ctx->error) - 1);
+      ctx->error[sizeof(ctx->error) - 1] = '\0';
    }
 }
 
@@ -451,6 +476,10 @@ _fetch_token(struct parse_context *ctx,
       case SL_PP_IDENTIFIER:
       case SL_PP_UINT:
       case SL_PP_FLOAT:
+      case SL_PP_EXTENSION_REQUIRE:
+      case SL_PP_EXTENSION_ENABLE:
+      case SL_PP_EXTENSION_WARN:
+      case SL_PP_EXTENSION_DISABLE:
       case SL_PP_EOF:
          ctx->tokens_read++;
          break;
@@ -462,6 +491,10 @@ _fetch_token(struct parse_context *ctx,
 }
 
 
+/**
+ * Try to parse/match a particular token.
+ * \return 0 for success, -1 for error.
+ */
 static int
 _parse_token(struct parse_context *ctx,
              enum sl_pp_token token,
@@ -477,6 +510,10 @@ _parse_token(struct parse_context *ctx,
 }
 
 
+/**
+ * Try to parse an identifer.
+ * \return 0 for success, -1 for error
+ */
 static int
 _parse_id(struct parse_context *ctx,
           int id,
@@ -707,8 +744,65 @@ _parse_centroid_qualifier(struct parse_context *ctx,
 
 
 static int
-_parse_type_qualifier(struct parse_context *ctx,
-                      struct parse_state *ps)
+_parse_layout_qualifier(struct parse_context *ctx,
+                        struct parse_state *ps)
+{
+   if (_parse_id(ctx, ctx->dict.layout, ps) == 0) {
+      if (!ctx->fragment_coord_conventions) {
+         _error(ctx, "GL_ARB_fragment_coord_conventions extension must be enabled "
+                     "in order to use a layout qualifier");
+         return -1;
+      }
+
+      /* Layout qualifiers are only defined for fragment shaders,
+       * so do an early check.
+       */
+      if (ctx->shader_type != 1) {
+         _error(ctx, "layout qualifiers are only valid for fragment shaders");
+         return -1;
+      }
+
+      /* start of a parenthesised list of layout qualifiers */
+
+      if (_parse_token(ctx, SL_PP_LPAREN, ps)) {
+         _error(ctx, "expected `('");
+         return -1;
+      }
+
+      /* parse comma-separated ID list */
+      while (1) {
+         if (_parse_id(ctx, ctx->dict.origin_upper_left, ps) == 0) {
+            _emit(ctx, &ps->out, LAYOUT_QUALIFIER_UPPER_LEFT);
+         }
+         else if (_parse_id(ctx, ctx->dict.pixel_center_integer, ps) == 0) {
+            _emit(ctx, &ps->out, LAYOUT_QUALIFIER_PIXEL_CENTER_INTEGER);
+         }
+         else {
+            _error(ctx, "expected a layout qualifier name");
+            return -1;
+         }
+
+         if (_parse_token(ctx, SL_PP_RPAREN, ps) == 0) {
+            /* all done */
+            break;
+         }
+         else if (_parse_token(ctx, SL_PP_COMMA, ps) == 0) {
+            /* another layout qualifier is coming */
+         }
+         else {
+            _error(ctx, "expected `,' or `)'");
+            return -1;
+         }
+      }
+   }
+
+   return 0;
+}
+
+
+static int
+_parse_storage_qualifier(struct parse_context *ctx,
+                         struct parse_state *ps)
 {
    struct parse_state p = *ps;
    const struct sl_pp_token_info *input = _fetch_token(ctx, p.in);
@@ -944,6 +1038,15 @@ _parse_type_specifier_nonarray(struct parse_context *ctx,
       _update(ctx, e, TYPE_SPECIFIER_SAMPLER2DRECT);
    } else if (id == ctx->dict.sampler2DRectShadow) {
       _update(ctx, e, TYPE_SPECIFIER_SAMPLER2DRECTSHADOW);
+   } else if (id == ctx->dict.sampler1DArray) {
+      _update(ctx, e, TYPE_SPECIFIER_SAMPLER_1D_ARRAY);
+   } else if (id == ctx->dict.sampler2DArray) {
+      /* XXX check for GL_EXT_texture_array */
+      _update(ctx, e, TYPE_SPECIFIER_SAMPLER_2D_ARRAY);
+   } else if (id == ctx->dict.sampler1DArrayShadow) {
+      _update(ctx, e, TYPE_SPECIFIER_SAMPLER_1D_ARRAY_SHADOW);
+   } else if (id == ctx->dict.sampler2DArrayShadow) {
+      _update(ctx, e, TYPE_SPECIFIER_SAMPLER_2D_ARRAY_SHADOW);
    } else if (_parse_identifier(ctx, &p) == 0) {
       _update(ctx, e, TYPE_SPECIFIER_TYPENAME);
       *ps = p;
@@ -1006,13 +1109,19 @@ _parse_fully_specified_type(struct parse_context *ctx,
 {
    struct parse_state p = *ps;
 
+   if (_parse_layout_qualifier(ctx, &p)) {
+      return -1;
+   }
+   _emit(ctx, &p.out, LAYOUT_QUALIFIER_NONE);
+
    if (_parse_invariant_qualifier(ctx, &p)) {
       _emit(ctx, &p.out, TYPE_VARIANT);
    }
+
    if (_parse_centroid_qualifier(ctx, &p)) {
       _emit(ctx, &p.out, TYPE_CENTER);
    }
-   if (_parse_type_qualifier(ctx, &p)) {
+   if (_parse_storage_qualifier(ctx, &p)) {
       _emit(ctx, &p.out, TYPE_QUALIFIER_NONE);
    }
    if (_parse_precision(ctx, &p)) {
@@ -1698,7 +1807,7 @@ _parse_parameter_declaration(struct parse_context *ctx,
 
    (void) e;
 
-   if (_parse_type_qualifier(ctx, &p)) {
+   if (_parse_storage_qualifier(ctx, &p)) {
       _emit(ctx, &p.out, TYPE_QUALIFIER_NONE);
    }
    _parse_parameter_qualifier(ctx, &p);
@@ -1854,6 +1963,14 @@ _parse_prectype(struct parse_context *ctx,
       type = TYPE_SPECIFIER_SAMPLER2DRECT;
    } else if (id == ctx->dict.sampler2DRectShadow) {
       type = TYPE_SPECIFIER_SAMPLER2DRECTSHADOW;
+   } else if (id == ctx->dict.sampler1DArray) {
+      type = TYPE_SPECIFIER_SAMPLER_1D_ARRAY;
+   } else if (id == ctx->dict.sampler2DArray) {
+      type = TYPE_SPECIFIER_SAMPLER_2D_ARRAY;
+   } else if (id == ctx->dict.sampler1DArrayShadow) {
+      type = TYPE_SPECIFIER_SAMPLER_1D_ARRAY_SHADOW;
+   } else if (id == ctx->dict.sampler2DArrayShadow) {
+      type = TYPE_SPECIFIER_SAMPLER_2D_ARRAY_SHADOW;
    } else {
       return -1;
    }
@@ -2679,14 +2796,59 @@ _parse_external_declaration(struct parse_context *ctx,
 
 
 static int
+_parse_extensions(struct parse_context *ctx,
+                  struct parse_state *ps)
+{
+   for (;;) {
+      const struct sl_pp_token_info *input = _fetch_token(ctx, ps->in);
+      unsigned int enable;
+
+      if (!input) {
+         return -1;
+      }
+
+      switch (input->token) {
+      case SL_PP_EXTENSION_REQUIRE:
+      case SL_PP_EXTENSION_ENABLE:
+      case SL_PP_EXTENSION_WARN:
+         enable = 1;
+         break;
+      case SL_PP_EXTENSION_DISABLE:
+         enable = 0;
+         break;
+      default:
+         return 0;
+      }
+
+      ps->in++;
+      if (input->data.extension == ctx->dict.all) {
+         ctx->fragment_coord_conventions = enable;
+      }
+      else if (input->data.extension == ctx->dict._GL_ARB_fragment_coord_conventions) {
+         ctx->fragment_coord_conventions = enable;
+      }
+   }
+}
+
+
+static int
 _parse_translation_unit(struct parse_context *ctx,
                         struct parse_state *ps)
 {
    _emit(ctx, &ps->out, REVISION);
+   if (_parse_extensions(ctx, ps)) {
+      return -1;
+   }
    if (_parse_external_declaration(ctx, ps)) {
       return -1;
    }
-   while (_parse_external_declaration(ctx, ps) == 0) {
+   for (;;) {
+      if (_parse_extensions(ctx, ps)) {
+         return -1;
+      }
+      if (_parse_external_declaration(ctx, ps)) {
+         break;
+      }
    }
    _emit(ctx, &ps->out, EXTERNAL_NULL);
    if (_parse_token(ctx, SL_PP_EOF, ps)) {
@@ -2751,6 +2913,10 @@ sl_cl_compile(struct sl_pp_context *context,
    ADD_NAME(ctx, sampler2DShadow);
    ADD_NAME(ctx, sampler2DRect);
    ADD_NAME(ctx, sampler2DRectShadow);
+   ADD_NAME(ctx, sampler1DArray);
+   ADD_NAME(ctx, sampler2DArray);
+   ADD_NAME(ctx, sampler1DArrayShadow);
+   ADD_NAME(ctx, sampler2DArrayShadow);
 
    ADD_NAME(ctx, invariant);
 
@@ -2772,6 +2938,10 @@ sl_cl_compile(struct sl_pp_context *context,
    ADD_NAME(ctx, out);
    ADD_NAME(ctx, inout);
 
+   ADD_NAME(ctx, layout);
+   ADD_NAME(ctx, origin_upper_left);
+   ADD_NAME(ctx, pixel_center_integer);
+
    ADD_NAME_STR(ctx, _struct, "struct");
 
    ADD_NAME(ctx, __constructor);
@@ -2792,11 +2962,16 @@ sl_cl_compile(struct sl_pp_context *context,
    ADD_NAME_STR(ctx, _false, "false");
    ADD_NAME_STR(ctx, _true, "true");
 
+   ADD_NAME(ctx, all);
+   ADD_NAME_STR(ctx, _GL_ARB_fragment_coord_conventions, "GL_ARB_fragment_coord_conventions");
+
    ctx.out_buf = NULL;
    ctx.out_cap = 0;
 
    ctx.shader_type = shader_type;
    ctx.parsing_builtin = 1;
+
+   ctx.fragment_coord_conventions = 0;
 
    ctx.error[0] = '\0';
    ctx.process_error = 0;
@@ -2805,7 +2980,8 @@ sl_cl_compile(struct sl_pp_context *context,
    ctx.tokens_read = 0;
    ctx.tokens = malloc(ctx.tokens_cap * sizeof(struct sl_pp_token_info));
    if (!ctx.tokens) {
-      strncpy(error, "out of memory", cberror);
+      strncpy(error, "out of memory", cberror - 1);
+      error[cberror - 1] = '\0';
       return -1;
    }
 

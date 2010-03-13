@@ -295,6 +295,8 @@ tdfxSwapBuffers( __DRIdrawable *driDrawPriv )
    }
 #endif
 
+   assert(fxMesa);
+
    if (fxMesa->scissoredClipRects) {
       /* restore clip rects without scissor box */
       fxMesa->Glide.grDRIPosition( driDrawPriv->x, driDrawPriv->y,
@@ -383,7 +385,8 @@ tdfxFillInModes(__DRIscreen *psp,
 			    stencil_bits_array,
 			    deep ? 2 : 4,
 			    db_modes, 2,
-			    msaa_samples_array, 1);
+			    msaa_samples_array, 1,
+			    GL_TRUE);
 }
 
 /**
