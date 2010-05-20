@@ -35,7 +35,6 @@
 #include "cell_context.h"
 #include "cell_screen.h"
 #include "cell_texture.h"
-#include "cell_buffer.h"
 #include "cell_public.h"
 
 #include "state_tracker/sw_winsys.h"
@@ -56,7 +55,7 @@ cell_get_name(struct pipe_screen *screen)
 
 
 static int
-cell_get_param(struct pipe_screen *screen, int param)
+cell_get_param(struct pipe_screen *screen, enum pipe_cap param)
 {
    switch (param) {
    case PIPE_CAP_MAX_TEXTURE_IMAGE_UNITS:
@@ -77,6 +76,8 @@ cell_get_param(struct pipe_screen *screen, int param)
       return 1;
    case PIPE_CAP_OCCLUSION_QUERY:
       return 1;
+   case PIPE_CAP_TIMER_QUERY:
+      return 0;
    case PIPE_CAP_TEXTURE_SHADOW_MAP:
       return 10;
    case PIPE_CAP_MAX_TEXTURE_2D_LEVELS:
@@ -97,6 +98,8 @@ cell_get_param(struct pipe_screen *screen, int param)
    case PIPE_CAP_TGSI_FS_COORD_ORIGIN_LOWER_LEFT:
    case PIPE_CAP_TGSI_FS_COORD_PIXEL_CENTER_INTEGER:
       return 0;
+   case PIPE_CAP_BLEND_EQUATION_SEPARATE:
+      return 1;
    default:
       return 0;
    }
@@ -104,7 +107,7 @@ cell_get_param(struct pipe_screen *screen, int param)
 
 
 static float
-cell_get_paramf(struct pipe_screen *screen, int param)
+cell_get_paramf(struct pipe_screen *screen, enum pipe_cap param)
 {
    switch (param) {
    case PIPE_CAP_MAX_LINE_WIDTH:
@@ -138,18 +141,23 @@ cell_is_format_supported( struct pipe_screen *screen,
 {
    struct sw_winsys *winsys = cell_screen(screen)->winsys;
 
-   if (format == PIPE_FORMAT_DXT5_RGBA ||
-       format == PIPE_FORMAT_A8B8G8R8_SRGB)
-      return FALSE;
-
-   if (tex_usage & PIPE_TEXTURE_USAGE_DISPLAY_TARGET) {
-      if (!winsys->is_displaytarget_format_supported(winsys, format))
+   if (tex_usage & (PIPE_BIND_DISPLAY_TARGET |
+                    PIPE_BIND_SCANOUT |
+                    PIPE_BIND_SHARED)) {
+      if (!winsys->is_displaytarget_format_supported(winsys, tex_usage, format))
          return FALSE;
    }
 
-   /* This is often a lie.  Pull in logic from llvmpipe to fix.
-    */
-   return TRUE;
+   /* only a few formats are known to work at this time */
+   switch (format) {
+   case PIPE_FORMAT_Z24_UNORM_S8_USCALED:
+   case PIPE_FORMAT_Z24X8_UNORM:
+   case PIPE_FORMAT_B8G8R8A8_UNORM:
+   case PIPE_FORMAT_I8_UNORM:
+      return TRUE;
+   default:
+      return FALSE;
+   }
 }
 
 
@@ -193,7 +201,6 @@ cell_create_screen(struct sw_winsys *winsys)
    screen->base.context_create = cell_create_context;
 
    cell_init_screen_texture_funcs(&screen->base);
-   cell_init_screen_buffer_funcs(&screen->base);
 
    return &screen->base;
 }

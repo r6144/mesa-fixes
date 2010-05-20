@@ -57,6 +57,7 @@
 #include "pipe/p_defines.h"
 #include "util/u_inlines.h"
 #include "util/u_format.h"
+#include "draw/draw_context.h"
 #include "cso_cache/cso_context.h"
 
 
@@ -72,6 +73,13 @@ static GLuint float_types[4] = {
    PIPE_FORMAT_R32G32_FLOAT,
    PIPE_FORMAT_R32G32B32_FLOAT,
    PIPE_FORMAT_R32G32B32A32_FLOAT
+};
+
+static GLuint half_float_types[4] = {
+   PIPE_FORMAT_R16_FLOAT,
+   PIPE_FORMAT_R16G16_FLOAT,
+   PIPE_FORMAT_R16G16B16_FLOAT,
+   PIPE_FORMAT_R16G16B16A16_FLOAT
 };
 
 static GLuint uint_types_norm[4] = {
@@ -175,7 +183,7 @@ st_pipe_vertex_format(GLenum type, GLuint size, GLenum format,
                       GLboolean normalized)
 {
    assert((type >= GL_BYTE && type <= GL_DOUBLE) ||
-          type == GL_FIXED);
+          type == GL_FIXED || type == GL_HALF_FLOAT);
    assert(size >= 1);
    assert(size <= 4);
    assert(format == GL_RGBA || format == GL_BGRA);
@@ -191,6 +199,7 @@ st_pipe_vertex_format(GLenum type, GLuint size, GLenum format,
       switch (type) {
       case GL_DOUBLE: return double_types[size-1];
       case GL_FLOAT: return float_types[size-1];
+      case GL_HALF_FLOAT: return half_float_types[size-1];
       case GL_INT: return int_types_norm[size-1];
       case GL_SHORT: return short_types_norm[size-1];
       case GL_BYTE: return byte_types_norm[size-1];
@@ -205,6 +214,7 @@ st_pipe_vertex_format(GLenum type, GLuint size, GLenum format,
       switch (type) {
       case GL_DOUBLE: return double_types[size-1];
       case GL_FLOAT: return float_types[size-1];
+      case GL_HALF_FLOAT: return half_float_types[size-1];
       case GL_INT: return int_types_scale[size-1];
       case GL_SHORT: return short_types_scale[size-1];
       case GL_BYTE: return byte_types_scale[size-1];
@@ -338,7 +348,8 @@ setup_interleaved_attribs(GLcontext *ctx,
                           struct pipe_vertex_buffer *vbuffer,
                           struct pipe_vertex_element velements[])
 {
-   struct pipe_context *pipe = ctx->st->pipe;
+   struct st_context *st = st_context(ctx);
+   struct pipe_context *pipe = st->pipe;
    GLuint attr;
    const GLubyte *offset0 = NULL;
 
@@ -360,12 +371,13 @@ setup_interleaved_attribs(GLcontext *ctx,
          offset0 = low;
          if (userSpace) {
             vbuffer->buffer =
-               pipe_user_buffer_create(pipe->screen, (void *) low, high - low);
+               pipe_user_buffer_create(pipe->screen, (void *) low, high - low,
+				       PIPE_BIND_VERTEX_BUFFER);
             vbuffer->buffer_offset = 0;
          }
          else {
             vbuffer->buffer = NULL;
-            pipe_buffer_reference(&vbuffer->buffer, stobj->buffer);
+            pipe_resource_reference(&vbuffer->buffer, stobj->buffer);
             vbuffer->buffer_offset = pointer_to_offset(low);
          }
          vbuffer->stride = stride; /* in bytes */
@@ -402,7 +414,8 @@ setup_non_interleaved_attribs(GLcontext *ctx,
                               struct pipe_vertex_buffer vbuffer[],
                               struct pipe_vertex_element velements[])
 {
-   struct pipe_context *pipe = ctx->st->pipe;
+   struct st_context *st = st_context(ctx);
+   struct pipe_context *pipe = st->pipe;
    GLuint attr;
 
    for (attr = 0; attr < vpv->num_inputs; attr++) {
@@ -422,7 +435,7 @@ setup_non_interleaved_attribs(GLcontext *ctx,
          /*printf("stobj %u = %p\n", attr, (void*) stobj);*/
 
          vbuffer[attr].buffer = NULL;
-         pipe_buffer_reference(&vbuffer[attr].buffer, stobj->buffer);
+         pipe_resource_reference(&vbuffer[attr].buffer, stobj->buffer);
          vbuffer[attr].buffer_offset = pointer_to_offset(arrays[mesaAttr]->Ptr);
          velements[attr].src_offset = 0;
       }
@@ -443,14 +456,19 @@ setup_non_interleaved_attribs(GLcontext *ctx,
                bytes = arrays[mesaAttr]->Size
                   * _mesa_sizeof_type(arrays[mesaAttr]->Type);
             }
-            vbuffer[attr].buffer = pipe_user_buffer_create(pipe->screen,
-                           (void *) arrays[mesaAttr]->Ptr, bytes);
+            vbuffer[attr].buffer = 
+	       pipe_user_buffer_create(pipe->screen,
+				       (void *) arrays[mesaAttr]->Ptr, bytes,
+				       PIPE_BIND_VERTEX_BUFFER);
          }
          else {
             /* no array, use ctx->Current.Attrib[] value */
             bytes = sizeof(ctx->Current.Attrib[0]);
-            vbuffer[attr].buffer = pipe_user_buffer_create(pipe->screen,
-                           (void *) ctx->Current.Attrib[mesaAttr], bytes);
+            vbuffer[attr].buffer = 
+	       pipe_user_buffer_create(pipe->screen,
+				       (void *) ctx->Current.Attrib[mesaAttr],
+				       bytes,
+				       PIPE_BIND_VERTEX_BUFFER);
             stride = 0;
          }
 
@@ -528,7 +546,8 @@ st_draw_vbo(GLcontext *ctx,
             GLuint min_index,
             GLuint max_index)
 {
-   struct pipe_context *pipe = ctx->st->pipe;
+   struct st_context *st = st_context(ctx);
+   struct pipe_context *pipe = st->pipe;
    const struct st_vertex_program *vp;
    const struct st_vp_varient *vpv;
    struct pipe_vertex_buffer vbuffer[PIPE_MAX_SHADER_INPUTS];
@@ -551,16 +570,16 @@ st_draw_vbo(GLcontext *ctx,
 
    vertDataEdgeFlags = arrays[VERT_ATTRIB_EDGEFLAG]->BufferObj &&
                        arrays[VERT_ATTRIB_EDGEFLAG]->BufferObj->Name;
-   if (vertDataEdgeFlags != ctx->st->vertdata_edgeflags) {
-      ctx->st->vertdata_edgeflags = vertDataEdgeFlags;
-      ctx->st->dirty.st |= ST_NEW_EDGEFLAGS_DATA;
+   if (vertDataEdgeFlags != st->vertdata_edgeflags) {
+      st->vertdata_edgeflags = vertDataEdgeFlags;
+      st->dirty.st |= ST_NEW_EDGEFLAGS_DATA;
    }
 
-   st_validate_state(ctx->st);
+   st_validate_state(st);
 
    /* must get these after state validation! */
-   vp = ctx->st->vp;
-   vpv = ctx->st->vp_varient;
+   vp = st->vp;
+   vpv = st->vp_varient;
 
 #if 0
    if (MESA_VERBOSE & VERBOSE_GLSL) {
@@ -609,7 +628,7 @@ st_draw_vbo(GLcontext *ctx,
 #endif
 
    pipe->set_vertex_buffers(pipe, num_vbuffers, vbuffer);
-   cso_set_vertex_elements(ctx->st->cso_context, num_velements, velements);
+   cso_set_vertex_elements(st->cso_context, num_velements, velements);
 
    if (num_vbuffers == 0 || num_velements == 0)
       return;
@@ -618,7 +637,7 @@ st_draw_vbo(GLcontext *ctx,
    if (ib) {
       /* indexed primitive */
       struct gl_buffer_object *bufobj = ib->obj;
-      struct pipe_buffer *indexBuf = NULL;
+      struct pipe_resource *indexBuf = NULL;
       unsigned indexSize, indexOffset, i;
       unsigned prim;
 
@@ -641,13 +660,14 @@ st_draw_vbo(GLcontext *ctx,
       if (bufobj && bufobj->Name) {
          /* elements/indexes are in a real VBO */
          struct st_buffer_object *stobj = st_buffer_object(bufobj);
-         pipe_buffer_reference(&indexBuf, stobj->buffer);
+         pipe_resource_reference(&indexBuf, stobj->buffer);
          indexOffset = pointer_to_offset(ib->ptr) / indexSize;
       }
       else {
          /* element/indicies are in user space memory */
          indexBuf = pipe_user_buffer_create(pipe->screen, (void *) ib->ptr,
-                                            ib->count * indexSize);
+                                            ib->count * indexSize,
+					    PIPE_BIND_INDEX_BUFFER);
          indexOffset = 0;
       }
 
@@ -660,7 +680,7 @@ st_draw_vbo(GLcontext *ctx,
          for (i = 0; i < nr_prims; i++) {
             prim = translate_prim( ctx, prims[i].mode );
 
-            pipe->draw_range_elements(pipe, indexBuf, indexSize,
+            pipe->draw_range_elements(pipe, indexBuf, indexSize, 0,
                                       min_index, max_index, prim,
                                       prims[i].start + indexOffset, prims[i].count);
          }
@@ -669,13 +689,21 @@ st_draw_vbo(GLcontext *ctx,
          for (i = 0; i < nr_prims; i++) {
             prim = translate_prim( ctx, prims[i].mode );
             
-            pipe->draw_elements(pipe, indexBuf, indexSize,
-                                prim,
-                                prims[i].start + indexOffset, prims[i].count);
+            if (prims[i].num_instances == 1) {
+               pipe->draw_elements(pipe, indexBuf, indexSize, 0, prim,
+                                   prims[i].start + indexOffset,
+                                   prims[i].count);
+            }
+            else {
+               pipe->draw_elements_instanced(pipe, indexBuf, indexSize, 0, prim,
+                                             prims[i].start + indexOffset,
+                                             prims[i].count,
+                                             0, prims[i].num_instances);
+            }
          }
       }
 
-      pipe_buffer_reference(&indexBuf, NULL);
+      pipe_resource_reference(&indexBuf, NULL);
    }
    else {
       /* non-indexed */
@@ -685,13 +713,20 @@ st_draw_vbo(GLcontext *ctx,
       for (i = 0; i < nr_prims; i++) {
          prim = translate_prim( ctx, prims[i].mode );
 
-         pipe->draw_arrays(pipe, prim, prims[i].start, prims[i].count);
+         if (prims[i].num_instances == 1) {
+            pipe->draw_arrays(pipe, prim, prims[i].start, prims[i].count);
+         }
+         else {
+            pipe->draw_arrays_instanced(pipe, prim, prims[i].start,
+                                        prims[i].count,
+                                        0, prims[i].num_instances);
+         }
       }
    }
 
    /* unreference buffers (frees wrapped user-space buffer objects) */
    for (attr = 0; attr < num_vbuffers; attr++) {
-      pipe_buffer_reference(&vbuffer[attr].buffer, NULL);
+      pipe_resource_reference(&vbuffer[attr].buffer, NULL);
       assert(!vbuffer[attr].buffer);
    }
 
@@ -707,11 +742,26 @@ void st_init_draw( struct st_context *st )
    GLcontext *ctx = st->ctx;
 
    vbo_set_draw_func(ctx, st_draw_vbo);
+
+#if FEATURE_feedback || FEATURE_rastpos
+   st->draw = draw_create(st->pipe); /* for selection/feedback */
+
+   /* Disable draw options that might convert points/lines to tris, etc.
+    * as that would foul-up feedback/selection mode.
+    */
+   draw_wide_line_threshold(st->draw, 1000.0f);
+   draw_wide_point_threshold(st->draw, 1000.0f);
+   draw_enable_line_stipple(st->draw, FALSE);
+   draw_enable_point_sprites(st->draw, FALSE);
+#endif
 }
 
 
 void st_destroy_draw( struct st_context *st )
 {
+#if FEATURE_feedback || FEATURE_rastpos
+   draw_destroy(st->draw);
+#endif
 }
 
 

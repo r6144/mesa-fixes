@@ -104,6 +104,10 @@ ureg_get_tokens( struct ureg_program *ureg,
                  unsigned *nr_tokens );
 
 
+/* Free the tokens created by ureg_get_tokens() */
+void ureg_free_tokens( const struct tgsi_token *tokens );
+
+
 void 
 ureg_destroy( struct ureg_program * );
 
@@ -229,9 +233,6 @@ ureg_release_temporary( struct ureg_program *ureg,
 
 struct ureg_dst
 ureg_DECL_address( struct ureg_program * );
-
-struct ureg_dst
-ureg_DECL_loop( struct ureg_program * );
 
 struct ureg_dst
 ureg_DECL_predicate(struct ureg_program *);

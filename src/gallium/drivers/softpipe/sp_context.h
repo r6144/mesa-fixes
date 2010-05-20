@@ -38,6 +38,10 @@
 #include "sp_quad_pipe.h"
 
 
+/** Do polygon stipple in the driver here, or in the draw module? */
+#define DO_PSTIPPLE_IN_DRAW_MODULE 1
+
+
 struct softpipe_vbuf_render;
 struct draw_context;
 struct draw_stage;
@@ -66,19 +70,19 @@ struct softpipe_context {
    struct pipe_blend_color blend_color;
    struct pipe_stencil_ref stencil_ref;
    struct pipe_clip_state clip;
-   struct pipe_buffer *constants[PIPE_SHADER_TYPES][PIPE_MAX_CONSTANT_BUFFERS];
+   struct pipe_resource *constants[PIPE_SHADER_TYPES][PIPE_MAX_CONSTANT_BUFFERS];
    struct pipe_framebuffer_state framebuffer;
    struct pipe_poly_stipple poly_stipple;
    struct pipe_scissor_state scissor;
-   struct pipe_texture *texture[PIPE_MAX_SAMPLERS];
-   struct pipe_texture *vertex_textures[PIPE_MAX_VERTEX_SAMPLERS];
+   struct pipe_sampler_view *sampler_views[PIPE_MAX_SAMPLERS];
+   struct pipe_sampler_view *vertex_sampler_views[PIPE_MAX_VERTEX_SAMPLERS];
    struct pipe_viewport_state viewport;
    struct pipe_vertex_buffer vertex_buffer[PIPE_MAX_ATTRIBS];
 
    unsigned num_samplers;
-   unsigned num_textures;
+   unsigned num_sampler_views;
    unsigned num_vertex_samplers;
-   unsigned num_vertex_textures;
+   unsigned num_vertex_sampler_views;
    unsigned num_vertex_buffers;
 
    unsigned dirty; /**< Mask of SP_NEW_x flags */
@@ -126,6 +130,7 @@ struct softpipe_context {
       struct quad_stage *shade;
       struct quad_stage *depth_test;
       struct quad_stage *blend;
+      struct quad_stage *pstipple;
       struct quad_stage *first; /**< points to one of the above stages */
    } quad;
 
@@ -134,6 +139,8 @@ struct softpipe_context {
       struct sp_sampler_varient *vert_samplers_list[PIPE_MAX_VERTEX_SAMPLERS];
       struct sp_sampler_varient *frag_samplers_list[PIPE_MAX_SAMPLERS];
    } tgsi;
+
+   struct tgsi_exec_machine *fs_machine;
 
    /** The primitive drawing context */
    struct draw_context *draw;

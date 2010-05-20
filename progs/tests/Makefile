@@ -41,6 +41,7 @@ SOURCES = \
 	copypixrate.c \
 	crossbar.c \
 	cva.c \
+	cva_huge.c \
 	cylwrap.c \
 	drawbuffers.c \
 	drawbuffers2.c \
@@ -89,6 +90,7 @@ SOURCES = \
 	seccolor.c \
 	shader_api.c \
 	sharedtex.c \
+	stencilreaddraw.c \
 	stencil_twoside.c \
 	stencilwrap.c \
 	stencil_wrap.c \
@@ -132,6 +134,9 @@ INCLUDES = -I. -I$(TOP)/include
 UTIL_FILES = readtex.h readtex.c
 
 
+GL_API_XML = $(TOP)/src/mapi/glapi/gen/gl_API.xml
+
+
 ##### TARGETS #####
 
 default: $(UTIL_FILES) $(PROGS)
@@ -158,7 +163,7 @@ clean:
 # auto code generation
 getprocaddress: getprocaddress.c getproclist.h
 
-getproclist.h: $(TOP)/src/mesa/glapi/gen/gl_API.xml getprocaddress.c getprocaddress.py
+getproclist.h: $(GL_API_XML) getprocaddress.c getprocaddress.py
 	python getprocaddress.py > getproclist.h
 
 arraytexture: arraytexture.o readtex.o

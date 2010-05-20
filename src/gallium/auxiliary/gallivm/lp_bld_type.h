@@ -37,9 +37,9 @@
 #define LP_BLD_TYPE_H
 
 
-#include "os/os_llvm.h"
+#include "pipe/p_compiler.h"
+#include "gallivm/lp_bld.h"
 
-#include <pipe/p_compiler.h>
 
 
 /**
@@ -314,6 +314,18 @@ lp_int_type(struct lp_type type);
 
 struct lp_type
 lp_wider_type(struct lp_type type);
+
+
+unsigned
+lp_sizeof_llvm_type(LLVMTypeRef t);
+
+
+const char *
+lp_typekind_name(LLVMTypeKind t);
+
+
+void
+lp_dump_llvmtype(LLVMTypeRef t);
 
 
 void

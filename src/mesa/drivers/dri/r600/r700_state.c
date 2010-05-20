@@ -253,12 +253,15 @@ void r700UpdateShaderStates(GLcontext * ctx)
 
 static void r700SetDepthState(GLcontext * ctx)
 {
+	struct radeon_renderbuffer *rrb;
 	context_t *context = R700_CONTEXT(ctx);
 	R700_CHIP_CONTEXT *r700 = (R700_CHIP_CONTEXT*)(&context->hw);
 
 	R600_STATECHANGE(context, db);
 
-    if (ctx->Depth.Test)
+	rrb = radeon_get_depthbuffer(&context->radeon);
+
+    if (ctx->Depth.Test && rrb && rrb->bo)
     {
         SETbit(r700->DB_DEPTH_CONTROL.u32All, Z_ENABLE_bit);
         if (ctx->Depth.Mask)
@@ -615,7 +618,7 @@ static GLuint translate_logicop(GLenum logicop)
 	case GL_XOR:
 		return 0x66;
 	case GL_EQUIV:
-		return 0xaa;
+		return 0x99;
 	case GL_AND_REVERSE:
 		return 0x44;
 	case GL_AND_INVERTED:
@@ -1861,10 +1864,9 @@ void r700InitStateFuncs(radeonContextPtr radeon, struct dd_function_table *funct
 	functions->DrawBuffer = radeonDrawBuffer;
 	functions->ReadBuffer = radeonReadBuffer;
 
-	if (radeon->radeonScreen->kernel_mm) {
-		functions->CopyPixels = _mesa_meta_CopyPixels;
-		functions->DrawPixels = _mesa_meta_DrawPixels;
+	functions->CopyPixels = _mesa_meta_CopyPixels;
+	functions->DrawPixels = _mesa_meta_DrawPixels;
+	if (radeon->radeonScreen->kernel_mm)
 		functions->ReadPixels = radeonReadPixels;
-	}
 }
 

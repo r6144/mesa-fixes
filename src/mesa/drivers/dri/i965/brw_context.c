@@ -64,11 +64,10 @@ static void brwInitDriverFunctions( struct dd_function_table *functions )
    brwInitFragProgFuncs( functions );
    brwInitProgFuncs( functions );
    brw_init_queryobj_functions(functions);
-
-   functions->Viewport = intel_viewport;
 }
 
-GLboolean brwCreateContext( const __GLcontextModes *mesaVis,
+GLboolean brwCreateContext( int api,
+			    const __GLcontextModes *mesaVis,
 			    __DRIcontext *driContextPriv,
 			    void *sharedContextPrivate)
 {
@@ -85,7 +84,7 @@ GLboolean brwCreateContext( const __GLcontextModes *mesaVis,
    brwInitVtbl( brw );
    brwInitDriverFunctions( &functions );
 
-   if (!intelInitContext( intel, mesaVis, driContextPriv,
+   if (!intelInitContext( intel, api, mesaVis, driContextPriv,
 			  sharedContextPrivate, &functions )) {
       printf("%s: failed to init intel context\n", __FUNCTION__);
       FREE(brw);
@@ -150,7 +149,7 @@ GLboolean brwCreateContext( const __GLcontextModes *mesaVis,
       MIN2(ctx->Const.FragmentProgram.MaxNativeParameters,
 	   ctx->Const.FragmentProgram.MaxEnvParams);
 
-   if (intel->is_ironlake || intel->is_g4x || intel->gen >= 6) {
+   if (intel->is_g4x || intel->gen >= 5) {
       brw->CMD_VF_STATISTICS = CMD_VF_STATISTICS_GM45;
       brw->CMD_PIPELINE_SELECT = CMD_PIPELINE_SELECT_GM45;
       brw->has_surface_tile_offset = GL_TRUE;
@@ -163,7 +162,7 @@ GLboolean brwCreateContext( const __GLcontextModes *mesaVis,
    }
 
    /* WM maximum threads is number of EUs times number of threads per EU. */
-   if (intel->is_ironlake) {
+   if (intel->gen == 5) {
       brw->urb.size = 1024;
       brw->vs_max_threads = 72;
       brw->wm_max_threads = 12 * 6;
@@ -192,8 +191,6 @@ GLboolean brwCreateContext( const __GLcontextModes *mesaVis,
 
    ctx->VertexProgram._MaintainTnlProgram = GL_TRUE;
    ctx->FragmentProgram._MaintainTexEnvProgram = GL_TRUE;
-
-   make_empty_list(&brw->query.active_head);
 
    brw_draw_init( brw );
 

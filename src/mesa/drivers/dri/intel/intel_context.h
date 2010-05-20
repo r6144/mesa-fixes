@@ -142,7 +142,6 @@ struct intel_context
     */
    int gen;
    GLboolean needs_ff_sync;
-   GLboolean is_ironlake;
    GLboolean is_g4x;
    GLboolean is_945;
    GLboolean has_luminance_srgb;
@@ -243,10 +242,9 @@ struct intel_context
    int driFd;
 
    __DRIcontext *driContext;
-   __DRIdrawable *driDrawable;
-   __DRIdrawable *driReadDrawable;
-   __DRIscreen *driScreen;
    struct intel_screen *intelScreen;
+   void (*saved_viewport)(GLcontext * ctx,
+			  GLint x, GLint y, GLsizei width, GLsizei height);
 
    /**
     * Configuration cache
@@ -328,12 +326,12 @@ extern int INTEL_DEBUG;
 #define DEBUG_BUFMGR    0x200
 #define DEBUG_REGION    0x400
 #define DEBUG_FBO       0x800
-#define DEBUG_LOCK      0x1000
+#define DEBUG_GS        0x1000
 #define DEBUG_SYNC	0x2000
 #define DEBUG_PRIMS	0x4000
 #define DEBUG_VERTS	0x8000
 #define DEBUG_DRI       0x10000
-#define DEBUG_DMA       0x20000
+#define DEBUG_SF        0x20000
 #define DEBUG_SANITY    0x40000
 #define DEBUG_SLEEP     0x80000
 #define DEBUG_STATS     0x100000
@@ -342,6 +340,8 @@ extern int INTEL_DEBUG;
 #define DEBUG_WM        0x800000
 #define DEBUG_URB       0x1000000
 #define DEBUG_VS        0x2000000
+#define DEBUG_GLSL_FORCE 0x4000000
+#define DEBUG_CLIP      0x8000000
 
 #define DBG(...) do {						\
 	if (INTEL_DEBUG & FILE_DEBUG_FLAG)			\
@@ -367,14 +367,14 @@ extern int INTEL_DEBUG;
  */
 
 extern GLboolean intelInitContext(struct intel_context *intel,
+				  int api,
                                   const __GLcontextModes * mesaVis,
                                   __DRIcontext * driContextPriv,
                                   void *sharedContextPrivate,
                                   struct dd_function_table *functions);
 
 extern void intelFinish(GLcontext * ctx);
-extern void intelFlush(GLcontext * ctx);
-extern void intel_flush(GLcontext * ctx, GLboolean needs_mi_flush);
+extern void intel_flush(GLcontext * ctx);
 
 extern void intelInitDriverFunctions(struct dd_function_table *functions);
 
@@ -448,9 +448,6 @@ extern int intel_translate_compare_func(GLenum func);
 extern int intel_translate_stencil_op(GLenum op);
 extern int intel_translate_blend_factor(GLenum factor);
 extern int intel_translate_logic_op(GLenum opcode);
-
-void intel_viewport(GLcontext * ctx, GLint x, GLint y,
-		    GLsizei width, GLsizei height);
 
 void intel_update_renderbuffers(__DRIcontext *context,
 				__DRIdrawable *drawable);

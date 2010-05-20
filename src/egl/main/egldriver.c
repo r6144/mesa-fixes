@@ -36,7 +36,9 @@
 
 
 /* XXX Need to decide how to do dynamic name lookup on Windows */
-static const char DefaultDriverName[] = "TBD";
+static const char DefaultDriverNames[] = {
+   "TBD",
+};
 
 typedef HMODULE lib_handle;
 
@@ -63,7 +65,10 @@ library_suffix(void)
 #elif defined(_EGL_PLATFORM_POSIX)
 
 
-static const char DefaultDriverName[] = "egl_glx";
+static const char *DefaultDriverNames[] = {
+   "egl_dri2",
+   "egl_glx"
+};
 
 typedef void * lib_handle;
 
@@ -84,32 +89,6 @@ static const char *
 library_suffix(void)
 {
    return ".so";
-}
-
-
-#else /* _EGL_PLATFORM_NO_OS */
-
-
-static const char DefaultDriverName[] = "builtin";
-
-typedef void *lib_handle;
-
-static INLINE void *
-open_library(const char *filename)
-{
-   return (void *) filename;
-}
-
-static INLINE void
-close_library(void *lib)
-{
-}
-
-
-static const char *
-library_suffix(void)
-{
-   return NULL;
 }
 
 
@@ -157,12 +136,6 @@ _eglOpenLibrary(const char *driverPath, lib_handle *handle)
    else {
       error = dlerror();
    }
-#else /* _EGL_PLATFORM_NO_OS */
-   /* must be the default driver name */
-   if (strcmp(driverPath, DefaultDriverName) == 0)
-      mainFunc = (_EGLMain_t) _eglMain;
-   else
-      error = "not builtin driver";
 #endif
 
    if (!lib) {
@@ -293,9 +266,9 @@ _eglLoaderFile(const char *dir, size_t len, void *loader_data)
    len += flen;
    path[len] = '\0';
 
-   drv = _eglLoadDriver(path, NULL);
-   /* fix the path and load again */
-   if (!drv && library_suffix()) {
+   if (library_suffix() == NULL || strstr(path, library_suffix()))
+      drv = _eglLoadDriver(path, NULL);
+   else {
       const char *suffix = library_suffix();
       size_t slen = strlen(suffix);
       const char *p;
@@ -306,6 +279,8 @@ _eglLoaderFile(const char *dir, size_t len, void *loader_data)
       if (need_suffix && len + slen + 1 <= sizeof(path)) {
          strcpy(path + len, suffix);
          drv = _eglLoadDriver(path, NULL);
+      } else {
+         drv = NULL;
       }
    }
    if (!drv)
@@ -518,17 +493,6 @@ _eglPreloadDisplayDrivers(void)
 
 
 /**
- * Preload the default driver.
- */
-static EGLBoolean
-_eglPreloadDefaultDriver(void)
-{
-   return (_eglPreloadForEach(_eglGetSearchPath(),
-            _eglLoaderFile, (void *) DefaultDriverName) > 0);
-}
-
-
-/**
  * Preload drivers.
  *
  * This function loads the driver modules and creates the corresponding
@@ -549,14 +513,12 @@ _eglPreloadDrivers(void)
    }
 
    loaded = (_eglPreloadUserDriver() ||
-             _eglPreloadDisplayDrivers() ||
-             _eglPreloadDefaultDriver());
+             _eglPreloadDisplayDrivers());
 
    _eglUnlockMutex(_eglGlobal.Mutex);
 
    return loaded;
 }
-
 
 /**
  * Unload preloaded drivers.
@@ -586,6 +548,30 @@ _eglUnloadDrivers(void)
    }
 
    _eglGlobal.NumDrivers = 0;
+}
+
+_EGLDriver *
+_eglLoadDefaultDriver(EGLDisplay dpy, EGLint *major, EGLint *minor)
+{
+   _EGLDriver *drv = NULL;
+   int i;
+
+   _eglLockMutex(_eglGlobal.Mutex);
+
+   for (i = 0; i < ARRAY_SIZE(DefaultDriverNames); i++) {
+      _eglPreloadForEach(_eglGetSearchPath(),
+			 _eglLoaderFile, (void *) DefaultDriverNames[i]);
+      if (_eglGlobal.NumDrivers == 0)
+	 continue;
+      drv = _eglGlobal.Drivers[0];
+      if (drv->API.Initialize(drv, dpy, major, minor))
+	 break;
+      _eglUnloadDrivers();
+   }      
+
+   _eglUnlockMutex(_eglGlobal.Mutex);
+
+   return drv;
 }
 
 
@@ -649,6 +635,21 @@ _eglInitDriverFallbacks(_EGLDriver *drv)
    drv->API.CreateImageKHR = _eglCreateImageKHR;
    drv->API.DestroyImageKHR = _eglDestroyImageKHR;
 #endif /* EGL_KHR_image_base */
+}
+
+
+/**
+ * Invoke a callback function on each EGL search path.
+ *
+ * The first argument of the callback function is the name of the search path.
+ * The second argument is the length of the name.
+ */
+void
+_eglSearchPathForEach(EGLBoolean (*callback)(const char *, size_t, void *),
+                      void *callback_data)
+{
+   const char *search_path = _eglGetSearchPath();
+   _eglPreloadForEach(search_path, callback, callback_data);
 }
 
 

@@ -46,6 +46,7 @@
 static void 
 update_textures(struct st_context *st)
 {
+   struct pipe_context *pipe = st->pipe;
    struct gl_vertex_program *vprog = st->ctx->VertexProgram._Current;
    struct gl_fragment_program *fprog = st->ctx->FragmentProgram._Current;
    const GLbitfield samplersUsed = (vprog->Base.SamplersUsed |
@@ -56,12 +57,12 @@ update_textures(struct st_context *st)
 
    /* loop over sampler units (aka tex image units) */
    for (su = 0; su < st->ctx->Const.MaxTextureImageUnits; su++) {
-      struct pipe_texture *pt = NULL;
+      struct pipe_sampler_view *sampler_view = NULL;
 
       if (samplersUsed & (1 << su)) {
          struct gl_texture_object *texObj;
          struct st_texture_object *stObj;
-         GLboolean flush, retval;
+         GLboolean retval;
          GLuint texUnit;
 
          if (fprog->Base.SamplersUsed & (1 << su))
@@ -76,7 +77,7 @@ update_textures(struct st_context *st)
          }
          stObj = st_texture_object(texObj);
 
-         retval = st_finalize_texture(st->ctx, st->pipe, texObj, &flush);
+         retval = st_finalize_texture(st->ctx, st->pipe, texObj);
          if (!retval) {
             /* out of mem */
             continue;
@@ -84,29 +85,20 @@ update_textures(struct st_context *st)
 
          st->state.num_textures = su + 1;
 
-         pt = st_get_stobj_texture(stObj);
+         sampler_view = st_get_texture_sampler_view(stObj, pipe);
       }
 
-      /*
-      if (pt) {
-         printf("%s su=%u non-null\n", __FUNCTION__, su);
-      }
-      else {
-         printf("%s su=%u null\n", __FUNCTION__, su);
-      }
-      */
-
-      pipe_texture_reference(&st->state.sampler_texture[su], pt);
+      pipe_sampler_view_reference(&st->state.sampler_views[su], sampler_view);
    }
 
-   cso_set_sampler_textures(st->cso_context,
-                            st->state.num_textures,
-                            st->state.sampler_texture);
+   cso_set_fragment_sampler_views(st->cso_context,
+                                  st->state.num_textures,
+                                  st->state.sampler_views);
    if (st->ctx->Const.MaxVertexTextureImageUnits > 0) {
-      cso_set_vertex_sampler_textures(st->cso_context,
-                                      MIN2(st->state.num_textures,
-                                           st->ctx->Const.MaxVertexTextureImageUnits),
-                                      st->state.sampler_texture);
+      cso_set_vertex_sampler_views(st->cso_context,
+                                   MIN2(st->state.num_textures,
+                                        st->ctx->Const.MaxVertexTextureImageUnits),
+                                   st->state.sampler_views);
    }
 }
 
@@ -137,19 +129,16 @@ finalize_textures(struct st_context *st)
          const GLuint texUnit = fprog->Base.SamplerUnits[su];
          struct gl_texture_object *texObj
             = st->ctx->Texture.Unit[texUnit]._Current;
-         struct st_texture_object *stObj = st_texture_object(texObj);
 
          if (texObj) {
-            GLboolean flush, retval;
+            GLboolean retval;
 
-            retval = st_finalize_texture(st->ctx, st->pipe, texObj, &flush);
+            retval = st_finalize_texture(st->ctx, st->pipe, texObj);
             if (!retval) {
                /* out of mem */
                st->missing_textures = GL_TRUE;
                continue;
             }
-
-            stObj->teximage_realloc = TRUE;
          }
       }
    }

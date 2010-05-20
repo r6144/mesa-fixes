@@ -96,8 +96,6 @@ typedef struct _modesettingRec
     /* Broken-out options. */
     OptionInfoPtr Options;
 
-    unsigned int SaveGeneration;
-
     void (*blockHandler)(int, pointer, pointer, pointer);
     struct pipe_fence_handle *fence[XORG_NR_FENCES];
 
@@ -118,7 +116,7 @@ typedef struct _modesettingRec
     struct pipe_context *ctx;
     boolean d_depth_bits_last;
     boolean ds_depth_bits_last;
-    struct pipe_texture *root_texture;
+    struct pipe_resource *root_texture;
 
     /* exa */
     struct exa_context *exa;
@@ -142,7 +140,7 @@ Bool xorg_has_gallium(ScrnInfoPtr pScrn);
 /***********************************************************************
  * xorg_exa.c
  */
-struct pipe_texture *
+struct pipe_resource *
 xorg_exa_get_texture(PixmapPtr pPixmap);
 
 int
@@ -152,9 +150,9 @@ int
 xorg_exa_set_shared_usage(PixmapPtr pPixmap);
 
 Bool
-xorg_exa_set_texture(PixmapPtr pPixmap, struct  pipe_texture *tex);
+xorg_exa_set_texture(PixmapPtr pPixmap, struct  pipe_resource *tex);
 
-struct pipe_texture *
+struct pipe_resource *
 xorg_exa_create_root_texture(ScrnInfoPtr pScrn,
 			     int width, int height,
 			     int depth, int bpp);
@@ -191,6 +189,9 @@ xorg_crtc_cursor_destroy(xf86CrtcPtr crtc);
  */
 void
 xorg_output_init(ScrnInfoPtr pScrn);
+
+unsigned
+xorg_output_get_id(xf86OutputPtr output);
 
 
 /***********************************************************************

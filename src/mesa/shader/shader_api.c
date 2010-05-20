@@ -123,6 +123,14 @@ _mesa_free_shader_program_data(GLcontext *ctx,
       free(shProg->InfoLog);
       shProg->InfoLog = NULL;
    }
+
+   /* Transform feedback varying vars */
+   for (i = 0; i < shProg->TransformFeedback.NumVarying; i++) {
+      free(shProg->TransformFeedback.VaryingNames[i]);
+   }
+   free(shProg->TransformFeedback.VaryingNames);
+   shProg->TransformFeedback.VaryingNames = NULL;
+   shProg->TransformFeedback.NumVarying = 0;
 }
 
 
@@ -397,6 +405,25 @@ get_shader_flags(void)
 
 
 /**
+ * Find the length of the longest transform feedback varying name
+ * which was specified with glTransformFeedbackVaryings().
+ */
+static GLint
+longest_feedback_varying_name(const struct gl_shader_program *shProg)
+{
+   GLuint i;
+   GLint max = 0;
+   for (i = 0; i < shProg->TransformFeedback.NumVarying; i++) {
+      GLint len = strlen(shProg->TransformFeedback.VaryingNames[i]);
+      if (len > max)
+         max = len;
+   }
+   return max;
+}
+
+
+
+/**
  * Initialize context's shader state.
  */
 void
@@ -437,8 +464,9 @@ _mesa_free_shader_state(GLcontext *ctx)
  * \param length  returns number of chars copied
  * \param dst  the string destination
  */
-static void
-copy_string(GLchar *dst, GLsizei maxLength, GLsizei *length, const GLchar *src)
+void
+_mesa_copy_string(GLchar *dst, GLsizei maxLength,
+                  GLsizei *length, const GLchar *src)
 {
    GLsizei len;
    for (len = 0; len < maxLength - 1 && src && src[len]; len++)
@@ -754,8 +782,11 @@ _mesa_detach_shader(GLcontext *ctx, GLuint program, GLuint shader)
 }
 
 
-static GLint
-sizeof_glsl_type(GLenum type)
+/**
+ * Return the size of the given GLSL datatype, in floats (components).
+ */
+GLint
+_mesa_sizeof_glsl_type(GLenum type)
 {
    switch (type) {
    case GL_FLOAT:
@@ -800,7 +831,7 @@ sizeof_glsl_type(GLenum type)
    case GL_FLOAT_MAT4x3:
       return 16;  /* four float[4] vectors */
    default:
-      _mesa_problem(NULL, "Invalid type in sizeof_glsl_type()");
+      _mesa_problem(NULL, "Invalid type in _mesa_sizeof_glsl_type()");
       return 1;
    }
 }
@@ -879,11 +910,12 @@ _mesa_get_active_attrib(GLcontext *ctx, GLuint program, GLuint index,
       return;
    }
 
-   copy_string(nameOut, maxLength, length, attribs->Parameters[index].Name);
+   _mesa_copy_string(nameOut, maxLength, length,
+                     attribs->Parameters[index].Name);
 
    if (size)
       *size = attribs->Parameters[index].Size
-         / sizeof_glsl_type(attribs->Parameters[index].DataType);
+         / _mesa_sizeof_glsl_type(attribs->Parameters[index].DataType);
 
    if (type)
       *type = attribs->Parameters[index].DataType;
@@ -954,11 +986,11 @@ _mesa_get_active_uniform(GLcontext *ctx, GLuint program, GLuint index,
    param = &prog->Parameters->Parameters[progPos];
 
    if (nameOut) {
-      copy_string(nameOut, maxLength, length, param->Name);
+      _mesa_copy_string(nameOut, maxLength, length, param->Name);
    }
 
    if (size) {
-      GLint typeSize = sizeof_glsl_type(param->DataType);
+      GLint typeSize = _mesa_sizeof_glsl_type(param->DataType);
       if ((GLint) param->Size > typeSize) {
          /* This is an array.
           * Array elements are placed on vector[4] boundaries so they're
@@ -1063,6 +1095,17 @@ _mesa_get_programiv(GLcontext *ctx, GLuint program,
    case GL_PROGRAM_BINARY_LENGTH_OES:
       *params = 0;
       break;
+#if FEATURE_EXT_transform_feedback
+   case GL_TRANSFORM_FEEDBACK_VARYINGS:
+      *params = shProg->TransformFeedback.NumVarying;
+      break;
+   case GL_TRANSFORM_FEEDBACK_VARYING_MAX_LENGTH:
+      *params = longest_feedback_varying_name(shProg) + 1;
+      break;
+   case GL_TRANSFORM_FEEDBACK_BUFFER_MODE:
+      *params = shProg->TransformFeedback.BufferMode;
+      break;
+#endif
    default:
       _mesa_error(ctx, GL_INVALID_ENUM, "glGetProgramiv(pname)");
       return;
@@ -1112,7 +1155,7 @@ _mesa_get_program_info_log(GLcontext *ctx, GLuint program, GLsizei bufSize,
       _mesa_error(ctx, GL_INVALID_VALUE, "glGetProgramInfoLog(program)");
       return;
    }
-   copy_string(infoLog, bufSize, length, shProg->InfoLog);
+   _mesa_copy_string(infoLog, bufSize, length, shProg->InfoLog);
 }
 
 
@@ -1125,7 +1168,7 @@ _mesa_get_shader_info_log(GLcontext *ctx, GLuint shader, GLsizei bufSize,
       _mesa_error(ctx, GL_INVALID_VALUE, "glGetShaderInfoLog(shader)");
       return;
    }
-   copy_string(infoLog, bufSize, length, sh->InfoLog);
+   _mesa_copy_string(infoLog, bufSize, length, sh->InfoLog);
 }
 
 
@@ -1141,7 +1184,7 @@ _mesa_get_shader_source(GLcontext *ctx, GLuint shader, GLsizei maxLength,
    if (!sh) {
       return;
    }
-   copy_string(sourceOut, maxLength, length, sh->Source);
+   _mesa_copy_string(sourceOut, maxLength, length, sh->Source);
 }
 
 
@@ -1474,10 +1517,18 @@ static void
 _mesa_link_program(GLcontext *ctx, GLuint program)
 {
    struct gl_shader_program *shProg;
+   struct gl_transform_feedback_object *obj =
+      ctx->TransformFeedback.CurrentObject;
 
    shProg = _mesa_lookup_shader_program_err(ctx, program, "glLinkProgram");
    if (!shProg)
       return;
+
+   if (obj->Active && shProg == ctx->Shader.CurrentProgram) {
+      _mesa_error(ctx, GL_INVALID_OPERATION,
+                  "glLinkProgram(transform feedback active");
+      return;
+   }
 
    FLUSH_VERTICES(ctx, _NEW_PROGRAM);
 
@@ -1542,6 +1593,14 @@ void
 _mesa_use_program(GLcontext *ctx, GLuint program)
 {
    struct gl_shader_program *shProg;
+   struct gl_transform_feedback_object *obj =
+      ctx->TransformFeedback.CurrentObject;
+
+   if (obj->Active) {
+      _mesa_error(ctx, GL_INVALID_OPERATION,
+                  "glUseProgram(transform feedback active)");
+      return;
+   }
 
    if (ctx->Shader.CurrentProgram &&
        ctx->Shader.CurrentProgram->Name == program) {
@@ -1694,7 +1753,8 @@ set_program_uniform(GLcontext *ctx, struct gl_program *program,
          /* check that the sampler (tex unit index) is legal */
          if (texUnit >= ctx->Const.MaxTextureImageUnits) {
             _mesa_error(ctx, GL_INVALID_VALUE,
-                        "glUniform1(invalid sampler/tex unit index)");
+                        "glUniform1(invalid sampler/tex unit index for '%s')",
+                        param->Name);
             return;
          }
 
@@ -1731,7 +1791,7 @@ set_program_uniform(GLcontext *ctx, struct gl_program *program,
       const GLboolean isUniformBool = is_boolean_type(param->DataType);
       const GLboolean areIntValues = is_integer_type(type);
       const GLint slots = (param->Size + 3) / 4;
-      const GLint typeSize = sizeof_glsl_type(param->DataType);
+      const GLint typeSize = _mesa_sizeof_glsl_type(param->DataType);
       GLsizei k, i;
 
       if ((GLint) param->Size > typeSize) {
@@ -1742,7 +1802,8 @@ set_program_uniform(GLcontext *ctx, struct gl_program *program,
          /* non-array: count must be at most one; count == 0 is handled by the loop below */
          if (count > 1) {
             _mesa_error(ctx, GL_INVALID_OPERATION,
-                        "glUniform(uniform is not an array)");
+                        "glUniform(uniform '%s' is not an array)",
+                        param->Name);
             return;
          }
       }
@@ -1805,14 +1866,15 @@ _mesa_uniform(GLcontext *ctx, GLint location, GLsizei count,
       return;   /* The standard specifies this as a no-op */
 
    if (location < -1) {
-      _mesa_error(ctx, GL_INVALID_OPERATION, "glUniform(location)");
+      _mesa_error(ctx, GL_INVALID_OPERATION, "glUniform(location=%d)",
+                  location);
       return;
    }
 
    split_location_offset(&location, &offset);
 
    if (location < 0 || location >= (GLint) shProg->Uniforms->NumUniforms) {
-      _mesa_error(ctx, GL_INVALID_VALUE, "glUniform(location)");
+      _mesa_error(ctx, GL_INVALID_VALUE, "glUniform(location=%d)", location);
       return;
    }
 
@@ -1920,7 +1982,7 @@ set_program_uniform_matrix(GLcontext *ctx, struct gl_program *program,
    GLuint src = 0;
    const struct gl_program_parameter * param = &program->Parameters->Parameters[index];
    const GLuint slots = (param->Size + 3) / 4;
-   const GLint typeSize = sizeof_glsl_type(param->DataType);
+   const GLint typeSize = _mesa_sizeof_glsl_type(param->DataType);
    GLint nr, nc;
 
    /* check that the number of rows, columns is correct */

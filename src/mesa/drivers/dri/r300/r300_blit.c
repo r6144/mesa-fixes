@@ -117,7 +117,9 @@ static void create_fragment_program(struct r300_context *r300)
     compiler.Base.Program.InputsRead = (1 << FRAG_ATTRIB_TEX0);
     compiler.OutputColor[0] = FRAG_RESULT_COLOR;
     compiler.OutputDepth = FRAG_RESULT_DEPTH;
+    compiler.enable_shadow_ambient = GL_TRUE;
     compiler.is_r500 = (r300->radeon.radeonScreen->chip_family >= CHIP_FAMILY_RV515);
+    compiler.max_temp_regs = (compiler.is_r500) ? 128 : 32;
     compiler.code = &r300->blit.fp_code;
     compiler.AllocateHwInputs = fp_allocate_hw_inputs;
 
@@ -581,12 +583,6 @@ unsigned r300_blit(GLcontext *ctx,
     /* Make sure that colorbuffer has even width - hw limitation */
     if (dst_pitch % 2 > 0)
         ++dst_pitch;
-
-    /* Rendering to small buffer doesn't work.
-     * Looks like a hw limitation.
-     */
-    if (dst_pitch < 32)
-        return 0;
 
     /* Need to clamp the region size to make sure
      * we don't read outside of the source buffer

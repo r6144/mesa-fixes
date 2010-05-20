@@ -183,8 +183,16 @@ vcache_quad( struct vcache_frontend *vcache,
              unsigned i2,
              unsigned i3 )
 {
-   vcache_triangle( vcache, i0, i1, i3 );
-   vcache_triangle( vcache, i1, i2, i3 );
+   if (vcache->draw->rasterizer->flatshade_first) {
+      /* pass last quad vertex as first triangle vertex */
+      vcache_triangle( vcache, i3, i0, i1 );
+      vcache_triangle( vcache, i3, i1, i2 );
+   }
+   else {
+      /* pass last quad vertex as last triangle vertex */
+      vcache_triangle( vcache, i0, i1, i3 );
+      vcache_triangle( vcache, i1, i2, i3 );
+   }
 }
 
 static INLINE void 
@@ -195,18 +203,20 @@ vcache_ef_quad( struct vcache_frontend *vcache,
                 unsigned i3 )
 {
    if (vcache->draw->rasterizer->flatshade_first) {
+      /* pass last quad vertex as first triangle vertex */
       vcache_triangle_flags( vcache,
                              ( DRAW_PIPE_RESET_STIPPLE |
                                DRAW_PIPE_EDGE_FLAG_0 |
                                DRAW_PIPE_EDGE_FLAG_1 ),
-                             i0, i1, i2 );
+                             i3, i0, i1 );
 
       vcache_triangle_flags( vcache,
-                             ( DRAW_PIPE_EDGE_FLAG_2 |
-                               DRAW_PIPE_EDGE_FLAG_1 ),
-                             i0, i2, i3 );
+                             ( DRAW_PIPE_EDGE_FLAG_1 |
+                               DRAW_PIPE_EDGE_FLAG_2 ),
+                             i3, i1, i2 );
    }
    else {
+      /* pass last quad vertex as last triangle vertex */
       vcache_triangle_flags( vcache,
                              ( DRAW_PIPE_RESET_STIPPLE |
                                DRAW_PIPE_EDGE_FLAG_0 |
@@ -329,6 +339,7 @@ static INLINE void
 vcache_check_run( struct draw_pt_front_end *frontend, 
                   pt_elt_func get_elt,
                   const void *elts,
+                  int elt_bias,
                   unsigned draw_count )
 {
    struct vcache_frontend *vcache = (struct vcache_frontend *)frontend; 
@@ -346,7 +357,7 @@ vcache_check_run( struct draw_pt_front_end *frontend,
                        vcache->fetch_max,
                        draw_count);
       
-   if (max_index >= DRAW_PIPE_MAX_VERTICES ||
+   if (elt_bias + max_index >= DRAW_PIPE_MAX_VERTICES ||
        fetch_count >= UNDEFINED_VERTEX_ID ||
        fetch_count > draw_count) {
       if (0) debug_printf("fail\n");
@@ -362,8 +373,11 @@ vcache_check_run( struct draw_pt_front_end *frontend,
    }
 
 
+   assert((elt_bias >= 0 && min_index + elt_bias >= min_index) ||
+          (elt_bias <  0 && min_index + elt_bias <  min_index));
+
    if (min_index == 0 &&
-       index_size == 2) 
+       index_size == 2)
    {
       transformed_elts = (const ushort *)elts;
    }
@@ -433,7 +447,7 @@ vcache_check_run( struct draw_pt_front_end *frontend,
 
    if (fetch_count < UNDEFINED_VERTEX_ID)
       ok = vcache->middle->run_linear_elts( vcache->middle,
-                                            min_index, /* start */
+                                            min_index + elt_bias, /* start */
                                             fetch_count,
                                             transformed_elts,
                                             draw_count );
@@ -447,7 +461,7 @@ vcache_check_run( struct draw_pt_front_end *frontend,
                 fetch_count, draw_count);
 
  fail:
-   vcache_run( frontend, get_elt, elts, draw_count );
+   vcache_run( frontend, get_elt, elts, elt_bias, draw_count );
 }
 
 

@@ -1,5 +1,10 @@
 ### Lists of source files, included by Makefiles
 
+# this is part of MAIN_SOURCES
+MAIN_ES_SOURCES = \
+	main/api_exec_es1.c \
+	main/api_exec_es2.c
+
 MAIN_SOURCES = \
 	main/api_arrayelt.c \
 	main/api_exec.c \
@@ -25,6 +30,7 @@ MAIN_SOURCES = \
 	main/dlist.c \
 	main/dlopen.c \
 	main/drawpix.c \
+	main/drawtex.c \
 	main/enable.c \
 	main/enums.c \
 	main/eval.c \
@@ -54,8 +60,8 @@ MAIN_SOURCES = \
 	main/points.c \
 	main/polygon.c \
 	main/queryobj.c \
+	main/querymatrix.c \
 	main/rastpos.c \
-	main/rbadaptors.c \
 	main/readpix.c \
 	main/remap.c \
 	main/renderbuffer.c \
@@ -76,22 +82,17 @@ MAIN_SOURCES = \
 	main/texgetimage.c \
 	main/teximage.c \
 	main/texobj.c \
+	main/texpal.c \
 	main/texparam.c \
 	main/texrender.c \
 	main/texstate.c \
 	main/texstore.c \
+	main/transformfeedback.c \
 	main/varray.c \
 	main/version.c \
 	main/viewport.c \
-	main/vtxfmt.c
-
-GLAPI_SOURCES = \
-	glapi/glapi.c \
-	glapi/glapi_dispatch.c \
-	glapi/glapi_entrypoint.c \
-	glapi/glapi_getproc.c \
-	glapi/glapi_nop.c \
-	glapi/glthread.c
+	main/vtxfmt.c \
+	$(MAIN_ES_SOURCES)
 
 MATH_SOURCES = \
 	math/m_debug_clip.c \
@@ -197,6 +198,8 @@ STATETRACKER_SOURCES = \
 	state_tracker/st_cb_condrender.c \
 	state_tracker/st_cb_flush.c \
 	state_tracker/st_cb_drawpixels.c \
+	state_tracker/st_cb_drawtex.c \
+	state_tracker/st_cb_eglimage.c \
 	state_tracker/st_cb_fbo.c \
 	state_tracker/st_cb_feedback.c \
 	state_tracker/st_cb_program.c \
@@ -205,14 +208,15 @@ STATETRACKER_SOURCES = \
 	state_tracker/st_cb_readpixels.c \
 	state_tracker/st_cb_strings.c \
 	state_tracker/st_cb_texture.c \
+	state_tracker/st_cb_xformfb.c \
 	state_tracker/st_context.c \
 	state_tracker/st_debug.c \
 	state_tracker/st_draw.c \
 	state_tracker/st_draw_feedback.c \
 	state_tracker/st_extensions.c \
 	state_tracker/st_format.c \
-	state_tracker/st_framebuffer.c \
 	state_tracker/st_gen_mipmap.c \
+	state_tracker/st_manager.c \
 	state_tracker/st_mesa_to_tgsi.c \
 	state_tracker/st_program.c \
 	state_tracker/st_texture.c
@@ -293,22 +297,13 @@ X86_SOURCES =			\
 	x86/sse_normal.S	\
 	x86/read_rgba_span_x86.S
 
-X86_API =			\
-	x86/glapi_x86.S
-
 X86-64_SOURCES =		\
 	x86-64/xform4.S
-
-X86-64_API =			\
-	x86-64/glapi_x86-64.S
 
 SPARC_SOURCES =			\
 	sparc/clip.S		\
 	sparc/norm.S		\
 	sparc/xform.S
-
-SPARC_API =			\
-	sparc/glapi_sparc.S
 
 COMMON_DRIVER_SOURCES =			\
 	drivers/common/driverfuncs.c	\
@@ -343,7 +338,6 @@ MESA_GALLIUM_SOURCES = \
 # All the core C sources, for dependency checking
 ALL_SOURCES = \
 	$(MESA_SOURCES)		\
-	$(GLAPI_SOURCES)	\
 	$(MESA_ASM_SOURCES)	\
 	$(STATETRACKER_SOURCES)
 
@@ -357,10 +351,6 @@ MESA_OBJECTS = \
 MESA_GALLIUM_OBJECTS = \
 	$(MESA_GALLIUM_SOURCES:.c=.o) \
 	$(MESA_ASM_SOURCES:.S=.o)
-
-GLAPI_OBJECTS = \
-	$(GLAPI_SOURCES:.c=.o) \
-	$(GLAPI_ASM_SOURCES:.S=.o)
 
 
 COMMON_DRIVER_OBJECTS = $(COMMON_DRIVER_SOURCES:.c=.o)
@@ -378,5 +368,6 @@ GLSL_LIBS = \
 INCLUDE_DIRS = \
 	-I$(TOP)/include \
 	-I$(TOP)/src/mesa \
+	-I$(TOP)/src/mapi \
 	-I$(TOP)/src/gallium/include \
 	-I$(TOP)/src/gallium/auxiliary

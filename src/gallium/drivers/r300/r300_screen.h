@@ -28,22 +28,16 @@
 
 #include "r300_chipset.h"
 
-#define R300_TEXTURE_USAGE_TRANSFER PIPE_TEXTURE_USAGE_CUSTOM
-
-struct radeon_winsys;
+#include <stdio.h>
 
 struct r300_screen {
     /* Parent class */
     struct pipe_screen screen;
 
-    struct radeon_winsys* radeon_winsys;
-
-    /* XXX This hack will be removed once texture transfers become part of
-     * pipe_context. */
-    struct pipe_context* ctx;
+    struct r300_winsys_screen *rws;
 
     /* Chipset capabilities */
-    struct r300_capabilities* caps;
+    struct r300_capabilities caps;
 
     /** Combination of DBG_xxx flags */
     unsigned debug;
@@ -54,9 +48,6 @@ struct r300_screen {
 static INLINE struct r300_screen* r300_screen(struct pipe_screen* screen) {
     return (struct r300_screen*)screen;
 }
-
-/* Creates a new r300 screen. */
-struct pipe_screen* r300_create_screen(struct radeon_winsys* radeon_winsys);
 
 /* Debug functionality. */
 
@@ -70,13 +61,23 @@ struct pipe_screen* r300_create_screen(struct radeon_winsys* radeon_winsys);
  * those changes.
  */
 /*@{*/
-#define DBG_HELP    0x0000001
-#define DBG_FP      0x0000002
-#define DBG_VP      0x0000004
-#define DBG_CS      0x0000008
-#define DBG_DRAW    0x0000010
-#define DBG_TEX     0x0000020
-#define DBG_FALL    0x0000040
+#define DBG_HELP        (1 << 0)
+/* Logging. */
+#define DBG_FP          (1 << 1)
+#define DBG_VP          (1 << 2)
+#define DBG_CS          (1 << 3)
+#define DBG_DRAW        (1 << 4)
+#define DBG_TEX         (1 << 5)
+#define DBG_TEXALLOC    (1 << 6)
+#define DBG_RS          (1 << 7)
+#define DBG_FALL        (1 << 8)
+#define DBG_FB          (1 << 9)
+/* Features. */
+#define DBG_ANISOHQ     (1 << 16)
+#define DBG_NO_TILING   (1 << 17)
+#define DBG_NO_IMMD     (1 << 18)
+/* Statistics. */
+#define DBG_STATS       (1 << 24)
 /*@}*/
 
 static INLINE boolean SCREEN_DBG_ON(struct r300_screen * screen, unsigned flags)
@@ -90,12 +91,13 @@ static INLINE void SCREEN_DBG(struct r300_screen * screen, unsigned flags,
     if (SCREEN_DBG_ON(screen, flags)) {
         va_list va;
         va_start(va, fmt);
-        debug_vprintf(fmt, va);
+        vfprintf(stderr, fmt, va);
         va_end(va);
     }
 }
 
 void r300_init_debug(struct r300_screen* ctx);
 
-#endif /* R300_SCREEN_H */
+void r300_init_screen_resource_functions(struct r300_screen *r300screen);
 
+#endif /* R300_SCREEN_H */

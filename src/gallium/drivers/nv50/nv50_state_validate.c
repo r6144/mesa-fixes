@@ -23,6 +23,7 @@
 #include "util/u_format.h"
 
 #include "nv50_context.h"
+#include "nv50_resource.h"
 #include "nouveau/nouveau_stateobj.h"
 
 static struct nouveau_stateobj *
@@ -31,7 +32,7 @@ validate_fb(struct nv50_context *nv50)
 	struct nouveau_grobj *tesla = nv50->screen->tesla;
 	struct nouveau_stateobj *so = so_new(32, 79, 18);
 	struct pipe_framebuffer_state *fb = &nv50->framebuffer;
-	unsigned i, w, h, gw = 0;
+	unsigned i, w = 0, h = 0, gw = 0;
 
 	/* Set nr of active RTs and select RT for each colour output.
 	 * FP result 0 always goes to RT[0], bits 4 - 6 are ignored.
@@ -43,7 +44,7 @@ validate_fb(struct nv50_context *nv50)
 		  (4 << 16) | (5 << 19) | (6 << 22) | (7 << 25));
 
 	for (i = 0; i < fb->nr_cbufs; i++) {
-		struct pipe_texture *pt = fb->cbufs[i]->texture;
+		struct pipe_resource *pt = fb->cbufs[i]->texture;
 		struct nouveau_bo *bo = nv50_miptree(pt)->base.bo;
 
 		if (!gw) {
@@ -104,7 +105,7 @@ validate_fb(struct nv50_context *nv50)
 	}
 
 	if (fb->zsbuf) {
-		struct pipe_texture *pt = fb->zsbuf->texture;
+		struct pipe_resource *pt = fb->zsbuf->texture;
 		struct nouveau_bo *bo = nv50_miptree(pt)->base.bo;
 
 		if (!gw) {
@@ -122,13 +123,13 @@ validate_fb(struct nv50_context *nv50)
 		so_reloc (so, bo, fb->zsbuf->offset, NOUVEAU_BO_VRAM |
 			      NOUVEAU_BO_LOW | NOUVEAU_BO_RDWR, 0, 0);
 		switch (fb->zsbuf->format) {
-		case PIPE_FORMAT_Z24S8_UNORM:
+		case PIPE_FORMAT_Z24_UNORM_S8_USCALED:
 			so_data(so, NV50TCL_ZETA_FORMAT_S8Z24_UNORM);
 			break;
 		case PIPE_FORMAT_Z24X8_UNORM:
 			so_data(so, NV50TCL_ZETA_FORMAT_X8Z24_UNORM);
 			break;
-		case PIPE_FORMAT_S8Z24_UNORM:
+		case PIPE_FORMAT_S8_USCALED_Z24_UNORM:
 			so_data(so, NV50TCL_ZETA_FORMAT_Z24S8_UNORM);
 			break;
 		case PIPE_FORMAT_Z32_FLOAT:
@@ -236,7 +237,7 @@ static struct nouveau_stateobj *
 validate_stencil_ref(struct nv50_context *nv50)
 {
 	struct nouveau_grobj *tesla = nv50->screen->tesla;
-	struct nouveau_stateobj *so = so = so_new(2, 2, 0);
+	struct nouveau_stateobj *so = so_new(2, 2, 0);
 
 	so_method(so, tesla, NV50TCL_STENCIL_FRONT_FUNC_REF, 1);
 	so_data  (so, nv50->stencil_ref.ref_value[0]);
@@ -310,15 +311,13 @@ validate_sampler(struct nv50_context *nv50)
 	struct nouveau_stateobj *so;
 	unsigned nr = 0, i;
 
-	for (i = 0; i < PIPE_SHADER_TYPES; ++i)
+	for (i = 0; i < 3; ++i)
 		nr += nv50->sampler_nr[i];
 
-	so = so_new(1 + 5 * PIPE_SHADER_TYPES,
-		    1 + 19 * PIPE_SHADER_TYPES + nr * 8,
-		    PIPE_SHADER_TYPES * 2);
+	so = so_new(1 + 5 * 3, 1 + 19 * 3 + nr * 8, 3 * 2);
 
-	nv50_validate_samplers(nv50, so, PIPE_SHADER_VERTEX);
-	nv50_validate_samplers(nv50, so, PIPE_SHADER_FRAGMENT);
+	nv50_validate_samplers(nv50, so, 0); /* VP */
+	nv50_validate_samplers(nv50, so, 2); /* FP */
 
 	so_method(so, tesla, 0x1334, 1); /* flush TSC */
 	so_data  (so, 0);
@@ -437,7 +436,7 @@ nv50_state_validate(struct nv50_context *nv50, unsigned wait_dwords)
 	so_emit_reloc_markers(chan, nv50->state.hw[3]); /* vp */
 	so_emit_reloc_markers(chan, nv50->state.hw[4]); /* fp */
 	so_emit_reloc_markers(chan, nv50->state.hw[17]); /* vb */
-	so_emit_reloc_markers(chan, nv50->screen->static_init);
+	nv50_screen_relocs(nv50->screen);
 
 	/* No idea.. */
 	BEGIN_RING(chan, tesla, 0x142c, 1);

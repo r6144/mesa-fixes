@@ -55,7 +55,7 @@ static boolean is_digit_alpha_underscore( const char *cur )
    return is_digit( cur ) || is_alpha_underscore( cur );
 }
 
-static boolean uprcase( char c )
+static char uprcase( char c )
 {
    if (c >= 'a' && c <= 'z')
       return c += 'A' - 'a';
@@ -76,7 +76,7 @@ streq_nocase_uprcase(const char *str1,
       str1++;
       str2++;
    }
-   return TRUE;
+   return *str1 == 0 && *str2 == 0;
 }
 
 static boolean str_match_no_case( const char **pcur, const char *str )
@@ -278,7 +278,6 @@ static const char *file_names[TGSI_FILE_COUNT] =
    "SAMP",
    "ADDR",
    "IMM",
-   "LOOP",
    "PRED",
    "SV"
 };
@@ -816,6 +815,45 @@ parse_instruction(
    struct tgsi_full_instruction inst;
    uint advance;
 
+   inst = tgsi_default_full_instruction();
+
+   /* Parse predicate.
+    */
+   eat_opt_white( &ctx->cur );
+   if (*ctx->cur == '(') {
+      uint file;
+      int index;
+      uint swizzle[4];
+      boolean parsed_swizzle;
+
+      inst.Instruction.Predicate = 1;
+
+      ctx->cur++;
+      if (*ctx->cur == '!') {
+         ctx->cur++;
+         inst.Predicate.Negate = 1;
+      }
+
+      if (!parse_register_dst( ctx, &file, &index ))
+         return FALSE;
+
+      if (parse_optional_swizzle( ctx, swizzle, &parsed_swizzle )) {
+         if (parsed_swizzle) {
+            inst.Predicate.SwizzleX = swizzle[0];
+            inst.Predicate.SwizzleY = swizzle[1];
+            inst.Predicate.SwizzleZ = swizzle[2];
+            inst.Predicate.SwizzleW = swizzle[3];
+         }
+      }
+
+      if (*ctx->cur != ')') {
+         report_error( ctx, "Expected `)'" );
+         return FALSE;
+      }
+
+      ctx->cur++;
+   }
+
    /* Parse instruction name.
     */
    eat_opt_white( &ctx->cur );
@@ -849,7 +887,6 @@ parse_instruction(
       return FALSE;
    }
 
-   inst = tgsi_default_full_instruction();
    inst.Instruction.Opcode = i;
    inst.Instruction.Saturate = saturate;
    inst.Instruction.NumDstRegs = info->num_dst;

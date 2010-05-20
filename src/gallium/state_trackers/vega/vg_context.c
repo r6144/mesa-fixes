@@ -32,6 +32,8 @@
 #include "shader.h"
 #include "asm_util.h"
 #include "st_inlines.h"
+#include "vg_manager.h"
+#include "api.h"
 
 #include "pipe/p_context.h"
 #include "util/u_inlines.h"
@@ -42,6 +44,7 @@
 #include "util/u_simple_shaders.h"
 #include "util/u_memory.h"
 #include "util/u_blit.h"
+#include "util/u_sampler.h"
 
 struct vg_context *_vg_context = 0;
 
@@ -65,6 +68,7 @@ static void init_clear(struct vg_context *st)
 void vg_set_current_context(struct vg_context *ctx)
 {
    _vg_context = ctx;
+   api_make_dispatch_current((ctx) ? ctx->dispatch : NULL);
 }
 
 struct vg_context * vg_create_context(struct pipe_context *pipe,
@@ -77,6 +81,8 @@ struct vg_context * vg_create_context(struct pipe_context *pipe,
    ctx = CALLOC_STRUCT(vg_context);
 
    ctx->pipe = pipe;
+
+   ctx->dispatch = api_create_dispatch();
 
    vg_init_state(&ctx->state.vg);
    ctx->state.dirty = ALL_DIRTY;
@@ -130,8 +136,8 @@ struct vg_context * vg_create_context(struct pipe_context *pipe,
 
 void vg_destroy_context(struct vg_context *ctx)
 {
-   struct pipe_buffer **cbuf = &ctx->mask.cbuf;
-   struct pipe_buffer **vsbuf = &ctx->vs_const_buffer;
+   struct pipe_resource **cbuf = &ctx->mask.cbuf;
+   struct pipe_resource **vsbuf = &ctx->vs_const_buffer;
 
    util_destroy_blit(ctx->blit);
    renderer_destroy(ctx->renderer);
@@ -140,10 +146,10 @@ void vg_destroy_context(struct vg_context *ctx)
    paint_destroy(ctx->default_paint);
 
    if (*cbuf)
-      pipe_buffer_reference(cbuf, NULL);
+      pipe_resource_reference(cbuf, NULL);
 
    if (*vsbuf)
-      pipe_buffer_reference(vsbuf, NULL);
+      pipe_resource_reference(vsbuf, NULL);
 
    if (ctx->clear.fs) {
       cso_delete_fragment_shader(ctx->cso_context, ctx->clear.fs);
@@ -182,6 +188,8 @@ void vg_destroy_context(struct vg_context *ctx)
    cso_hash_delete(ctx->owned_objects[VG_OBJECT_MASK]);
    cso_hash_delete(ctx->owned_objects[VG_OBJECT_FONT]);
    cso_hash_delete(ctx->owned_objects[VG_OBJECT_PATH]);
+
+   api_destroy_dispatch(ctx->dispatch);
 
    free(ctx);
 }
@@ -305,6 +313,8 @@ static void update_clip_state(struct vg_context *ctx)
 
 void vg_validate_state(struct vg_context *ctx)
 {
+   vg_manager_validate_framebuffer(ctx);
+
    if ((ctx->state.dirty & BLEND_DIRTY)) {
       struct pipe_blend_state *blend = &ctx->state.g3d.blend;
       memset(blend, 0, sizeof(struct pipe_blend_state));
@@ -377,14 +387,14 @@ void vg_validate_state(struct vg_context *ctx)
          2.f/fb->width, 2.f/fb->height, 1, 1,
          -1, -1, 0, 0
       };
-      struct pipe_buffer **cbuf = &ctx->vs_const_buffer;
+      struct pipe_resource **cbuf = &ctx->vs_const_buffer;
 
       vg_set_viewport(ctx, VEGA_Y0_BOTTOM);
 
-      pipe_buffer_reference(cbuf, NULL);
-      *cbuf = pipe_buffer_create(ctx->pipe->screen, 16,
-                                        PIPE_BUFFER_USAGE_CONSTANT,
-                                        param_bytes);
+      pipe_resource_reference(cbuf, NULL);
+      *cbuf = pipe_buffer_create(ctx->pipe->screen, 
+				 PIPE_BIND_CONSTANT_BUFFER,
+				 param_bytes);
 
       if (*cbuf) {
          st_no_flush_pipe_buffer_write(ctx, *cbuf,
@@ -433,19 +443,25 @@ void vg_prepare_blend_surface(struct vg_context *ctx)
 {
    struct pipe_surface *dest_surface = NULL;
    struct pipe_context *pipe = ctx->pipe;
+   struct pipe_sampler_view *view;
+   struct pipe_sampler_view view_templ;
    struct st_framebuffer *stfb = ctx->draw_buffer;
    struct st_renderbuffer *strb = stfb->strb;
 
    /* first finish all pending rendering */
    vgFinish();
 
+   u_sampler_view_default_template(&view_templ, strb->texture, strb->texture->format);
+   view = pipe->create_sampler_view(pipe, strb->texture, &view_templ);
+
    dest_surface = pipe->screen->get_tex_surface(pipe->screen,
-                                                stfb->blend_texture,
+                                                stfb->blend_texture_view->texture,
                                                 0, 0, 0,
-                                                PIPE_BUFFER_USAGE_GPU_WRITE);
+                                                PIPE_BIND_BLIT_DESTINATION |
+						PIPE_BIND_RENDER_TARGET);
    /* flip it, because we want to use it as a sampler */
    util_blit_pixels_tex(ctx->blit,
-                        strb->texture,
+                        view,
                         0, strb->height,
                         strb->width, 0,
                         dest_surface,
@@ -458,6 +474,8 @@ void vg_prepare_blend_surface(struct vg_context *ctx)
 
    /* make sure it's complete */
    vgFinish();
+
+   pipe_sampler_view_reference(&view, NULL);
 }
 
 
@@ -474,13 +492,14 @@ void vg_prepare_blend_surface_from_mask(struct vg_context *ctx)
    vgFinish();
 
    dest_surface = pipe->screen->get_tex_surface(pipe->screen,
-                                                stfb->blend_texture,
+                                                stfb->blend_texture_view->texture,
                                                 0, 0, 0,
-                                                PIPE_BUFFER_USAGE_GPU_WRITE);
+                                                PIPE_BIND_BLIT_DESTINATION |
+						PIPE_BIND_RENDER_TARGET);
 
    /* flip it, because we want to use it as a sampler */
    util_blit_pixels_tex(ctx->blit,
-                        stfb->alpha_mask,
+                        stfb->alpha_mask_view,
                         0, strb->height,
                         strb->width, 0,
                         dest_surface,

@@ -9,16 +9,14 @@ PROGRAM = glslcompiler
 
 OBJECTS = \
 	glslcompiler.o \
-	../../glapi/glapi.o \
-	../../glapi/glapi_nop.o \
-	../../glapi/glthread.o \
-	../../main/dispatch.o \
 	../common/driverfuncs.o \
-	../../libmesa.a
+	../../libmesa.a \
+	$(TOP)/src/mapi/glapi/libglapi.a
 
 INCLUDES = \
 	-I$(TOP)/include \
 	-I$(TOP)/include/GL/internal \
+	-I$(TOP)/src/mapi \
 	-I$(TOP)/src/mesa \
 	-I$(TOP)/src/mesa/main \
 	-I$(TOP)/src/mesa/glapi \

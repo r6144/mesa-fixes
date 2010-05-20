@@ -7,7 +7,7 @@ include $(TOP)/configs/current
 EGL_MAJOR = 1
 EGL_MINOR = 0
 
-INCLUDE_DIRS = -I$(TOP)/include
+INCLUDE_DIRS = -I$(TOP)/include $(X11_CFLAGS)
 
 HEADERS = \
 	eglcompiler.h \
@@ -82,10 +82,27 @@ install-headers:
 	$(INSTALL) -m 644 $(TOP)/include/EGL/*.h \
 		$(DESTDIR)$(INSTALL_INC_DIR)/EGL
 
-install: default install-headers
+PKG_CONFIG_DIR = $(INSTALL_LIB_DIR)/pkgconfig
+
+gl_pcedit = sed \
+	-e 's,@INSTALL_DIR@,$(INSTALL_DIR),' \
+	-e 's,@INSTALL_LIB_DIR@,$(INSTALL_LIB_DIR),' \
+	-e 's,@INSTALL_INC_DIR@,$(INSTALL_INC_DIR),' \
+	-e 's,@VERSION@,$(MESA_MAJOR).$(MESA_MINOR).$(MESA_TINY),' \
+	-e 's,@EGL_PC_REQ_PRIV@,$(EGL_PC_REQ_PRIV),' \
+	-e 's,@EGL_PC_LIB_PRIV@,$(EGL_PC_LIB_PRIV),' \
+	-e 's,@EGL_PC_CFLAGS@,$(EGL_PC_CFLAGS),' \
+	-e 's,@EGL_LIB@,$(EGL_LIB),'
+
+egl.pc: egl.pc.in
+	$(gl_pcedit) $< > $@
+
+install: default install-headers egl.pc
 	$(INSTALL) -d $(DESTDIR)$(INSTALL_LIB_DIR)
 	$(MINSTALL) $(TOP)/$(LIB_DIR)/$(EGL_LIB_GLOB) \
 		$(DESTDIR)$(INSTALL_LIB_DIR)
+	$(INSTALL) -d $(DESTDIR)$(PKG_CONFIG_DIR)
+	$(INSTALL) -m 644 egl.pc $(DESTDIR)$(PKG_CONFIG_DIR)
 
 clean:
 	-rm -f *.o

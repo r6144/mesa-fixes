@@ -74,7 +74,6 @@ struct ureg_tokens {
 #define UREG_MAX_IMMEDIATE 32
 #define UREG_MAX_TEMP 256
 #define UREG_MAX_ADDR 2
-#define UREG_MAX_LOOP 1
 #define UREG_MAX_PRED 1
 
 struct const_decl {
@@ -151,7 +150,6 @@ struct ureg_program
 
    unsigned nr_addrs;
    unsigned nr_preds;
-   unsigned nr_loops;
    unsigned nr_instructions;
 
    struct ureg_tokens domain[2];
@@ -535,19 +533,6 @@ struct ureg_dst ureg_DECL_address( struct ureg_program *ureg )
 
    assert( 0 );
    return ureg_dst_register( TGSI_FILE_ADDRESS, 0 );
-}
-
-/* Allocate a new loop register.
- */
-struct ureg_dst
-ureg_DECL_loop(struct ureg_program *ureg)
-{
-   if (ureg->nr_loops < UREG_MAX_LOOP) {
-      return ureg_dst_register(TGSI_FILE_LOOP, ureg->nr_loops++);
-   }
-
-   assert(0);
-   return ureg_dst_register(TGSI_FILE_LOOP, 0);
 }
 
 /* Allocate a new predicate register.
@@ -1158,7 +1143,7 @@ static void emit_decl_range( struct ureg_program *ureg,
    out[0].decl.Type = TGSI_TOKEN_TYPE_DECLARATION;
    out[0].decl.NrTokens = 2;
    out[0].decl.File = file;
-   out[0].decl.UsageMask = 0xf;
+   out[0].decl.UsageMask = TGSI_WRITEMASK_XYZW;
    out[0].decl.Interpolate = TGSI_INTERPOLATE_CONSTANT;
    out[0].decl.Semantic = 0;
 
@@ -1180,7 +1165,7 @@ emit_decl_range2D(struct ureg_program *ureg,
    out[0].decl.Type = TGSI_TOKEN_TYPE_DECLARATION;
    out[0].decl.NrTokens = 3;
    out[0].decl.File = file;
-   out[0].decl.UsageMask = 0xf;
+   out[0].decl.UsageMask = TGSI_WRITEMASK_XYZW;
    out[0].decl.Interpolate = TGSI_INTERPOLATE_CONSTANT;
    out[0].decl.Dimension = 1;
 
@@ -1356,13 +1341,6 @@ static void emit_decls( struct ureg_program *ureg )
                        0, ureg->nr_addrs );
    }
 
-   if (ureg->nr_loops) {
-      emit_decl_range(ureg,
-                      TGSI_FILE_LOOP,
-                      0,
-                      ureg->nr_loops);
-   }
-
    if (ureg->nr_preds) {
       emit_decl_range(ureg,
                       TGSI_FILE_PREDICATE,
@@ -1486,6 +1464,12 @@ const struct tgsi_token *ureg_get_tokens( struct ureg_program *ureg,
    ureg->domain[DOMAIN_DECL].count = 0;
 
    return tokens;
+}
+
+
+void ureg_free_tokens( const struct tgsi_token *tokens )
+{
+   FREE((struct tgsi_token *)tokens);
 }
 
 

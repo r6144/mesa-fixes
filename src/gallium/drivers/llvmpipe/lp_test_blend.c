@@ -38,8 +38,8 @@
 
 
 #include "gallivm/lp_bld_type.h"
-#include "gallivm/lp_bld_blend.h"
 #include "gallivm/lp_bld_debug.h"
+#include "lp_bld_blend.h"
 #include "lp_test.h"
 
 
@@ -51,6 +51,19 @@ enum vector_mode
 
 
 typedef void (*blend_test_ptr_t)(const void *src, const void *dst, const void *con, void *res);
+
+/** cast wrapper */
+static blend_test_ptr_t
+voidptr_to_blend_test_ptr_t(void *p)
+{
+   union {
+      void *v;
+      blend_test_ptr_t f;
+   } u;
+   u.v = p;
+   return u.f;
+}
+
 
 
 void
@@ -154,7 +167,6 @@ add_blend_test(LLVMModuleRef module,
                enum vector_mode mode,
                struct lp_type type)
 {
-   LLVMTypeRef ret_type;
    LLVMTypeRef vec_type;
    LLVMTypeRef args[4];
    LLVMValueRef func;
@@ -164,8 +176,8 @@ add_blend_test(LLVMModuleRef module,
    LLVMValueRef res_ptr;
    LLVMBasicBlockRef block;
    LLVMBuilderRef builder;
+   const unsigned rt = 0;
 
-   ret_type = LLVMInt64Type();
    vec_type = lp_build_vec_type(type);
 
    args[3] = args[2] = args[1] = args[0] = LLVMPointerType(vec_type, 0);
@@ -190,7 +202,7 @@ add_blend_test(LLVMModuleRef module,
       dst = LLVMBuildLoad(builder, dst_ptr, "dst");
       con = LLVMBuildLoad(builder, const_ptr, "const");
 
-      res = lp_build_blend_aos(builder, blend, type, src, dst, con, 3);
+      res = lp_build_blend_aos(builder, blend, type, rt, src, dst, con, 3);
 
       lp_build_name(res, "res");
 
@@ -214,7 +226,7 @@ add_blend_test(LLVMModuleRef module,
          lp_build_name(dst[i], "dst.%c", "rgba"[i]);
       }
 
-      lp_build_blend_soa(builder, blend, type, src, dst, con, res);
+      lp_build_blend_soa(builder, blend, type, rt, src, dst, con, res);
 
       for(i = 0; i < 4; ++i) {
          LLVMValueRef index = LLVMConstInt(LLVMInt32Type(), i, 0);
@@ -483,6 +495,7 @@ test_one(unsigned verbose,
    int64_t cycles[LP_TEST_NUM_SAMPLES];
    double cycles_avg = 0.0;
    unsigned i, j;
+   void *code;
 
    if(verbose >= 1)
       dump_blend_type(stdout, blend, mode, type);
@@ -524,10 +537,11 @@ test_one(unsigned verbose,
    if(verbose >= 2)
       LLVMDumpModule(module);
 
-   blend_test_ptr = (blend_test_ptr_t)LLVMGetPointerToGlobal(engine, func);
+   code = LLVMGetPointerToGlobal(engine, func);
+   blend_test_ptr = voidptr_to_blend_test_ptr_t(code);
 
    if(verbose >= 2)
-      lp_disassemble(blend_test_ptr);
+      lp_disassemble(code);
 
    success = TRUE;
    for(i = 0; i < n && success; ++i) {

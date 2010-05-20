@@ -150,7 +150,7 @@ void softpipe_set_clip_state( struct pipe_context *,
 
 void softpipe_set_constant_buffer(struct pipe_context *,
                                   uint shader, uint index,
-                                  struct pipe_buffer *buf);
+                                  struct pipe_resource *buf);
 
 void *softpipe_create_fs_state(struct pipe_context *,
                                const struct pipe_shader_state *);
@@ -177,14 +177,23 @@ void softpipe_set_polygon_stipple( struct pipe_context *,
 void softpipe_set_scissor_state( struct pipe_context *,
                                  const struct pipe_scissor_state * );
 
-void softpipe_set_sampler_textures( struct pipe_context *,
-                                    unsigned num,
-                                    struct pipe_texture ** );
+void softpipe_set_sampler_views( struct pipe_context *,
+                                 unsigned num,
+                                 struct pipe_sampler_view ** );
 
 void
-softpipe_set_vertex_sampler_textures(struct pipe_context *,
-                                     unsigned num_textures,
-                                     struct pipe_texture **);
+softpipe_set_vertex_sampler_views(struct pipe_context *,
+                                  unsigned num,
+                                  struct pipe_sampler_view **);
+
+struct pipe_sampler_view *
+softpipe_create_sampler_view(struct pipe_context *pipe,
+                             struct pipe_resource *texture,
+                             const struct pipe_sampler_view *templ);
+
+void
+softpipe_sampler_view_destroy(struct pipe_context *pipe,
+                              struct pipe_sampler_view *view);
 
 void softpipe_set_viewport_state( struct pipe_context *,
                                   const struct pipe_viewport_state * );
@@ -201,13 +210,14 @@ void softpipe_draw_arrays(struct pipe_context *pipe, unsigned mode,
                           unsigned start, unsigned count);
 
 void softpipe_draw_elements(struct pipe_context *pipe,
-                            struct pipe_buffer *indexBuffer,
-                            unsigned indexSize,
+                            struct pipe_resource *indexBuffer,
+                            unsigned indexSize, int indexBias,
                             unsigned mode, unsigned start, unsigned count);
 void
 softpipe_draw_range_elements(struct pipe_context *pipe,
-                             struct pipe_buffer *indexBuffer,
+                             struct pipe_resource *indexBuffer,
                              unsigned indexSize,
+                             int indexBias,
                              unsigned min_index,
                              unsigned max_index,
                              unsigned mode, unsigned start, unsigned count);
@@ -222,8 +232,9 @@ softpipe_draw_arrays_instanced(struct pipe_context *pipe,
 
 void
 softpipe_draw_elements_instanced(struct pipe_context *pipe,
-                                 struct pipe_buffer *indexBuffer,
+                                 struct pipe_resource *indexBuffer,
                                  unsigned indexSize,
+                                 int indexBias,
                                  unsigned mode,
                                  unsigned start,
                                  unsigned count,

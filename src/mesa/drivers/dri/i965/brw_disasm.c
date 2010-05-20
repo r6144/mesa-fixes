@@ -57,6 +57,7 @@ struct {
     [BRW_OPCODE_DPH] = { .name = "dph", .nsrc = 2, .ndst = 1 },
     [BRW_OPCODE_DP3] = { .name = "dp3", .nsrc = 2, .ndst = 1 },
     [BRW_OPCODE_DP2] = { .name = "dp2", .nsrc = 2, .ndst = 1 },
+    [BRW_OPCODE_MATH] = { .name = "math", .nsrc = 2, .ndst = 1 },
 
     [BRW_OPCODE_AVG] = { .name = "avg", .nsrc = 2, .ndst = 1 },
     [BRW_OPCODE_ADD] = { .name = "add", .nsrc = 2, .ndst = 1 },
@@ -320,6 +321,11 @@ char *math_scalar[2] = {
 char *math_precision[2] = {
     [0] = "",
     [1] = "partial_precision"
+};
+
+char *urb_opcode[2] = {
+    [0] = "urb_write",
+    [1] = "ff_sync",
 };
 
 char *urb_swizzle[4] = {
@@ -773,7 +779,7 @@ static int src1 (FILE *file, struct brw_instruction *inst)
     }
 }
 
-int brw_disasm (FILE *file, struct brw_instruction *inst)
+int brw_disasm (FILE *file, struct brw_instruction *inst, int gen)
 {
     int	err = 0;
     int space = 0;
@@ -797,7 +803,11 @@ int brw_disasm (FILE *file, struct brw_instruction *inst)
     err |= control (file, "saturate", saturate, inst->header.saturate, NULL);
     err |= control (file, "debug control", debug_ctrl, inst->header.debug_control, NULL);
 
-    if (inst->header.opcode != BRW_OPCODE_SEND)
+    if (inst->header.opcode == BRW_OPCODE_MATH) {
+	string (file, " ");
+	err |= control (file, "function", math_function,
+			inst->header.destreg__conditionalmod, NULL);
+    } else if (inst->header.opcode != BRW_OPCODE_SEND)
 	err |= control (file, "conditional modifier", conditional_modifier,
 			inst->header.destreg__conditionalmod, NULL);
 
@@ -824,12 +834,20 @@ int brw_disasm (FILE *file, struct brw_instruction *inst)
     }
 
     if (inst->header.opcode == BRW_OPCODE_SEND) {
+	int target;
+
+	if (gen >= 5)
+	   target = inst->bits2.send_gen5.sfid;
+	else
+	   target = inst->bits3.generic.msg_target;
+
 	newline (file);
 	pad (file, 16);
 	space = 0;
 	err |= control (file, "target function", target_function,
-			inst->bits3.generic.msg_target, &space);
-	switch (inst->bits3.generic.msg_target) {
+			target, &space);
+
+	switch (target) {
 	case BRW_MESSAGE_TARGET_MATH:
 	    err |= control (file, "math function", math_function,
 			    inst->bits3.math.function, &space);
@@ -859,8 +877,17 @@ int brw_disasm (FILE *file, struct brw_instruction *inst)
 		    inst->bits3.dp_write.send_commit_msg);
 	    break;
 	case BRW_MESSAGE_TARGET_URB:
-	    format (file, " %d", inst->bits3.urb.offset);
+	    if (gen >= 5) {
+		format (file, " %d", inst->bits3.urb_gen5.offset);
+	    } else {
+		format (file, " %d", inst->bits3.urb.offset);
+	    }
+
 	    space = 1;
+	    if (gen >= 5) {
+		err |= control (file, "urb opcode", urb_opcode,
+				inst->bits3.urb_gen5.opcode, &space);
+	    }
 	    err |= control (file, "urb swizzle", urb_swizzle,
 			    inst->bits3.urb.swizzle_control, &space);
 	    err |= control (file, "urb allocate", urb_allocate,

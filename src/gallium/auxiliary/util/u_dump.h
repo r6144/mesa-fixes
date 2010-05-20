@@ -74,6 +74,9 @@ const char *
 util_dump_func(unsigned value, boolean shortened);
 
 const char *
+util_dump_stencil_op(unsigned value, boolean shortened);
+
+const char *
 util_dump_tex_target(unsigned value, boolean shortened);
 
 const char *
@@ -92,7 +95,7 @@ util_dump_tex_filter(unsigned value, boolean shortened);
 
 void
 util_dump_template(struct os_stream *stream,
-                   const struct pipe_texture *templat);
+                   const struct pipe_resource *templat);
 
 void
 util_dump_rasterizer_state(struct os_stream *stream,

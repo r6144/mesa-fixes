@@ -164,7 +164,7 @@ lp_build_unpack2(LLVMBuilderRef builder,
 
    if(dst_type.sign && src_type.sign) {
       /* Replicate the sign bit in the most significant bits */
-      msb = LLVMBuildAShr(builder, src, lp_build_int_const_scalar(src_type, src_type.width - 1), "");
+      msb = LLVMBuildAShr(builder, src, lp_build_const_int_vec(src_type, src_type.width - 1), "");
    }
    else
       /* Most significant bits always zero */
@@ -263,8 +263,6 @@ lp_build_pack2(LLVMBuilderRef builder,
    LLVMValueRef shuffle;
    LLVMValueRef res;
 
-   dst_vec_type = lp_build_vec_type(dst_type);
-
    assert(!src_type.floating);
    assert(!dst_type.floating);
    assert(src_type.width == dst_type.width * 2);
@@ -361,7 +359,7 @@ lp_build_packs2(LLVMBuilderRef builder,
    if(clamp) {
       struct lp_build_context bld;
       unsigned dst_bits = dst_type.sign ? dst_type.width - 1 : dst_type.width;
-      LLVMValueRef dst_max = lp_build_int_const_scalar(src_type, ((unsigned long long)1 << dst_bits) - 1);
+      LLVMValueRef dst_max = lp_build_const_int_vec(src_type, ((unsigned long long)1 << dst_bits) - 1);
       lp_build_context_init(&bld, builder, src_type);
       lo = lp_build_min(&bld, lo, dst_max);
       hi = lp_build_min(&bld, hi, dst_max);

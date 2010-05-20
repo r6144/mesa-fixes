@@ -34,7 +34,7 @@
 #ifndef LP_SCREEN_H
 #define LP_SCREEN_H
 
-#include "os/os_llvm.h"
+#include "gallivm/lp_bld.h"
 #include <llvm-c/ExecutionEngine.h>
 
 #include "pipe/p_screen.h"
@@ -58,10 +58,11 @@ struct llvmpipe_screen
 
    LLVMTypeRef context_ptr_type;
 
-   /* Increments whenever textures are modified.  Contexts can track
-    * this.
+   unsigned num_threads;
+
+   /* Increments whenever textures are modified.  Contexts can track this.
     */
-   unsigned timestamp;          
+   unsigned timestamp;
 };
 
 

@@ -241,7 +241,7 @@ static void r600_init_vtbl(radeonContextPtr radeon)
 	radeon->vtbl.emit_query_finish = r600_emit_query_finish;
 	radeon->vtbl.check_blit = r600_check_blit;
 	radeon->vtbl.blit = r600_blit;
-	radeon->vtbl.is_format_renderable = radeonIsFormatRenderable;
+	radeon->vtbl.is_format_renderable = r600IsFormatRenderable;
 }
 
 static void r600InitConstValues(GLcontext *ctx, radeonScreenPtr screen)
@@ -355,7 +355,8 @@ static void r600InitGLExtensions(GLcontext *ctx)
 
 /* Create the device specific rendering context.
  */
-GLboolean r600CreateContext(const __GLcontextModes * glVisual,
+GLboolean r600CreateContext(gl_api api,
+			    const __GLcontextModes * glVisual,
 			    __DRIcontext * driContextPriv,
 			    void *sharedContextPrivate)
 {

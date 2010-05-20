@@ -36,9 +36,7 @@
 #if FEATURE_ARB_vertex_program || FEATURE_ARB_fragment_program
 #include "shader/arbprogram.h"
 #endif
-#if FEATURE_ATI_fragment_shader
 #include "shader/atifragshader.h"
-#endif
 #include "attrib.h"
 #include "blend.h"
 #if FEATURE_ARB_vertex_buffer_object
@@ -89,6 +87,7 @@
 #include "texobj.h"
 #include "texparam.h"
 #include "texstate.h"
+#include "transformfeedback.h"
 #include "mtypes.h"
 #include "varray.h"
 #include "viewport.h"
@@ -107,6 +106,48 @@
 #include "main/dispatch.h"
 
 
+#if FEATURE_GL
+
+
+#ifdef _GLAPI_USE_REMAP_TABLE
+
+#define need_MESA_remap_table
+#include "main/remap.h"
+#include "main/remap_helper.h"
+
+/* This is shared across all APIs but We define this here since
+ * desktop GL has the biggest remap table. */
+int driDispatchRemapTable[driDispatchRemapTable_size];
+
+/**
+ * Map the functions which are already static.
+ *
+ * When a extension function are incorporated into the ABI, the
+ * extension suffix is usually stripped.  Mapping such functions
+ * makes sure the alternative names are available.
+ *
+ * Note that functions mapped by _mesa_init_remap_table() are
+ * excluded.
+ */
+void
+_mesa_map_static_functions(void)
+{
+   /* Remap static functions which have alternative names and are in the ABI.
+    * This is to be on the safe side.  glapi should have defined those names.
+    */
+   _mesa_map_function_array(MESA_alt_functions);
+}
+
+void
+_mesa_init_remap_table(void)
+{
+   _mesa_do_init_remap_table(_mesa_function_pool,
+			     driDispatchRemapTable_size,
+			     MESA_remap_table_functions);
+}
+
+#endif /* _GLAPI_USE_REMAP_TABLE */
+
 
 /**
  * Initialize a dispatch table with pointers to Mesa's immediate-mode
@@ -118,9 +159,15 @@
  * \param ctx  GL context to which \c exec belongs.
  * \param exec dispatch table.
  */
-void
-_mesa_init_exec_table(struct _glapi_table *exec)
+struct _glapi_table *
+_mesa_create_exec_table(void)
 {
+   struct _glapi_table *exec;
+
+   exec = _mesa_alloc_dispatch_table(sizeof *exec);
+   if (exec == NULL)
+      return NULL;
+
 #if _HAVE_FULL_GL
    _mesa_loopback_init_api_table( exec );
 #endif
@@ -477,6 +524,10 @@ _mesa_init_exec_table(struct _glapi_table *exec)
    /* ???. GL_EXT_depth_bounds_test */
    SET_DepthBoundsEXT(exec, _mesa_DepthBoundsEXT);
 
+   /* 352. GL_EXT_transform_feedback */
+   _mesa_init_transform_feedback_dispatch(exec);
+
+   /* 364. GL_EXT_provoking_vertex */
    SET_ProvokingVertexEXT(exec, _mesa_ProvokingVertexEXT);
 
    /* ARB 1. GL_ARB_multitexture */
@@ -662,22 +713,7 @@ _mesa_init_exec_table(struct _glapi_table *exec)
 #endif
 
   /* GL_ATI_fragment_shader */
-#if FEATURE_ATI_fragment_shader
-   SET_GenFragmentShadersATI(exec, _mesa_GenFragmentShadersATI);
-   SET_BindFragmentShaderATI(exec, _mesa_BindFragmentShaderATI);
-   SET_DeleteFragmentShaderATI(exec, _mesa_DeleteFragmentShaderATI);
-   SET_BeginFragmentShaderATI(exec, _mesa_BeginFragmentShaderATI);
-   SET_EndFragmentShaderATI(exec, _mesa_EndFragmentShaderATI);
-   SET_PassTexCoordATI(exec, _mesa_PassTexCoordATI);
-   SET_SampleMapATI(exec, _mesa_SampleMapATI);
-   SET_ColorFragmentOp1ATI(exec, _mesa_ColorFragmentOp1ATI);
-   SET_ColorFragmentOp2ATI(exec, _mesa_ColorFragmentOp2ATI);
-   SET_ColorFragmentOp3ATI(exec, _mesa_ColorFragmentOp3ATI);
-   SET_AlphaFragmentOp1ATI(exec, _mesa_AlphaFragmentOp1ATI);
-   SET_AlphaFragmentOp2ATI(exec, _mesa_AlphaFragmentOp2ATI);
-   SET_AlphaFragmentOp3ATI(exec, _mesa_AlphaFragmentOp3ATI);
-   SET_SetFragmentShaderConstantATI(exec, _mesa_SetFragmentShaderConstantATI);
-#endif
+   _mesa_init_ati_fragment_shader_dispatch(exec);
 
   /* GL_ATI_envmap_bumpmap */
    SET_GetTexBumpParameterivATI(exec, _mesa_GetTexBumpParameterivATI);
@@ -764,4 +800,8 @@ _mesa_init_exec_table(struct _glapi_table *exec)
    SET_ObjectUnpurgeableAPPLE(exec, _mesa_ObjectUnpurgeableAPPLE);
    SET_GetObjectParameterivAPPLE(exec, _mesa_GetObjectParameterivAPPLE);
 #endif
+
+   return exec;
 }
+
+#endif /* FEATURE_GL */

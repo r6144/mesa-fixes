@@ -35,6 +35,7 @@
 #include "brw_screen.h"
 #include "brw_winsys.h"
 #include "brw_debug.h"
+#include "brw_resource.h"
 
 #ifdef DEBUG
 static const struct debug_named_value debug_names[] = {
@@ -148,7 +149,7 @@ brw_get_name(struct pipe_screen *screen)
 }
 
 static int
-brw_get_param(struct pipe_screen *screen, int param)
+brw_get_param(struct pipe_screen *screen, enum pipe_cap param)
 {
    switch (param) {
    case PIPE_CAP_MAX_TEXTURE_IMAGE_UNITS:
@@ -171,6 +172,8 @@ brw_get_param(struct pipe_screen *screen, int param)
       return 1;
    case PIPE_CAP_OCCLUSION_QUERY:
       return 0;
+   case PIPE_CAP_TIMER_QUERY:
+      return 0;
    case PIPE_CAP_TEXTURE_SHADOW_MAP:
       return 1;
    case PIPE_CAP_MAX_TEXTURE_2D_LEVELS:
@@ -191,7 +194,7 @@ brw_get_param(struct pipe_screen *screen, int param)
 }
 
 static float
-brw_get_paramf(struct pipe_screen *screen, int param)
+brw_get_paramf(struct pipe_screen *screen, enum pipe_cap param)
 {
    switch (param) {
    case PIPE_CAP_MAX_LINE_WIDTH:
@@ -252,7 +255,7 @@ brw_is_format_supported(struct pipe_screen *screen,
       /* depth */
       PIPE_FORMAT_Z32_FLOAT,
       PIPE_FORMAT_Z24X8_UNORM,
-      PIPE_FORMAT_Z24S8_UNORM,
+      PIPE_FORMAT_Z24_UNORM_S8_USCALED,
       PIPE_FORMAT_Z16_UNORM,
       /* signed */
       PIPE_FORMAT_R8G8_SNORM,
@@ -268,16 +271,16 @@ brw_is_format_supported(struct pipe_screen *screen,
    static const enum pipe_format depth_supported[] = {
       PIPE_FORMAT_Z32_FLOAT,
       PIPE_FORMAT_Z24X8_UNORM,
-      PIPE_FORMAT_Z24S8_UNORM,
+      PIPE_FORMAT_Z24_UNORM_S8_USCALED,
       PIPE_FORMAT_Z16_UNORM,
       PIPE_FORMAT_NONE  /* list terminator */
    };
    const enum pipe_format *list;
    uint i;
 
-   if (tex_usage & PIPE_TEXTURE_USAGE_DEPTH_STENCIL)
+   if (tex_usage & PIPE_BIND_DEPTH_STENCIL)
       list = depth_supported;
-   else if (tex_usage & PIPE_TEXTURE_USAGE_RENDER_TARGET)
+   else if (tex_usage & PIPE_BIND_RENDER_TARGET)
       list = render_supported;
    else
       list = tex_supported;
@@ -406,9 +409,8 @@ brw_create_screen(struct brw_winsys_screen *sws, uint pci_id)
    bscreen->base.fence_signalled = brw_fence_signalled;
    bscreen->base.fence_finish = brw_fence_finish;
 
-   brw_screen_tex_init(bscreen);
+   brw_init_screen_resource_functions(bscreen);
    brw_screen_tex_surface_init(bscreen);
-   brw_screen_buffer_init(bscreen);
 
    bscreen->no_tiling = debug_get_option("BRW_NO_TILING", FALSE) != NULL;
    

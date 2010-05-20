@@ -82,6 +82,8 @@ struct lp_rast_state {
  * These pointers point into the bin data buffer.
  */
 struct lp_rast_shader_inputs {
+   float facing;     /** Positive for front-facing, negative for back-facing */
+
    float (*a0)[4];
    float (*dadx)[4];
    float (*dady)[4];
@@ -95,7 +97,7 @@ struct lp_rast_shader_inputs {
  * Rasterization information for a triangle known to be in this bin,
  * plus inputs to run the shader:
  * These fields are tile- and bin-independent.
- * Objects of this type are put into the setup_context::data buffer.
+ * Objects of this type are put into the lp_setup_context::data buffer.
  */
 struct lp_rast_triangle {
 #ifdef DEBUG
@@ -132,7 +134,7 @@ struct lp_rast_triangle {
 
 
 struct lp_rasterizer *
-lp_rast_create( void );
+lp_rast_create( unsigned num_threads );
 
 void
 lp_rast_destroy( struct lp_rasterizer * );
@@ -155,6 +157,7 @@ union lp_rast_cmd_arg {
    uint8_t clear_color[4];
    unsigned clear_zstencil;
    struct lp_fence *fence;
+   struct llvmpipe_query *query_obj;
 };
 
 
@@ -215,9 +218,6 @@ void lp_rast_clear_color( struct lp_rasterizer_task *,
 void lp_rast_clear_zstencil( struct lp_rasterizer_task *, 
                              const union lp_rast_cmd_arg );
 
-void lp_rast_load_color( struct lp_rasterizer_task *, 
-                         const union lp_rast_cmd_arg );
-
 void lp_rast_set_state( struct lp_rasterizer_task *, 
                         const union lp_rast_cmd_arg );
 
@@ -229,5 +229,16 @@ void lp_rast_shade_tile( struct lp_rasterizer_task *,
 
 void lp_rast_fence( struct lp_rasterizer_task *,
                     const union lp_rast_cmd_arg );
+
+void lp_rast_store_color( struct lp_rasterizer_task *,
+                          const union lp_rast_cmd_arg );
+
+
+void lp_rast_begin_query(struct lp_rasterizer_task *,
+                         const union lp_rast_cmd_arg );
+
+void lp_rast_end_query(struct lp_rasterizer_task *,
+                       const union lp_rast_cmd_arg );
+
 
 #endif

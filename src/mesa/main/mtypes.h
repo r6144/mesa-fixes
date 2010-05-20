@@ -1076,6 +1076,7 @@ typedef enum
 #define T_BIT 2
 #define R_BIT 4
 #define Q_BIT 8
+#define STR_BITS (S_BIT | T_BIT | R_BIT)
 /*@}*/
 
 
@@ -1547,6 +1548,10 @@ struct gl_array_attrib
    GLuint LockFirst;            /**< GL_EXT_compiled_vertex_array */
    GLuint LockCount;            /**< GL_EXT_compiled_vertex_array */
 
+   /** GL 3.1 (slightly different from GL_NV_primitive_restart) */
+   GLboolean PrimitiveRestart;
+   GLuint RestartIndex;
+
    GLbitfield NewState;		/**< mask of _NEW_ARRAY_* values */
 
 #if FEATURE_ARB_vertex_buffer_object
@@ -1910,6 +1915,11 @@ struct gl_query_state
 
    /** GL_NV_conditional_render */
    struct gl_query_object *CondRenderQuery;
+
+   /** GL_EXT_transform_feedback */
+   struct gl_query_object *PrimitivesGenerated;
+   struct gl_query_object *PrimitivesWritten;
+
    GLenum CondRenderMode;
 };
 
@@ -1976,6 +1986,13 @@ struct gl_shader_program
    /** User-defined attribute bindings (glBindAttribLocation) */
    struct gl_program_parameter_list *Attributes;
 
+   /** Transform feedback varyings */
+   struct {
+      GLenum BufferMode;
+      GLuint NumVarying;
+      GLchar **VaryingNames;  /**< Array [NumVarying] of char * */
+   } TransformFeedback;
+
    /* post-link info: */
    struct gl_vertex_program *VertexProgram;     /**< Linked vertex program */
    struct gl_fragment_program *FragmentProgram; /**< Linked fragment prog */
@@ -2014,6 +2031,51 @@ struct gl_shader_state
    GLbitfield Flags;                    /**< Mask of GLSL_x flags */
    struct gl_sl_pragmas DefaultPragmas; /**< Default #pragma settings */
 };
+
+
+/**
+ * Transform feedback object state
+ */
+struct gl_transform_feedback_object
+{
+   GLuint Name;  /**< AKA the object ID */
+   GLint RefCount;
+   GLboolean Active;  /**< Is transform feedback enabled? */
+   GLboolean Paused;  /**< Is transform feedback paused? */
+
+   /** The feedback buffers */
+   GLuint BufferNames[MAX_FEEDBACK_ATTRIBS];
+   struct gl_buffer_object *Buffers[MAX_FEEDBACK_ATTRIBS];
+
+   /** Start of feedback data in dest buffer */
+   GLintptr Offset[MAX_FEEDBACK_ATTRIBS];
+   /** Max data to put into dest buffer (in bytes) */
+   GLsizeiptr Size[MAX_FEEDBACK_ATTRIBS];
+};
+
+
+/**
+ * Context state for transform feedback.
+ */
+struct gl_transform_feedback
+{
+   GLenum Mode;       /**< GL_POINTS, GL_LINES or GL_TRIANGLES */
+
+   GLboolean RasterDiscard;  /**< GL_RASTERIZER_DISCARD */
+
+   /** The general binding point (GL_TRANSFORM_FEEDBACK_BUFFER) */
+   struct gl_buffer_object *CurrentBuffer;
+
+   /** The table of all transform feedback objects */
+   struct _mesa_HashTable *Objects;
+
+   /** The current xform-fb object (GL_TRANSFORM_FEEDBACK_BINDING) */
+   struct gl_transform_feedback_object *CurrentObject;
+
+   /** The default xform-fb object (Name==0) */
+   struct gl_transform_feedback_object *DefaultObject;
+};
+
 
 
 /**
@@ -2382,9 +2444,19 @@ struct gl_constants
     */
    GLuint64 MaxServerWaitTimeout;
 
-
-   /**< GL_EXT_provoking_vertex */
+   /** GL_EXT_provoking_vertex */
    GLboolean QuadsFollowProvokingVertexConvention;
+
+   /** OpenGL version 3.0 */
+   GLbitfield ContextFlags;  /**< Ex: GL_CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT */
+
+   /** OpenGL version 3.2 */
+   GLbitfield ProfileMask;   /**< Mask of CONTEXT_x_PROFILE_BIT */
+
+   /** GL_EXT_transform_feedback */
+   GLuint MaxTransformFeedbackSeparateAttribs;
+   GLuint MaxTransformFeedbackSeparateComponents;
+   GLuint MaxTransformFeedbackInterleavedComponents;
 };
 
 
@@ -2400,6 +2472,7 @@ struct gl_extensions
    GLboolean ARB_depth_clamp;
    GLboolean ARB_draw_buffers;
    GLboolean ARB_draw_elements_base_vertex;
+   GLboolean ARB_draw_instanced;
    GLboolean ARB_fragment_coord_conventions;
    GLboolean ARB_fragment_program;
    GLboolean ARB_fragment_program_shadow;
@@ -2429,6 +2502,7 @@ struct gl_extensions
    GLboolean ARB_texture_float;
    GLboolean ARB_texture_mirrored_repeat;
    GLboolean ARB_texture_non_power_of_two;
+   GLboolean ARB_transform_feedback2;
    GLboolean ARB_transpose_matrix;
    GLboolean ARB_vertex_array_object;
    GLboolean ARB_vertex_buffer_object;
@@ -2486,6 +2560,7 @@ struct gl_extensions
    GLboolean EXT_texture_mirror_clamp;
    GLboolean EXT_texture_sRGB;
    GLboolean EXT_texture_swizzle;
+   GLboolean EXT_transform_feedback;
    GLboolean EXT_timer_query;
    GLboolean EXT_vertex_array;
    GLboolean EXT_vertex_array_bgra;
@@ -2528,6 +2603,9 @@ struct gl_extensions
    GLboolean SGIS_texture_lod;
    GLboolean TDFX_texture_compression_FXT1;
    GLboolean S3_s3tc;
+#if FEATURE_OES_EGL_image
+   GLboolean OES_EGL_image;
+#endif
 #if FEATURE_OES_draw_texture
    GLboolean OES_draw_texture;
 #endif /* FEATURE_OES_draw_texture */
@@ -2815,6 +2893,14 @@ struct gl_dlist_state
    } Current;
 };
 
+/**
+ * Enum for the OpenGL APIs we know about and may support.
+ */
+typedef enum {
+   API_OPENGL,
+   API_OPENGLES,
+   API_OPENGLES2
+} gl_api;
 
 /**
  * Mesa rendering context.
@@ -2833,6 +2919,7 @@ struct __GLcontextRec
 
    /** \name API function pointer tables */
    /*@{*/
+   gl_api API;
    struct _glapi_table *Save;	/**< Display list save functions */
    struct _glapi_table *Exec;	/**< Execute functions */
    struct _glapi_table *CurrentDispatch;  /**< == Save or Exec !! */
@@ -2952,6 +3039,8 @@ struct __GLcontextRec
    struct gl_shader_state Shader; /**< GLSL shader object state */
 
    struct gl_query_state Query;  /**< occlusion, timer queries */
+
+   struct gl_transform_feedback TransformFeedback;
 
    struct gl_buffer_object *CopyReadBuffer; /**< GL_ARB_copy_buffer */
    struct gl_buffer_object *CopyWriteBuffer; /**< GL_ARB_copy_buffer */

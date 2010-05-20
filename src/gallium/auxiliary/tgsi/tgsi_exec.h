@@ -37,8 +37,6 @@ extern "C" {
 #endif
 
 
-#define MAX_LABELS (4 * 1024)  /**< basically, max instructions */
-
 #define NUM_CHANNELS 4  /* R,G,B,A */
 #define QUAD_SIZE    4  /* 4 pixel/quad */
 
@@ -92,16 +90,6 @@ struct tgsi_sampler
                        enum tgsi_sampler_control control,
                        float rgba[NUM_CHANNELS][QUAD_SIZE]);
 };
-
-/**
- * For branching/calling subroutines.
- */
-struct tgsi_exec_labels
-{
-   unsigned labels[MAX_LABELS][2];
-   unsigned count;
-};
-
 
 #define TGSI_EXEC_NUM_TEMPS       128
 #define TGSI_EXEC_NUM_IMMEDIATES  256
@@ -186,10 +174,11 @@ struct tgsi_exec_labels
 
 
 
-#define TGSI_EXEC_MAX_COND_NESTING  32
-#define TGSI_EXEC_MAX_LOOP_NESTING  32
-#define TGSI_EXEC_MAX_SWITCH_NESTING 32
-#define TGSI_EXEC_MAX_CALL_NESTING  32
+#define TGSI_EXEC_MAX_NESTING  32
+#define TGSI_EXEC_MAX_COND_NESTING  TGSI_EXEC_MAX_NESTING
+#define TGSI_EXEC_MAX_LOOP_NESTING  TGSI_EXEC_MAX_NESTING
+#define TGSI_EXEC_MAX_SWITCH_NESTING TGSI_EXEC_MAX_NESTING
+#define TGSI_EXEC_MAX_CALL_NESTING  TGSI_EXEC_MAX_NESTING
 
 /* The maximum number of input attributes per vertex. For 2D
  * input register files, this is the stride between two 1D
@@ -299,10 +288,6 @@ struct tgsi_exec_machine
    uint LoopLabelStack[TGSI_EXEC_MAX_LOOP_NESTING];
    int LoopLabelStackTop;
 
-   /** Loop counter stack (x = index, y = counter, z = step) */
-   struct tgsi_exec_vector LoopCounterStack[TGSI_EXEC_MAX_LOOP_NESTING];
-   int LoopCounterStackTop;
-   
    /** Loop continue mask stack (see comments in tgsi_exec.c) */
    uint ContStack[TGSI_EXEC_MAX_LOOP_NESTING];
    int ContStackTop;
@@ -328,7 +313,6 @@ struct tgsi_exec_machine
    struct tgsi_full_declaration *Declarations;
    uint NumDeclarations;
 
-   struct tgsi_exec_labels Labels;
 };
 
 struct tgsi_exec_machine *

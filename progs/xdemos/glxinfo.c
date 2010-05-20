@@ -35,6 +35,7 @@
 
 #define GLX_GLXEXT_PROTOTYPES
 
+#include <assert.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <GL/gl.h>
@@ -80,6 +81,7 @@ struct visual_attribs
 
    /* GL visual attribs */
    int supportsGL;
+   int drawableType;
    int transparentType;
    int transparentRedValue;
    int transparentGreenValue;
@@ -98,6 +100,8 @@ struct visual_attribs
    int accumRedSize, accumGreenSize, accumBlueSize, accumAlphaSize;
    int numSamples, numMultisample;
    int visualCaveat;
+   int floatComponents;
+   int srgb;
 };
 
    
@@ -585,6 +589,28 @@ visual_class_name(int cls)
    }
 }
 
+static const char *
+visual_drawable_type(int type)
+{
+   static char buffer[256], *p;
+   const static struct { int bit; const char *name; } bits[] = {
+      { GLX_WINDOW_BIT, "window" },
+      { GLX_PIXMAP_BIT, "pixmap" },
+      { GLX_PBUFFER_BIT, "pbuffer" }
+   };
+   int i;
+
+   p = buffer;
+   for (i = 0; i < 3; i++) {
+      if (p > buffer)
+	 *p++ = ',';
+      if (type & bits[i].bit)
+	 strcpy(p, bits[i].name);
+      p += strlen(bits[i].name);
+   }
+
+   return buffer;
+}
 
 static const char *
 visual_class_abbrev(int cls)
@@ -619,8 +645,28 @@ visual_render_type_name(int type)
          return "rgba|ci";
       default:
          return "";
-      }
+   }
 }
+
+static const char *
+caveat_string(int caveat)
+{
+   switch (caveat) {
+#ifdef GLX_EXT_visual_rating
+      case GLX_SLOW_VISUAL_EXT:
+         return "Slow";
+      case GLX_NON_CONFORMANT_VISUAL_EXT:
+         return "Ncon";
+      case GLX_NONE_EXT:
+         /* fall-through */
+#endif
+      case 0:
+         /* fall-through */
+      default:
+         return "None";
+   }
+}
+
 
 static GLboolean
 get_visual_attribs(Display *dpy, XVisualInfo *vInfo,
@@ -655,6 +701,7 @@ get_visual_attribs(Display *dpy, XVisualInfo *vInfo,
    else
       attribs->render_type = GLX_COLOR_INDEX_BIT;
    
+   glXGetConfig(dpy, vInfo, GLX_DRAWABLE_TYPE, &attribs->drawableType);
    glXGetConfig(dpy, vInfo, GLX_DOUBLEBUFFER, &attribs->doubleBuffer);
    glXGetConfig(dpy, vInfo, GLX_STEREO, &attribs->stereo);
    glXGetConfig(dpy, vInfo, GLX_AUX_BUFFERS, &attribs->auxBuffers);
@@ -704,6 +751,12 @@ get_visual_attribs(Display *dpy, XVisualInfo *vInfo,
    attribs->visualCaveat = 0;
 #endif
 
+#if defined(GLX_EXT_framebuffer_sRGB)
+   if (ext && strstr(ext, "GLX_EXT_framebuffer_sRGB")) {
+      glXGetConfig(dpy, vInfo, GLX_FRAMEBUFFER_SRGB_CAPABLE_EXT, &attribs->srgb);
+   }
+#endif
+
    return GL_TRUE;
 }
 
@@ -735,24 +788,29 @@ static GLboolean
 get_fbconfig_attribs(Display *dpy, GLXFBConfig fbconfig,
 		     struct visual_attribs *attribs)
 {
+   const char *ext = glXQueryExtensionsString(dpy, 0);
    int visual_type;
+   XVisualInfo *vInfo;
 
    memset(attribs, 0, sizeof(struct visual_attribs));
 
    glXGetFBConfigAttrib(dpy, fbconfig, GLX_FBCONFIG_ID, &attribs->id);
 
-#if 0
-   attribs->depth = vInfo->depth;
-   attribs->redMask = vInfo->red_mask;
-   attribs->greenMask = vInfo->green_mask;
-   attribs->blueMask = vInfo->blue_mask;
-   attribs->colormapSize = vInfo->colormap_size;
-   attribs->bitsPerRGB = vInfo->bits_per_rgb;
-#endif
+   vInfo = glXGetVisualFromFBConfig(dpy, fbconfig);
+
+   if (vInfo != NULL) {
+      attribs->depth = vInfo->depth;
+      attribs->redMask = vInfo->red_mask;
+      attribs->greenMask = vInfo->green_mask;
+      attribs->blueMask = vInfo->blue_mask;
+      attribs->colormapSize = vInfo->colormap_size;
+      attribs->bitsPerRGB = vInfo->bits_per_rgb;
+   }
 
    glXGetFBConfigAttrib(dpy, fbconfig, GLX_X_VISUAL_TYPE, &visual_type);
    attribs->klass = glx_token_to_visual_class(visual_type);
 
+   glXGetFBConfigAttrib(dpy, fbconfig, GLX_DRAWABLE_TYPE, &attribs->drawableType);
    glXGetFBConfigAttrib(dpy, fbconfig, GLX_BUFFER_SIZE, &attribs->bufferSize);
    glXGetFBConfigAttrib(dpy, fbconfig, GLX_LEVEL, &attribs->level);
    glXGetFBConfigAttrib(dpy, fbconfig, GLX_RENDER_TYPE, &attribs->render_type);
@@ -788,6 +846,24 @@ get_fbconfig_attribs(Display *dpy, GLXFBConfig fbconfig,
    glXGetFBConfigAttrib(dpy, fbconfig, GLX_SAMPLES, &attribs->numSamples);
    glXGetFBConfigAttrib(dpy, fbconfig, GLX_CONFIG_CAVEAT, &attribs->visualCaveat);
 
+#if defined(GLX_NV_float_buffer)
+   if (ext && strstr(ext, "GLX_NV_float_buffer")) {
+      glXGetFBConfigAttrib(dpy, fbconfig, GLX_FLOAT_COMPONENTS_NV, &attribs->floatComponents);
+   }
+#endif
+#if defined(GLX_ARB_fbconfig_float)
+   if (ext && strstr(ext, "GLX_ARB_fbconfig_float")) {
+      if (attribs->render_type & GLX_RGBA_FLOAT_BIT_ARB) {
+         attribs->floatComponents = True;
+      }
+   }
+#endif
+
+#if defined(GLX_EXT_framebuffer_sRGB)
+   if (ext && strstr(ext, "GLX_EXT_framebuffer_sRGB")) {
+      glXGetFBConfigAttrib(dpy, fbconfig, GLX_FRAMEBUFFER_SRGB_CAPABLE_EXT, &attribs->srgb);
+   }
+#endif
    return GL_TRUE;
 }
 
@@ -798,15 +874,18 @@ get_fbconfig_attribs(Display *dpy, GLXFBConfig fbconfig,
 static void
 print_visual_attribs_verbose(const struct visual_attribs *attribs)
 {
-   printf("Visual ID: %x  depth=%d  class=%s\n",
-          attribs->id, attribs->depth, visual_class_name(attribs->klass));
+   printf("Visual ID: %x  depth=%d  class=%s, type=%s\n",
+          attribs->id, attribs->depth, visual_class_name(attribs->klass),
+	  visual_drawable_type(attribs->drawableType));
    printf("    bufferSize=%d level=%d renderType=%s doubleBuffer=%d stereo=%d\n",
           attribs->bufferSize, attribs->level,
 	  visual_render_type_name(attribs->render_type),
           attribs->doubleBuffer, attribs->stereo);
-   printf("    rgba: redSize=%d greenSize=%d blueSize=%d alphaSize=%d\n",
+   printf("    rgba: redSize=%d greenSize=%d blueSize=%d alphaSize=%d float=%c sRGB=%c\n",
           attribs->redSize, attribs->greenSize,
-          attribs->blueSize, attribs->alphaSize);
+          attribs->blueSize, attribs->alphaSize,
+          attribs->floatComponents ? 'Y' : 'N',
+          attribs->srgb ? 'Y' : 'N');
    printf("    auxBuffers=%d depthSize=%d stencilSize=%d\n",
           attribs->auxBuffers, attribs->depthSize, attribs->stencilSize);
    printf("    accum: redSize=%d greenSize=%d blueSize=%d alphaSize=%d\n",
@@ -837,30 +916,18 @@ print_visual_attribs_verbose(const struct visual_attribs *attribs)
 static void
 print_visual_attribs_short_header(void)
 {
- printf("   visual  x  bf lv rg d st colorbuffer ax dp st accumbuffer  ms  cav\n");
- printf(" id dep cl sp sz l  ci b ro  r  g  b  a bf th cl  r  g  b  a ns b eat\n");
- printf("----------------------------------------------------------------------\n");
+ printf("    visual  x   bf lv rg d st  colorbuffer  sr ax dp st accumbuffer  ms  cav\n");
+ printf("  id dep cl sp  sz l  ci b ro  r  g  b  a F gb bf th cl  r  g  b  a ns b eat\n");
+ printf("----------------------------------------------------------------------------\n");
 }
 
 
 static void
 print_visual_attribs_short(const struct visual_attribs *attribs)
 {
-   char *caveat = NULL;
-#ifdef GLX_EXT_visual_rating
-   if (attribs->visualCaveat == GLX_NONE_EXT || attribs->visualCaveat == 0)
-      caveat = "None";
-   else if (attribs->visualCaveat == GLX_SLOW_VISUAL_EXT)
-      caveat = "Slow";
-   else if (attribs->visualCaveat == GLX_NON_CONFORMANT_VISUAL_EXT)
-      caveat = "Ncon";
-   else
-      caveat = "None";
-#else
-   caveat = "None";
-#endif 
+   const char *caveat = caveat_string(attribs->visualCaveat);
 
-   printf("0x%02x %2d %2s %2d %2d %2d %c%c %c  %c %2d %2d %2d %2d %2d %2d %2d",
+   printf("0x%03x %2d %2s %2d %3d %2d %c%c %c %c  %2d %2d %2d %2d %c  %c %2d %2d %2d",
           attribs->id,
           attribs->depth,
           visual_class_abbrev(attribs->klass),
@@ -873,6 +940,8 @@ print_visual_attribs_short(const struct visual_attribs *attribs)
           attribs->stereo ? 'y' : '.',
           attribs->redSize, attribs->greenSize,
           attribs->blueSize, attribs->alphaSize,
+          attribs->floatComponents ? 'f' : '.',
+          attribs->srgb ? 's' : '.',
           attribs->auxBuffers,
           attribs->depthSize,
           attribs->stencilSize
@@ -890,16 +959,18 @@ print_visual_attribs_short(const struct visual_attribs *attribs)
 static void
 print_visual_attribs_long_header(void)
 {
- printf("Vis  Vis   Visual Trans  buff lev render DB ste  r   g   b   a  aux dep ste  accum buffers  MS   MS\n");
- printf(" ID Depth   Type  parent size el   type     reo sz  sz  sz  sz  buf th  ncl  r   g   b   a  num bufs\n");
- printf("----------------------------------------------------------------------------------------------------\n");
+ printf("Vis   Vis   Visual Trans  buff lev render DB ste  r   g   b   a      s  aux dep ste  accum buffer   MS   MS         \n");
+ printf(" ID  Depth   Type  parent size el   type     reo sz  sz  sz  sz flt rgb buf th  ncl  r   g   b   a  num bufs caveats\n");
+ printf("--------------------------------------------------------------------------------------------------------------------\n");
 }
 
 
 static void
 print_visual_attribs_long(const struct visual_attribs *attribs)
 {
-   printf("0x%2x %2d %-11s %2d     %2d %2d  %4s %3d %3d %3d %3d %3d %3d",
+   const char *caveat = caveat_string(attribs->visualCaveat);
+
+   printf("0x%3x %2d %-11s %2d    %3d %2d  %4s %3d %3d %3d %3d %3d %3d",
           attribs->id,
           attribs->depth,
           visual_class_name(attribs->klass),
@@ -913,13 +984,16 @@ print_visual_attribs_long(const struct visual_attribs *attribs)
           attribs->blueSize, attribs->alphaSize
           );
 
-   printf(" %3d %4d %2d %3d %3d %3d %3d  %2d  %2d\n",
+   printf("  %c   %c %3d %4d %2d %3d %3d %3d %3d  %2d  %2d %6s\n",
+          attribs->floatComponents ? 'f' : '.',
+          attribs->srgb ? 's' : '.',
           attribs->auxBuffers,
           attribs->depthSize,
           attribs->stencilSize,
           attribs->accumRedSize, attribs->accumGreenSize,
           attribs->accumBlueSize, attribs->accumAlphaSize,
-          attribs->numSamples, attribs->numMultisample
+          attribs->numSamples, attribs->numMultisample,
+          caveat
           );
 }
 

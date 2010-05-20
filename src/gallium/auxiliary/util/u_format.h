@@ -56,15 +56,23 @@ enum util_format_layout {
     *
     * This is for formats like YV12 where there is less than one sample per
     * pixel.
-    *
-    * XXX: This could actually b
     */
    UTIL_FORMAT_LAYOUT_SUBSAMPLED = 3,
 
    /**
-    * An unspecified compression algorithm.
+    * S3 Texture Compression formats.
     */
-   UTIL_FORMAT_LAYOUT_COMPRESSED = 4
+   UTIL_FORMAT_LAYOUT_S3TC = 4,
+
+   /**
+    * Red-Green Texture Compression formats.
+    */
+   UTIL_FORMAT_LAYOUT_RGTC = 5,
+
+   /**
+    * Everything else that doesn't fit in any of the above layouts.
+    */
+   UTIL_FORMAT_LAYOUT_OTHER = 6
 };
 
 
@@ -181,6 +189,127 @@ struct util_format_description
     * Colorspace transformation.
     */
    enum util_format_colorspace colorspace;
+
+   /**
+    * Unpack pixel blocks to R8G8B8A8_UNORM.
+    * Note: strides are in bytes.
+    *
+    * Only defined for non-depth-stencil formats.
+    */
+   void
+   (*unpack_rgba_8unorm)(uint8_t *dst, unsigned dst_stride,
+                         const uint8_t *src, unsigned src_stride,
+                         unsigned width, unsigned height);
+
+   /**
+    * Pack pixel blocks from R8G8B8A8_UNORM.
+    * Note: strides are in bytes.
+    *
+    * Only defined for non-depth-stencil formats.
+    */
+   void
+   (*pack_rgba_8unorm)(uint8_t *dst, unsigned dst_stride,
+                       const uint8_t *src, unsigned src_stride,
+                       unsigned width, unsigned height);
+
+   /**
+    * Unpack pixel blocks to R32G32B32A32_FLOAT.
+    * Note: strides are in bytes.
+    *
+    * Only defined for non-depth-stencil formats.
+    */
+   void
+   (*unpack_rgba_float)(float *dst, unsigned dst_stride,
+                        const uint8_t *src, unsigned src_stride,
+                        unsigned width, unsigned height);
+
+   /**
+    * Pack pixel blocks from R32G32B32A32_FLOAT.
+    * Note: strides are in bytes.
+    *
+    * Only defined for non-depth-stencil formats.
+    */
+   void
+   (*pack_rgba_float)(uint8_t *dst, unsigned dst_stride,
+                      const float *src, unsigned src_stride,
+                      unsigned width, unsigned height);
+
+   /**
+    * Fetch a single pixel (i, j) from a block.
+    *
+    * Only defined for non-depth-stencil formats.
+    */
+   void
+   (*fetch_rgba_float)(float *dst,
+                       const uint8_t *src,
+                       unsigned i, unsigned j);
+
+   /**
+    * Unpack pixels to Z32_UNORM.
+    * Note: strides are in bytes.
+    *
+    * Only defined for depth formats.
+    */
+   void
+   (*unpack_z_32unorm)(uint32_t *dst, unsigned dst_stride,
+                       const uint8_t *src, unsigned src_stride,
+                       unsigned width, unsigned height);
+
+   /**
+    * Pack pixels from Z32_FLOAT.
+    * Note: strides are in bytes.
+    *
+    * Only defined for depth formats.
+    */
+   void
+   (*pack_z_32unorm)(uint8_t *dst, unsigned dst_stride,
+                     const uint32_t *src, unsigned src_stride,
+                     unsigned width, unsigned height);
+
+   /**
+    * Unpack pixels to Z32_FLOAT.
+    * Note: strides are in bytes.
+    *
+    * Only defined for depth formats.
+    */
+   void
+   (*unpack_z_float)(float *dst, unsigned dst_stride,
+                     const uint8_t *src, unsigned src_stride,
+                     unsigned width, unsigned height);
+
+   /**
+    * Pack pixels from Z32_FLOAT.
+    * Note: strides are in bytes.
+    *
+    * Only defined for depth formats.
+    */
+   void
+   (*pack_z_float)(uint8_t *dst, unsigned dst_stride,
+                   const float *src, unsigned src_stride,
+                   unsigned width, unsigned height);
+
+   /**
+    * Unpack pixels to S8_USCALED.
+    * Note: strides are in bytes.
+    *
+    * Only defined for stencil formats.
+    */
+   void
+   (*unpack_s_8uscaled)(uint8_t *dst, unsigned dst_stride,
+                        const uint8_t *src, unsigned src_stride,
+                        unsigned width, unsigned height);
+
+   /**
+    * Pack pixels from S8_USCALED.
+    * Note: strides are in bytes.
+    *
+    * Only defined for stencil formats.
+    */
+   void
+   (*pack_s_8uscaled)(uint8_t *dst, unsigned dst_stride,
+                      const uint8_t *src, unsigned src_stride,
+                      unsigned width, unsigned height);
+
 };
 
 
@@ -201,12 +330,40 @@ util_format_name(enum pipe_format format)
 {
    const struct util_format_description *desc = util_format_description(format);
 
-   assert(format);
-   if (!format) {
-      return "???";
+   assert(desc);
+   if (!desc) {
+      return "PIPE_FORMAT_???";
    }
 
    return desc->name;
+}
+
+static INLINE const char *
+util_format_short_name(enum pipe_format format)
+{
+   const struct util_format_description *desc = util_format_description(format);
+
+   assert(desc);
+   if (!desc) {
+      return "???";
+   }
+
+   return desc->short_name;
+}
+
+/**
+ * Whether this format is plain, see UTIL_FORMAT_LAYOUT_PLAIN for more info.
+ */
+static INLINE boolean
+util_format_is_plain(enum pipe_format format)
+{
+   const struct util_format_description *desc = util_format_description(format);
+
+   if (!format) {
+      return FALSE;
+   }
+
+   return desc->layout == UTIL_FORMAT_LAYOUT_PLAIN ? TRUE : FALSE;
 }
 
 static INLINE boolean 
@@ -214,12 +371,32 @@ util_format_is_compressed(enum pipe_format format)
 {
    const struct util_format_description *desc = util_format_description(format);
 
-   assert(format);
-   if (!format) {
+   assert(desc);
+   if (!desc) {
       return FALSE;
    }
 
-   return desc->layout == UTIL_FORMAT_LAYOUT_COMPRESSED ? TRUE : FALSE;
+   switch (desc->layout) {
+   case UTIL_FORMAT_LAYOUT_S3TC:
+   case UTIL_FORMAT_LAYOUT_RGTC:
+      /* XXX add other formats in the future */
+      return TRUE;
+   default:
+      return FALSE;
+   }
+}
+
+static INLINE boolean 
+util_format_is_s3tc(enum pipe_format format)
+{
+   const struct util_format_description *desc = util_format_description(format);
+
+   assert(desc);
+   if (!desc) {
+      return FALSE;
+   }
+
+   return desc->layout == UTIL_FORMAT_LAYOUT_S3TC ? TRUE : FALSE;
 }
 
 static INLINE boolean 
@@ -227,8 +404,8 @@ util_format_is_depth_or_stencil(enum pipe_format format)
 {
    const struct util_format_description *desc = util_format_description(format);
 
-   assert(format);
-   if (!format) {
+   assert(desc);
+   if (!desc) {
       return FALSE;
    }
 
@@ -240,8 +417,8 @@ util_format_is_depth_and_stencil(enum pipe_format format)
 {
    const struct util_format_description *desc = util_format_description(format);
 
-   assert(format);
-   if (!format) {
+   assert(desc);
+   if (!desc) {
       return FALSE;
    }
 
@@ -253,6 +430,34 @@ util_format_is_depth_and_stencil(enum pipe_format format)
            desc->swizzle[1] != UTIL_FORMAT_SWIZZLE_NONE) ? TRUE : FALSE;
 }
 
+/**
+ * Whether this format is a rgab8 variant.
+ *
+ * That is, any format that matches the
+ *
+ *   PIPE_FORMAT_?8?8?8?8_UNORM
+ */
+static INLINE boolean
+util_format_is_rgba8_variant(const struct util_format_description *desc)
+{
+   unsigned chan;
+
+   if(desc->block.width != 1 ||
+      desc->block.height != 1 ||
+      desc->block.bits != 32)
+      return FALSE;
+
+   for(chan = 0; chan < 4; ++chan) {
+      if(desc->channel[chan].type != UTIL_FORMAT_TYPE_UNSIGNED &&
+         desc->channel[chan].type != UTIL_FORMAT_TYPE_VOID)
+         return FALSE;
+      if(desc->channel[chan].size != 8)
+         return FALSE;
+   }
+
+   return TRUE;
+}
+
 
 /**
  * Return total bits needed for the pixel format per block.
@@ -262,8 +467,8 @@ util_format_get_blocksizebits(enum pipe_format format)
 {
    const struct util_format_description *desc = util_format_description(format);
 
-   assert(format);
-   if (!format) {
+   assert(desc);
+   if (!desc) {
       return 0;
    }
 
@@ -288,8 +493,8 @@ util_format_get_blockwidth(enum pipe_format format)
 {
    const struct util_format_description *desc = util_format_description(format);
 
-   assert(format);
-   if (!format) {
+   assert(desc);
+   if (!desc) {
       return 1;
    }
 
@@ -301,8 +506,8 @@ util_format_get_blockheight(enum pipe_format format)
 {
    const struct util_format_description *desc = util_format_description(format);
 
-   assert(format);
-   if (!format) {
+   assert(desc);
+   if (!desc) {
       return 1;
    }
 
@@ -453,6 +658,19 @@ util_format_write_4ub(enum pipe_format format,
                       const uint8_t *src, unsigned src_stride, 
                       void *dst, unsigned dst_stride, 
                       unsigned x, unsigned y, unsigned w, unsigned h);
+
+/*
+ * Generic format conversion;
+ */
+
+void
+util_format_translate(enum pipe_format dst_format,
+                      void *dst, unsigned dst_stride,
+                      unsigned dst_x, unsigned dst_y,
+                      enum pipe_format src_format,
+                      const void *src, unsigned src_stride,
+                      unsigned src_x, unsigned src_y,
+                      unsigned width, unsigned height);
 
 #ifdef __cplusplus
 } // extern "C" {

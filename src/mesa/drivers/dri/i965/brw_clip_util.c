@@ -151,7 +151,7 @@ void brw_clip_interp_vertex( struct brw_clip_compile *c,
    for (i = 0; i < c->nr_attrs; i++) {
       GLuint delta = i*16 + 32;
 
-      if (intel->is_ironlake)
+      if (intel->gen == 5)
           delta = i * 16 + 32 * 3;
 
       if (delta == c->offset[VERT_RESULT_EDGE]) {
@@ -185,7 +185,7 @@ void brw_clip_interp_vertex( struct brw_clip_compile *c,
    if (i & 1) {
       GLuint delta = i*16 + 32;
 
-      if (intel->is_ironlake)
+      if (intel->gen == 5)
           delta = i * 16 + 32 * 3;
 
       brw_MOV(p, deref_4f(dest_ptr, delta), brw_imm_f(0));
@@ -370,18 +370,13 @@ void brw_clip_ff_sync(struct brw_clip_compile *c)
         need_ff_sync = brw_IF(p, BRW_EXECUTE_1);
         {
             brw_OR(p, c->reg.ff_sync, c->reg.ff_sync, brw_imm_ud(0x1));
-            brw_ff_sync(p, 
-                    c->reg.R0,
-                    0,
-                    c->reg.R0,
-                    1,	
-                    1,		/* used */
-                    1,  	/* msg length */
-                    1,		/* response length */
-                    0,		/* eot */
-                    1,		/* write compelete */
-                    0,		/* urb offset */
-                    BRW_URB_SWIZZLE_NONE);
+            brw_ff_sync(p,
+			c->reg.R0,
+			0,
+			c->reg.R0,
+			1, /* allocate */
+			1, /* response length */
+			0 /* eot */);
         }
         brw_ENDIF(p, need_ff_sync);
         brw_set_predicate_control(p, BRW_PREDICATE_NONE);

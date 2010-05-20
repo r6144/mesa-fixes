@@ -44,8 +44,10 @@ extern "C" {
 #endif
 
 
+struct winsys_handle;
 struct pipe_screen;
 struct pipe_context;
+struct pipe_resource;
 
 
 /**
@@ -68,6 +70,7 @@ struct sw_winsys
 
    boolean
    (*is_displaytarget_format_supported)( struct sw_winsys *ws,
+                                         unsigned tex_usage,
                                          enum pipe_format format );
    
    /**
@@ -78,18 +81,36 @@ struct sw_winsys
     * pools, or obtained directly from the windowing system.
     *  
     * This callback is invoked by the pipe_screen when creating a texture marked
-    * with the PIPE_TEXTURE_USAGE_DISPLAY_TARGET flag to get the underlying 
+    * with the PIPE_BIND_DISPLAY_TARGET flag to get the underlying 
     * storage.
     */
    struct sw_displaytarget *
    (*displaytarget_create)( struct sw_winsys *ws,
+                            unsigned tex_usage,
                             enum pipe_format format,
                             unsigned width, unsigned height,
                             unsigned alignment,
                             unsigned *stride );
 
    /**
-    * \param flags  bitmask of PIPE_BUFFER_USAGE_x flags
+    * Used to implement texture_from_handle.
+    */
+   struct sw_displaytarget *
+   (*displaytarget_from_handle)( struct sw_winsys *ws,
+                                 const struct pipe_resource *template,
+                                 struct winsys_handle *whandle,
+                                 unsigned *stride );
+
+   /**
+    * Used to implement texture_get_handle.
+    */
+   boolean
+   (*displaytarget_get_handle)( struct sw_winsys *ws,
+                                struct sw_displaytarget *dt,
+                                struct winsys_handle *whandle );
+
+   /**
+    * \param flags  bitmask of PIPE_TRANSFER_x flags
     */
    void *
    (*displaytarget_map)( struct sw_winsys *ws, 

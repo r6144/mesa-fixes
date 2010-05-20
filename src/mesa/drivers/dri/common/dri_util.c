@@ -31,6 +31,16 @@
 #include "dri_util.h"
 #include "drm_sarea.h"
 #include "utils.h"
+#include "xmlpool.h"
+
+PUBLIC const char __dri2ConfigOptions[] =
+   DRI_CONF_BEGIN
+      DRI_CONF_SECTION_PERFORMANCE
+         DRI_CONF_VBLANK_MODE(DRI_CONF_VBLANK_DEF_INTERVAL_1)
+      DRI_CONF_SECTION_END
+   DRI_CONF_END;
+
+static const uint __dri2NConfigOptions = 1;
 
 #ifndef GLX_OML_sync_control
 typedef GLboolean ( * PFNGLXGETMSCRATEOMLPROC) (__DRIdrawable *drawable, int32_t *numerator, int32_t *denominator);
@@ -46,28 +56,6 @@ static void dri_put_drawable(__DRIdrawable *pdp);
 const __DRIextension driReadDrawableExtension = {
     __DRI_READ_DRAWABLE, __DRI_READ_DRAWABLE_VERSION
 };
-
-/**
- * Print message to \c stderr if the \c LIBGL_DEBUG environment variable
- * is set. 
- * 
- * Is called from the drivers.
- * 
- * \param f \c printf like format string.
- */
-void
-__driUtilMessage(const char *f, ...)
-{
-    va_list args;
-
-    if (getenv("LIBGL_DEBUG")) {
-        fprintf(stderr, "libGL: ");
-        va_start(args, f);
-        vfprintf(stderr, f, args);
-        va_end(args);
-        fprintf(stderr, "\n");
-    }
-}
 
 GLint
 driIntersectArea( drm_clip_rect_t rect1, drm_clip_rect_t rect2 )
@@ -151,11 +139,6 @@ static int driUnbindContext(__DRIcontext *pcp)
      */
     pcp->driDrawablePriv = pcp->driReadablePriv = NULL;
 
-#if 0
-    /* Unbind the drawable */
-    pdp->driContextPriv = &psp->dummyContextPriv;
-#endif
-
     return GL_TRUE;
 }
 
@@ -170,19 +153,24 @@ static int driBindContext(__DRIcontext *pcp,
 {
     __DRIscreen *psp = NULL;
 
-    /* Bind the drawable to the context */
+    /*
+    ** Assume error checking is done properly in glXMakeCurrent before
+    ** calling driUnbindContext.
+    */
 
-    if (pcp) {
-	psp = pcp->driScreenPriv;
-	pcp->driDrawablePriv = pdp;
-	pcp->driReadablePriv = prp;
-	if (pdp) {
-	    pdp->driContextPriv = pcp;
-    	    dri_get_drawable(pdp);
-	}
-	if ( prp && pdp != prp ) {
-    	    dri_get_drawable(prp);
-	}
+    if (!pcp)
+	return GL_FALSE;
+
+    /* Bind the drawable to the context */
+    psp = pcp->driScreenPriv;
+    pcp->driDrawablePriv = pdp;
+    pcp->driReadablePriv = prp;
+    if (pdp) {
+	pdp->driContextPriv = pcp;
+	dri_get_drawable(pdp);
+    }
+    if (prp && pdp != prp) {
+	dri_get_drawable(prp);
     }
 
     /*
@@ -190,7 +178,6 @@ static int driBindContext(__DRIcontext *pcp,
     ** initialize the drawable information if has not been done before.
     */
 
-    assert(psp);
     if (!psp->dri2.enabled) {
 	if (pdp && !pdp->pStamp) {
 	    DRM_SPINLOCK(&psp->pSAREA->drawable_lock, psp->drawLockID);
@@ -205,7 +192,6 @@ static int driBindContext(__DRIcontext *pcp,
     }
 
     /* Call device-specific MakeCurrent */
-
     return (*psp->DriverAPI.MakeCurrent)(pcp, pdp, prp);
 }
 
@@ -455,7 +441,6 @@ driCreateNewDrawable(__DRIscreen *psp, const __DRIconfig *config,
     pdp->vblFlags = 0;
 
     pdp->driScreenPriv = psp;
-    pdp->driContextPriv = &psp->dummyContextPriv;
 
     if (!(*psp->DriverAPI.CreateBuffer)(psp, pdp, &config->modes,
 					renderType == GLX_PIXMAP_BIT)) {
@@ -494,6 +479,41 @@ dri2CreateNewDrawable(__DRIscreen *screen,
 
     return pdraw;
 }
+
+static int
+dri2ConfigQueryb(__DRIscreen *screen, const char *var, GLboolean *val)
+{
+   if (!driCheckOption(&screen->optionCache, var, DRI_BOOL))
+      return -1;
+
+   *val = driQueryOptionb(&screen->optionCache, var);
+
+   return 0;
+}
+
+static int
+dri2ConfigQueryi(__DRIscreen *screen, const char *var, GLint *val)
+{
+   if (!driCheckOption(&screen->optionCache, var, DRI_INT) &&
+       !driCheckOption(&screen->optionCache, var, DRI_ENUM))
+      return -1;
+
+    *val = driQueryOptioni(&screen->optionCache, var);
+
+    return 0;
+}
+
+static int
+dri2ConfigQueryf(__DRIscreen *screen, const char *var, GLfloat *val)
+{
+   if (!driCheckOption(&screen->optionCache, var, DRI_FLOAT))
+      return -1;
+
+    *val = driQueryOptionf(&screen->optionCache, var);
+
+    return 0;
+}
+
 
 static void dri_get_drawable(__DRIdrawable *pdp)
 {
@@ -589,21 +609,11 @@ driCreateNewContext(__DRIscreen *psp, const __DRIconfig *config,
     
     pcp->dri2.draw_stamp = 0;
     pcp->dri2.read_stamp = 0;
-    /* When the first context is created for a screen, initialize a "dummy"
-     * context.
-     */
-
-    if (!psp->dri2.enabled && !psp->dummyContextPriv.driScreenPriv) {
-        psp->dummyContextPriv.hHWContext = psp->pSAREA->dummy_context;
-        psp->dummyContextPriv.driScreenPriv = psp;
-        psp->dummyContextPriv.driDrawablePriv = NULL;
-        psp->dummyContextPriv.driverPrivate = NULL;
-	/* No other fields should be used! */
-    }
 
     pcp->hHWContext = hwContext;
 
-    if ( !(*psp->DriverAPI.CreateContext)(&config->modes, pcp, shareCtx) ) {
+    if ( !(*psp->DriverAPI.CreateContext)(API_OPENGL,
+					  &config->modes, pcp, shareCtx) ) {
         free(pcp);
         return NULL;
     }
@@ -611,14 +621,61 @@ driCreateNewContext(__DRIscreen *psp, const __DRIconfig *config,
     return pcp;
 }
 
+static unsigned int
+dri2GetAPIMask(__DRIscreen *screen)
+{
+    return screen->api_mask;
+}
+
+static __DRIcontext *
+dri2CreateNewContextForAPI(__DRIscreen *screen, int api,
+			   const __DRIconfig *config,
+			   __DRIcontext *shared, void *data)
+{
+    __DRIcontext *context;
+    void *shareCtx = (shared != NULL) ? shared->driverPrivate : NULL;
+    gl_api mesa_api;
+
+    if (!(screen->api_mask & (1 << api)))
+	return NULL;
+
+    switch (api) {
+    case __DRI_API_OPENGL:
+	    mesa_api = API_OPENGL;
+	    break;
+    case __DRI_API_GLES:
+	    mesa_api = API_OPENGLES;
+	    break;
+    case __DRI_API_GLES2:
+	    mesa_api = API_OPENGLES2;
+	    break;
+    }
+
+    context = malloc(sizeof *context);
+    if (!context)
+	return NULL;
+
+    context->driScreenPriv = screen;
+    context->driDrawablePriv = NULL;
+    context->loaderPrivate = data;
+    
+    if (!(*screen->DriverAPI.CreateContext)(api, &config->modes,
+					    context, shareCtx) ) {
+        free(context);
+        return NULL;
+    }
+
+    return context;
+}
+
 
 static __DRIcontext *
 dri2CreateNewContext(__DRIscreen *screen, const __DRIconfig *config,
 		      __DRIcontext *shared, void *data)
 {
-    return driCreateNewContext(screen, config, 0, shared, 0, data);
+   return dri2CreateNewContextForAPI(screen, __DRI_API_OPENGL,
+				     config, shared, data);
 }
-
 
 static int
 driCopyContext(__DRIcontext *dest, __DRIcontext *src, unsigned long mask)
@@ -679,6 +736,8 @@ setupLoaderExtensions(__DRIscreen *psp,
 	    psp->dri2.loader = (__DRIdri2LoaderExtension *) extensions[i];
 	if (strcmp(extensions[i]->name, __DRI_IMAGE_LOOKUP) == 0)
 	    psp->dri2.image = (__DRIimageLookupExtension *) extensions[i];
+	if (strcmp(extensions[i]->name, __DRI_USE_INVALIDATE) == 0)
+	    psp->dri2.useInvalidate = (__DRIuseInvalidateExtension *) extensions[i];
     }
 }
 
@@ -756,14 +815,8 @@ driCreateNewScreen(int scrn,
     psp->myNum = scrn;
     psp->dri2.enabled = GL_FALSE;
 
-    /*
-    ** Do not init dummy context here; actual initialization will be
-    ** done when the first DRI context is created.  Init screen priv ptr
-    ** to NULL to let CreateContext routine that it needs to be inited.
-    */
-    psp->dummyContextPriv.driScreenPriv = NULL;
-
     psp->DriverAPI = driDriverAPI;
+    psp->api_mask = (1 << __DRI_API_OPENGL);
 
     *driver_modes = driDriverAPI.InitScreen(psp);
     if (*driver_modes == NULL) {
@@ -785,6 +838,7 @@ dri2CreateNewScreen(int scrn, int fd,
     static const __DRIextension *emptyExtensionList[] = { NULL };
     __DRIscreen *psp;
     drmVersionPtr version;
+    driOptionCache options;
 
     if (driDriverAPI.InitScreen2 == NULL)
         return NULL;
@@ -809,6 +863,7 @@ dri2CreateNewScreen(int scrn, int fd,
     psp->dri2.enabled = GL_TRUE;
 
     psp->DriverAPI = driDriverAPI;
+    psp->api_mask = (1 << __DRI_API_OPENGL);
     *driver_configs = driDriverAPI.InitScreen2(psp);
     if (*driver_configs == NULL) {
 	free(psp);
@@ -816,6 +871,9 @@ dri2CreateNewScreen(int scrn, int fd,
     }
 
     psp->DriverAPI = driDriverAPI;
+
+    driParseOptionInfo(&options, __dri2ConfigOptions, __dri2NConfigOptions);
+    driParseConfigFiles(&psp->optionCache, &options, psp->myNum, "dri2");
 
     return psp;
 }
@@ -857,6 +915,15 @@ const __DRIdri2Extension driDRI2Extension = {
     dri2CreateNewScreen,
     dri2CreateNewDrawable,
     dri2CreateNewContext,
+    dri2GetAPIMask,
+    dri2CreateNewContextForAPI
+};
+
+const __DRI2configQueryExtension dri2ConfigQueryExtension = {
+   { __DRI2_CONFIG_QUERY, __DRI2_CONFIG_QUERY_VERSION },
+   dri2ConfigQueryb,
+   dri2ConfigQueryi,
+   dri2ConfigQueryf,
 };
 
 static int

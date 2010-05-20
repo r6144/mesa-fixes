@@ -1,0 +1,25 @@
+Import('*')
+
+try:
+    graw
+except NameError:
+    print 'warning: graw library not avaiable: skipping build of graw test'
+    Return()
+
+env = env.Clone()
+
+env.Prepend(LIBPATH = [graw.dir])
+env.Prepend(LIBS = ['graw'])
+
+progs = [
+    'clear',
+    'tri',
+    'quad-tex',
+]
+
+for prog in progs:
+    env.Program(
+        target = prog,
+        source = prog + '.c',
+    )
+

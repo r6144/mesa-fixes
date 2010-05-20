@@ -185,12 +185,12 @@ struct svga_state
    const struct svga_sampler_state *sampler[PIPE_MAX_SAMPLERS];
    const struct svga_velems_state *velems;
 
-   struct pipe_texture *texture[PIPE_MAX_SAMPLERS]; /* or texture ID's? */
+   struct pipe_sampler_view *sampler_views[PIPE_MAX_SAMPLERS]; /* or texture ID's? */
    struct svga_fragment_shader *fs;
    struct svga_vertex_shader *vs;
 
    struct pipe_vertex_buffer vb[PIPE_MAX_ATTRIBS];
-   struct pipe_buffer *cb[PIPE_SHADER_TYPES];
+   struct pipe_resource *cb[PIPE_SHADER_TYPES];
 
    struct pipe_framebuffer_state framebuffer;
    float depthscale;
@@ -208,7 +208,7 @@ struct svga_state
    struct pipe_viewport_state viewport;
 
    unsigned num_samplers;
-   unsigned num_textures;
+   unsigned num_sampler_views;
    unsigned num_vertex_buffers;
    unsigned reduced_prim;
 
@@ -254,7 +254,7 @@ struct svga_hw_clear_state
 
 struct svga_hw_view_state
 {
-   struct pipe_texture *texture;
+   struct pipe_resource *texture;
    struct svga_sampler_view *v;
    unsigned min_lod;
    unsigned max_lod;

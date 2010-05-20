@@ -67,6 +67,7 @@ void st_init_limits(struct st_context *st)
 {
    struct pipe_screen *screen = st->pipe->screen;
    struct gl_constants *c = &st->ctx->Const;
+   struct gl_program_constants *pc;
 
    c->MaxTextureLevels
       = _min(screen->get_param(screen, PIPE_CAP_MAX_TEXTURE_2D_LEVELS),
@@ -140,6 +141,26 @@ void st_init_limits(struct st_context *st)
 
    /* Quads always follow GL provoking rules. */
    c->QuadsFollowProvokingVertexConvention = GL_FALSE;
+
+   pc = &c->FragmentProgram;
+   pc->MaxNativeInstructions    = screen->get_param(screen, PIPE_CAP_MAX_FS_INSTRUCTIONS);
+   pc->MaxNativeAluInstructions = screen->get_param(screen, PIPE_CAP_MAX_FS_ALU_INSTRUCTIONS);
+   pc->MaxNativeTexInstructions = screen->get_param(screen, PIPE_CAP_MAX_FS_TEX_INSTRUCTIONS);
+   pc->MaxNativeTexIndirections = screen->get_param(screen, PIPE_CAP_MAX_FS_TEX_INDIRECTIONS);
+   pc->MaxNativeAttribs         = screen->get_param(screen, PIPE_CAP_MAX_FS_INPUTS);
+   pc->MaxNativeTemps           = screen->get_param(screen, PIPE_CAP_MAX_FS_TEMPS);
+   pc->MaxNativeAddressRegs     = screen->get_param(screen, PIPE_CAP_MAX_FS_ADDRS);
+   pc->MaxNativeParameters      = screen->get_param(screen, PIPE_CAP_MAX_FS_CONSTS);
+
+   pc = &c->VertexProgram;
+   pc->MaxNativeInstructions    = screen->get_param(screen, PIPE_CAP_MAX_VS_INSTRUCTIONS);
+   pc->MaxNativeAluInstructions = screen->get_param(screen, PIPE_CAP_MAX_VS_ALU_INSTRUCTIONS);
+   pc->MaxNativeTexInstructions = screen->get_param(screen, PIPE_CAP_MAX_VS_TEX_INSTRUCTIONS);
+   pc->MaxNativeTexIndirections = screen->get_param(screen, PIPE_CAP_MAX_VS_TEX_INDIRECTIONS);
+   pc->MaxNativeAttribs         = screen->get_param(screen, PIPE_CAP_MAX_VS_INPUTS);
+   pc->MaxNativeTemps           = screen->get_param(screen, PIPE_CAP_MAX_VS_TEMPS);
+   pc->MaxNativeAddressRegs     = screen->get_param(screen, PIPE_CAP_MAX_VS_ADDRS);
+   pc->MaxNativeParameters      = screen->get_param(screen, PIPE_CAP_MAX_VS_CONSTS);
 }
 
 
@@ -183,6 +204,7 @@ void st_init_extensions(struct st_context *st)
    ctx->Extensions.EXT_framebuffer_object = GL_TRUE;
    ctx->Extensions.EXT_framebuffer_multisample = GL_TRUE;
    ctx->Extensions.EXT_fog_coord = GL_TRUE;
+   ctx->Extensions.EXT_gpu_program_parameters = GL_TRUE;
    ctx->Extensions.EXT_multi_draw_arrays = GL_TRUE;
    ctx->Extensions.EXT_pixel_buffer_object = GL_TRUE;
    ctx->Extensions.EXT_point_parameters = GL_TRUE;
@@ -209,6 +231,9 @@ void st_init_extensions(struct st_context *st)
    ctx->Extensions.NV_vertex_program1_1 = GL_TRUE;
 #endif
 
+#if FEATURE_OES_EGL_image
+   ctx->Extensions.OES_EGL_image = GL_TRUE;
+#endif
 #if FEATURE_OES_draw_texture
    ctx->Extensions.OES_draw_texture = GL_TRUE;
 #endif
@@ -241,6 +266,7 @@ void st_init_extensions(struct st_context *st)
 
    if (screen->get_param(screen, PIPE_CAP_TEXTURE_MIRROR_CLAMP) > 0) {
       ctx->Extensions.EXT_texture_mirror_clamp = GL_TRUE;
+      ctx->Extensions.ATI_texture_mirror_once = GL_TRUE;
    }
 
    if (screen->get_param(screen, PIPE_CAP_NPOT_TEXTURES)) {
@@ -270,6 +296,9 @@ void st_init_extensions(struct st_context *st)
    if (screen->get_param(screen, PIPE_CAP_OCCLUSION_QUERY)) {
       ctx->Extensions.ARB_occlusion_query = GL_TRUE;
    }
+   if (screen->get_param(screen, PIPE_CAP_TIMER_QUERY)) {
+     ctx->Extensions.EXT_timer_query = GL_TRUE;
+   }
 
    if (screen->get_param(screen, PIPE_CAP_TEXTURE_SHADOW_MAP)) {
       ctx->Extensions.ARB_depth_texture = GL_TRUE;
@@ -281,41 +310,41 @@ void st_init_extensions(struct st_context *st)
    /* GL_EXT_packed_depth_stencil requires both the ability to render to
     * a depth/stencil buffer and texture from depth/stencil source.
     */
-   if (screen->is_format_supported(screen, PIPE_FORMAT_S8Z24_UNORM,
+   if (screen->is_format_supported(screen, PIPE_FORMAT_S8_USCALED_Z24_UNORM,
                                    PIPE_TEXTURE_2D, 
-                                   PIPE_TEXTURE_USAGE_DEPTH_STENCIL, 0) &&
-       screen->is_format_supported(screen, PIPE_FORMAT_S8Z24_UNORM,
+                                   PIPE_BIND_DEPTH_STENCIL, 0) &&
+       screen->is_format_supported(screen, PIPE_FORMAT_S8_USCALED_Z24_UNORM,
                                    PIPE_TEXTURE_2D, 
-                                   PIPE_TEXTURE_USAGE_SAMPLER, 0)) {
+                                   PIPE_BIND_SAMPLER_VIEW, 0)) {
       ctx->Extensions.EXT_packed_depth_stencil = GL_TRUE;
    }
-   else if (screen->is_format_supported(screen, PIPE_FORMAT_Z24S8_UNORM,
+   else if (screen->is_format_supported(screen, PIPE_FORMAT_Z24_UNORM_S8_USCALED,
                                         PIPE_TEXTURE_2D, 
-                                        PIPE_TEXTURE_USAGE_DEPTH_STENCIL, 0) &&
-            screen->is_format_supported(screen, PIPE_FORMAT_Z24S8_UNORM,
+                                        PIPE_BIND_DEPTH_STENCIL, 0) &&
+            screen->is_format_supported(screen, PIPE_FORMAT_Z24_UNORM_S8_USCALED,
                                         PIPE_TEXTURE_2D, 
-                                        PIPE_TEXTURE_USAGE_SAMPLER, 0)) {
+                                        PIPE_BIND_SAMPLER_VIEW, 0)) {
       ctx->Extensions.EXT_packed_depth_stencil = GL_TRUE;
    }
 
    /* sRGB support */
    if (screen->is_format_supported(screen, PIPE_FORMAT_A8B8G8R8_SRGB,
                                    PIPE_TEXTURE_2D, 
-                                   PIPE_TEXTURE_USAGE_SAMPLER, 0) ||
+                                   PIPE_BIND_SAMPLER_VIEW, 0) ||
       screen->is_format_supported(screen, PIPE_FORMAT_B8G8R8A8_SRGB,
                                    PIPE_TEXTURE_2D, 
-                                   PIPE_TEXTURE_USAGE_SAMPLER, 0)) {
+                                   PIPE_BIND_SAMPLER_VIEW, 0)) {
       ctx->Extensions.EXT_texture_sRGB = GL_TRUE;
    }
 
    /* s3tc support */
    if (screen->is_format_supported(screen, PIPE_FORMAT_DXT5_RGBA,
                                    PIPE_TEXTURE_2D,
-                                   PIPE_TEXTURE_USAGE_SAMPLER, 0) &&
+                                   PIPE_BIND_SAMPLER_VIEW, 0) &&
        (ctx->Mesa_DXTn ||
         screen->is_format_supported(screen, PIPE_FORMAT_DXT5_RGBA,
                                     PIPE_TEXTURE_2D,
-                                    PIPE_TEXTURE_USAGE_RENDER_TARGET, 0))) {
+                                    PIPE_BIND_RENDER_TARGET, 0))) {
       ctx->Extensions.EXT_texture_compression_s3tc = GL_TRUE;
       ctx->Extensions.S3_s3tc = GL_TRUE;
    }
@@ -323,10 +352,10 @@ void st_init_extensions(struct st_context *st)
    /* ycbcr support */
    if (screen->is_format_supported(screen, PIPE_FORMAT_UYVY, 
                                    PIPE_TEXTURE_2D, 
-                                   PIPE_TEXTURE_USAGE_SAMPLER, 0) ||
+                                   PIPE_BIND_SAMPLER_VIEW, 0) ||
        screen->is_format_supported(screen, PIPE_FORMAT_YUYV, 
                                    PIPE_TEXTURE_2D, 
-                                   PIPE_TEXTURE_USAGE_SAMPLER, 0)) {
+                                   PIPE_BIND_SAMPLER_VIEW, 0)) {
       ctx->Extensions.MESA_ycbcr_texture = GL_TRUE;
    }
 

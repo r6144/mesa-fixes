@@ -39,7 +39,7 @@
 #include "cell_draw_arrays.h"
 #include "cell_state.h"
 #include "cell_flush.h"
-#include "cell_buffer.h"
+#include "cell_texture.h"
 
 #include "draw/draw_context.h"
 
@@ -57,8 +57,9 @@
  */
 static void
 cell_draw_range_elements(struct pipe_context *pipe,
-                         struct pipe_buffer *indexBuffer,
+                         struct pipe_resource *indexBuffer,
                          unsigned indexSize,
+                         int indexBias,
                          unsigned min_index,
                          unsigned max_index,
                          unsigned mode, unsigned start, unsigned count)
@@ -78,17 +79,17 @@ cell_draw_range_elements(struct pipe_context *pipe,
     * Map vertex buffers
     */
    for (i = 0; i < cell->num_vertex_buffers; i++) {
-      void *buf = cell_buffer(cell->vertex_buffer[i].buffer)->data;
+      void *buf = cell_resource(cell->vertex_buffer[i].buffer)->data;
       draw_set_mapped_vertex_buffer(draw, i, buf);
    }
    /* Map index buffer, if present */
    if (indexBuffer) {
-      void *mapped_indexes = cell_buffer(indexBuffer)->data;
-      draw_set_mapped_element_buffer(draw, indexSize, mapped_indexes);
+      void *mapped_indexes = cell_resource(indexBuffer)->data;
+      draw_set_mapped_element_buffer(draw, indexSize, indexBias, mapped_indexes);
    }
    else {
       /* no index/element buffer */
-      draw_set_mapped_element_buffer(draw, 0, NULL);
+      draw_set_mapped_element_buffer(draw, 0, 0, NULL);
    }
 
 
@@ -116,12 +117,12 @@ cell_draw_range_elements(struct pipe_context *pipe,
 
 static void
 cell_draw_elements(struct pipe_context *pipe,
-                   struct pipe_buffer *indexBuffer,
-                   unsigned indexSize,
+                   struct pipe_resource *indexBuffer,
+                   unsigned indexSize, int indexBias,
                    unsigned mode, unsigned start, unsigned count)
 {
    cell_draw_range_elements( pipe, indexBuffer,
-                             indexSize,
+                             indexSize, indeBias,
                              0, 0xffffffff,
                              mode, start, count );
 }
@@ -131,7 +132,7 @@ static void
 cell_draw_arrays(struct pipe_context *pipe, unsigned mode,
                      unsigned start, unsigned count)
 {
-   cell_draw_elements(pipe, NULL, 0, mode, start, count);
+   cell_draw_elements(pipe, NULL, 0, 0, mode, start, count);
 }
 
 

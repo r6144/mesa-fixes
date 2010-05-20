@@ -42,7 +42,9 @@
 #include "intel_fbo.h"
 #include "intel_mipmap_tree.h"
 #include "intel_regions.h"
-
+#ifndef I915
+#include "brw_state.h"
+#endif
 
 #define FILE_DEBUG_FLAG DEBUG_FBO
 
@@ -104,7 +106,6 @@ intel_alloc_renderbuffer_storage(GLcontext * ctx, struct gl_renderbuffer *rb,
    struct intel_context *intel = intel_context(ctx);
    struct intel_renderbuffer *irb = intel_renderbuffer(rb);
    int cpp;
-   GLuint pitch;
 
    ASSERT(rb->Name != 0);
 
@@ -167,7 +168,7 @@ intel_alloc_renderbuffer_storage(GLcontext * ctx, struct gl_renderbuffer *rb,
    rb->_BaseFormat = _mesa_base_fbo_format(ctx, internalFormat);
    cpp = _mesa_get_format_bytes(rb->Format);
 
-   intelFlush(ctx);
+   intel_flush(ctx);
 
    /* free old region */
    if (irb->region) {
@@ -176,15 +177,11 @@ intel_alloc_renderbuffer_storage(GLcontext * ctx, struct gl_renderbuffer *rb,
 
    /* allocate new memory region/renderbuffer */
 
-   /* Choose a pitch to match hardware requirements:
-    */
-   pitch = ((cpp * width + 63) & ~63) / cpp;
-
    /* alloc hardware renderbuffer */
-   DBG("Allocating %d x %d Intel RBO (pitch %d)\n", width, height, pitch);
+   DBG("Allocating %d x %d Intel RBO\n", width, height);
 
    irb->region = intel_region_alloc(intel, I915_TILING_NONE, cpp,
-				    width, height, pitch, GL_TRUE);
+				    width, height, GL_TRUE);
    if (!irb->region)
       return GL_FALSE;       /* out of memory? */
 
@@ -285,7 +282,8 @@ intel_nop_alloc_storage(GLcontext * ctx, struct gl_renderbuffer *rb,
 
 
 void
-intel_renderbuffer_set_region(struct intel_renderbuffer *rb,
+intel_renderbuffer_set_region(struct intel_context *intel,
+			      struct intel_renderbuffer *rb,
 			      struct intel_region *region)
 {
    struct intel_region *old;
@@ -293,6 +291,12 @@ intel_renderbuffer_set_region(struct intel_renderbuffer *rb,
    old = rb->region;
    rb->region = NULL;
    intel_region_reference(&rb->region, region);
+#ifndef I915
+   if (old) {
+      brw_state_cache_bo_delete(&brw_context(&intel->ctx)->surface_cache,
+				old->buffer);
+   }
+#endif
    intel_region_release(&old);
 }
 
@@ -416,7 +420,7 @@ intel_framebuffer_renderbuffer(GLcontext * ctx,
 {
    DBG("Intel FramebufferRenderbuffer %u %u\n", fb->Name, rb ? rb->Name : 0);
 
-   intelFlush(ctx);
+   intel_flush(ctx);
 
    _mesa_framebuffer_renderbuffer(ctx, fb, attachment, rb);
    intel_draw_buffer(ctx, fb);
@@ -573,7 +577,7 @@ intel_render_texture(GLcontext * ctx,
 				  att->Zoffset,
 				  &dst_x, &dst_y);
 
-   intel_image->mt->region->draw_offset = (dst_y * intel_image->mt->pitch +
+   intel_image->mt->region->draw_offset = (dst_y * intel_image->mt->region->pitch +
 					   dst_x) * intel_image->mt->cpp;
    intel_image->mt->region->draw_x = dst_x;
    intel_image->mt->region->draw_y = dst_y;

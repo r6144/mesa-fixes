@@ -37,6 +37,43 @@
 #include "brw_context.h"
 #include "brw_vs.h"
 
+/* Return the SrcReg index of the channels that can be immediate float operands
+ * instead of usage of PROGRAM_CONSTANT values through push/pull.
+ */
+static GLboolean
+brw_vs_arg_can_be_immediate(enum prog_opcode opcode, int arg)
+{
+   int opcode_array[] = {
+      [OPCODE_ADD] = 2,
+      [OPCODE_CMP] = 3,
+      [OPCODE_DP3] = 2,
+      [OPCODE_DP4] = 2,
+      [OPCODE_DPH] = 2,
+      [OPCODE_MAX] = 2,
+      [OPCODE_MIN] = 2,
+      [OPCODE_MUL] = 2,
+      [OPCODE_SEQ] = 2,
+      [OPCODE_SGE] = 2,
+      [OPCODE_SGT] = 2,
+      [OPCODE_SLE] = 2,
+      [OPCODE_SLT] = 2,
+      [OPCODE_SNE] = 2,
+      [OPCODE_XPD] = 2,
+   };
+
+   /* These opcodes get broken down in a way that allow two
+    * args to be immediates.
+    */
+   if (opcode == OPCODE_MAD || opcode == OPCODE_LRP) {
+      if (arg == 1 || arg == 2)
+	 return GL_TRUE;
+   }
+
+   if (opcode > ARRAY_SIZE(opcode_array))
+      return GL_FALSE;
+
+   return arg == opcode_array[opcode] - 1;
+}
 
 static struct brw_reg get_tmp( struct brw_vs_compile *c )
 {
@@ -182,7 +219,7 @@ static void brw_vs_alloc_regs( struct brw_vs_compile *c )
 
    if (intel->gen >= 6)
       mrf = 6;
-   else if (intel->is_ironlake)
+   else if (intel->gen == 5)
       mrf = 8;
    else
       mrf = 4;
@@ -283,7 +320,7 @@ static void brw_vs_alloc_regs( struct brw_vs_compile *c )
 
    if (intel->gen >= 6)
       c->prog_data.urb_entry_size = (attributes_in_vue + 4 + 7) / 8;
-   else if (intel->is_ironlake)
+   else if (intel->gen == 5)
       c->prog_data.urb_entry_size = (attributes_in_vue + 6 + 3) / 4;
    else
       c->prog_data.urb_entry_size = (attributes_in_vue + 2 + 3) / 4;
@@ -384,8 +421,9 @@ static void emit_sop( struct brw_vs_compile *c,
 {
    struct brw_compile *p = &c->func;
 
-   brw_CMP(p, brw_null_reg(), cond, arg1, arg0);
-   brw_SEL(p, dst, brw_null_reg(), brw_imm_f(1.0f));
+   brw_MOV(p, dst, brw_imm_f(0.0f));
+   brw_CMP(p, brw_null_reg(), cond, arg0, arg1);
+   brw_MOV(p, dst, brw_imm_f(1.0f));
    brw_set_predicate_control_flag_value(p, 0xff);
 }
 
@@ -452,8 +490,8 @@ static void emit_max( struct brw_compile *p,
 		      struct brw_reg arg0,
 		      struct brw_reg arg1 )
 {
-   brw_CMP(p, brw_null_reg(), BRW_CONDITIONAL_L, arg0, arg1);
-   brw_SEL(p, dst, arg1, arg0);
+   brw_CMP(p, brw_null_reg(), BRW_CONDITIONAL_GE, arg0, arg1);
+   brw_SEL(p, dst, arg0, arg1);
    brw_set_predicate_control(p, BRW_PREDICATE_NONE);
 }
 
@@ -982,6 +1020,55 @@ get_src_reg( struct brw_vs_compile *c,
    const GLint index = inst->SrcReg[argIndex].Index;
    const GLboolean relAddr = inst->SrcReg[argIndex].RelAddr;
 
+   if (brw_vs_arg_can_be_immediate(inst->Opcode, argIndex)) {
+      const struct prog_src_register *src = &inst->SrcReg[argIndex];
+
+      if (src->Swizzle == MAKE_SWIZZLE4(SWIZZLE_ZERO,
+					SWIZZLE_ZERO,
+					SWIZZLE_ZERO,
+					SWIZZLE_ZERO)) {
+	  return brw_imm_f(0.0f);
+      } else if (src->Swizzle == MAKE_SWIZZLE4(SWIZZLE_ONE,
+					       SWIZZLE_ONE,
+					       SWIZZLE_ONE,
+					       SWIZZLE_ONE)) {
+	 if (src->Negate)
+	    return brw_imm_f(-1.0F);
+	 else
+	    return brw_imm_f(1.0F);
+      } else if (src->File == PROGRAM_CONSTANT) {
+	 const struct gl_program_parameter_list *params;
+	 float f;
+	 int component = -1;
+
+	 switch (src->Swizzle) {
+	 case SWIZZLE_XXXX:
+	    component = 0;
+	    break;
+	 case SWIZZLE_YYYY:
+	    component = 1;
+	    break;
+	 case SWIZZLE_ZZZZ:
+	    component = 2;
+	    break;
+	 case SWIZZLE_WWWW:
+	    component = 3;
+	    break;
+	 }
+
+	 if (component >= 0) {
+	    params = c->vp->program.Base.Parameters;
+	    f = params->ParameterValues[src->Index][component];
+
+	    if (src->Abs)
+	       f = fabs(f);
+	    if (src->Negate)
+	       f = -f;
+	    return brw_imm_f(f);
+	 }
+      }
+   }
+
    switch (file) {
    case PROGRAM_TEMPORARY:
    case PROGRAM_INPUT:
@@ -1287,7 +1374,7 @@ static void emit_vertex_write( struct brw_vs_compile *c)
       brw_MOV(p, offset(m0, 2), pos);
       brw_MOV(p, offset(m0, 5), pos);
       len_vertex_header = 4;
-   } else if (intel->is_ironlake) {
+   } else if (intel->gen == 5) {
       /* There are 20 DWs (D0-D19) in VUE header on Ironlake:
        * dword 0-3 (m1) of the header is indices, point width, clip flags.
        * dword 4-7 (m2) is the ndc position (set above)
@@ -1357,31 +1444,6 @@ static void emit_vertex_write( struct brw_vs_compile *c)
                     1,              /* writes complete */
                     BRW_MAX_MRF-1,  /* urb destination offset */
                     BRW_URB_SWIZZLE_INTERLEAVE);
-   }
-}
-
-
-/**
- * Called after code generation to resolve subroutine calls and the
- * END instruction.
- * \param end_inst  points to brw code for END instruction
- * \param last_inst  points to last instruction emitted before vertex write
- */
-static void 
-post_vs_emit( struct brw_vs_compile *c,
-              struct brw_instruction *end_inst,
-              struct brw_instruction *last_inst )
-{
-   GLint offset;
-
-   brw_resolve_cals(&c->func);
-
-   /* patch up the END code to jump past subroutines, etc */
-   offset = last_inst - end_inst;
-   if (offset > 1) {
-      brw_set_src1(end_inst, brw_imm_d(offset * 16));
-   } else {
-      end_inst->header.opcode = BRW_OPCODE_NOP;
    }
 }
 
@@ -1465,8 +1527,6 @@ void brw_vs_emit(struct brw_vs_compile *c )
    struct intel_context *intel = &brw->intel;
    const GLuint nr_insns = c->vp->program.Base.NumInstructions;
    GLuint insn, if_depth = 0, loop_depth = 0;
-   GLuint end_offset = 0;
-   struct brw_instruction *end_inst, *last_inst;
    struct brw_instruction *if_inst[MAX_IF_DEPTH], *loop_inst[MAX_LOOP_DEPTH] = { 0 };
    const struct brw_indirect stack_index = brw_indirect(0, 0);   
    GLuint index;
@@ -1683,6 +1743,7 @@ void brw_vs_emit(struct brw_vs_compile *c )
 	 if_depth++;
 	 break;
       case OPCODE_ELSE:
+	 assert(if_depth > 0);
 	 if_inst[if_depth-1] = brw_ELSE(p, if_inst[if_depth-1]);
 	 break;
       case OPCODE_ENDIF:
@@ -1709,7 +1770,7 @@ void brw_vs_emit(struct brw_vs_compile *c )
 
             loop_depth--;
 
-	    if (intel->is_ironlake)
+	    if (intel->gen == 5)
 	       br = 2;
 
             inst0 = inst1 = brw_WHILE(p, loop_inst[loop_depth]);
@@ -1750,12 +1811,8 @@ void brw_vs_emit(struct brw_vs_compile *c )
          brw_MOV(p, brw_ip_reg(), deref_1d(stack_index, 0));
 	 brw_set_access_mode(p, BRW_ALIGN_16);
 	 break;
-      case OPCODE_END:	
-         end_offset = p->nr_insn;
-         /* this instruction will get patched later to jump past subroutine
-          * code, etc.
-          */
-         brw_ADD(p, brw_ip_reg(), brw_ip_reg(), brw_imm_d(1*16));
+      case OPCODE_END:
+	 emit_vertex_write(c);
          break;
       case OPCODE_PRINT:
          /* no-op */
@@ -1816,13 +1873,7 @@ void brw_vs_emit(struct brw_vs_compile *c )
       release_tmps(c);
    }
 
-   end_inst = &p->store[end_offset];
-   last_inst = &p->store[p->nr_insn];
-
-   /* The END instruction will be patched to jump to this code */
-   emit_vertex_write(c);
-
-   post_vs_emit(c, end_inst, last_inst);
+   brw_resolve_cals(p);
 
    brw_optimize(p);
 
@@ -1831,7 +1882,7 @@ void brw_vs_emit(struct brw_vs_compile *c )
 
       printf("vs-native:\n");
       for (i = 0; i < p->nr_insn; i++)
-	 brw_disasm(stderr, &p->store[i]);
+	 brw_disasm(stderr, &p->store[i], intel->gen);
       printf("\n");
    }
 }

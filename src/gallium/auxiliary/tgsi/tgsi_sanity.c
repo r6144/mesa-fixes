@@ -235,8 +235,8 @@ static const char *file_names[TGSI_FILE_COUNT] =
    "SAMP",
    "ADDR",
    "IMM",
-   "LOOP",
-   "PRED"
+   "PRED",
+   "SV"
 };
 
 static boolean
@@ -344,25 +344,6 @@ iter_instruction(
             "indirect",
             FALSE );
       }
-   }
-
-   switch (inst->Instruction.Opcode) {
-   case TGSI_OPCODE_BGNFOR:
-   case TGSI_OPCODE_ENDFOR:
-      if (inst->Dst[0].Register.File != TGSI_FILE_LOOP ||
-          inst->Dst[0].Register.Index != 0) {
-         report_error(ctx, "Destination register must be LOOP[0]");
-      }
-      break;
-   }
-
-   switch (inst->Instruction.Opcode) {
-   case TGSI_OPCODE_BGNFOR:
-      if (inst->Src[0].Register.File != TGSI_FILE_CONSTANT &&
-          inst->Src[0].Register.File != TGSI_FILE_IMMEDIATE) {
-         report_error(ctx, "Source register file must be either CONST or IMM");
-      }
-      break;
    }
 
    ctx->num_instructions++;

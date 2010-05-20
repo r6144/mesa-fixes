@@ -74,6 +74,24 @@ void debug_print_blob( const char *name,
 #endif
 
 
+static boolean
+debug_get_option_should_print(void)
+{
+   static boolean first = TRUE;
+   static boolean value = FALSE;
+
+   if (!first)
+      return value;
+
+   /* Oh hey this will call into this function,
+    * but its cool since we set first to false
+    */
+   first = FALSE;
+   value = debug_get_bool_option("GALLIUM_PRINT_OPTIONS", TRUE);
+   /* XXX should we print this option? Currently it wont */
+   return value;
+}
+
 const char *
 debug_get_option(const char *name, const char *dfault)
 {
@@ -82,8 +100,9 @@ debug_get_option(const char *name, const char *dfault)
    result = os_get_option(name);
    if(!result)
       result = dfault;
-      
-   debug_printf("%s: %s = %s\n", __FUNCTION__, name, result ? result : "(null)");
+
+   if (debug_get_option_should_print())
+      debug_printf("%s: %s = %s\n", __FUNCTION__, name, result ? result : "(null)");
    
    return result;
 }
@@ -104,12 +123,17 @@ debug_get_bool_option(const char *name, boolean dfault)
       result = FALSE;
    else if(!util_strcmp(str, "f"))
       result = FALSE;
+   else if(!util_strcmp(str, "F"))
+      result = FALSE;
    else if(!util_strcmp(str, "false"))
+      result = FALSE;
+   else if(!util_strcmp(str, "FALSE"))
       result = FALSE;
    else
       result = TRUE;
 
-   debug_printf("%s: %s = %s\n", __FUNCTION__, name, result ? "TRUE" : "FALSE");
+   if (debug_get_option_should_print())
+      debug_printf("%s: %s = %s\n", __FUNCTION__, name, result ? "TRUE" : "FALSE");
    
    return result;
 }
@@ -142,8 +166,9 @@ debug_get_num_option(const char *name, long dfault)
       }
       result *= sign;
    }
-   
-   debug_printf("%s: %s = %li\n", __FUNCTION__, name, result);
+
+   if (debug_get_option_should_print())
+      debug_printf("%s: %s = %li\n", __FUNCTION__, name, result);
 
    return result;
 }
@@ -176,11 +201,12 @@ debug_get_flags_option(const char *name,
       }
    }
 
-   if (str) {
-      debug_printf("%s: %s = 0x%lx (%s)\n", __FUNCTION__, name, result, str);
-   }
-   else {
-      debug_printf("%s: %s = 0x%lx\n", __FUNCTION__, name, result);
+   if (debug_get_option_should_print()) {
+      if (str) {
+         debug_printf("%s: %s = 0x%lx (%s)\n", __FUNCTION__, name, result, str);
+      } else {
+         debug_printf("%s: %s = 0x%lx\n", __FUNCTION__, name, result);
+      }
    }
 
    return result;
@@ -425,7 +451,7 @@ void debug_dump_surface(struct pipe_context *pipe,
 			const char *prefix,
                         struct pipe_surface *surface)     
 {
-   struct pipe_texture *texture;
+   struct pipe_resource *texture;
    struct pipe_transfer *transfer;
    void *data;
 
@@ -440,7 +466,7 @@ void debug_dump_surface(struct pipe_context *pipe,
     */
    texture = surface->texture;
 
-   transfer = pipe->get_tex_transfer(pipe, texture, surface->face,
+   transfer = pipe_get_transfer(pipe, texture, surface->face,
 				     surface->level, surface->zslice,
 				     PIPE_TRANSFER_READ, 0, 0, surface->width,
 				     surface->height);
@@ -452,20 +478,20 @@ void debug_dump_surface(struct pipe_context *pipe,
    debug_dump_image(prefix, 
                     texture->format,
                     util_format_get_blocksize(texture->format), 
-                    util_format_get_nblocksx(texture->format, transfer->width),
-                    util_format_get_nblocksy(texture->format, transfer->height),
+                    util_format_get_nblocksx(texture->format, surface->width),
+                    util_format_get_nblocksy(texture->format, surface->height),
                     transfer->stride,
                     data);
    
    pipe->transfer_unmap(pipe, transfer);
 error:
-   pipe->tex_transfer_destroy(pipe, transfer);
+   pipe->transfer_destroy(pipe, transfer);
 }
 
 
 void debug_dump_texture(struct pipe_context *pipe,
                         const char *prefix,
-                        struct pipe_texture *texture)
+                        struct pipe_resource *texture)
 {
    struct pipe_surface *surface;
    struct pipe_screen *screen;
@@ -477,7 +503,7 @@ void debug_dump_texture(struct pipe_context *pipe,
 
    /* XXX for now, just dump image for face=0, level=0 */
    surface = screen->get_tex_surface(screen, texture, 0, 0, 0,
-                                     PIPE_TEXTURE_USAGE_SAMPLER);
+                                     PIPE_BIND_SAMPLER_VIEW);
    if (surface) {
       debug_dump_surface(pipe, prefix, surface);
       screen->tex_surface_destroy(surface);
@@ -523,16 +549,16 @@ debug_dump_surface_bmp(struct pipe_context *pipe,
 {
 #ifndef PIPE_SUBSYSTEM_WINDOWS_MINIPORT
    struct pipe_transfer *transfer;
-   struct pipe_texture *texture = surface->texture;
+   struct pipe_resource *texture = surface->texture;
 
-   transfer = pipe->get_tex_transfer(pipe, texture, surface->face,
-				     surface->level, surface->zslice,
-				     PIPE_TRANSFER_READ, 0, 0, surface->width,
-				     surface->height);
+   transfer = pipe_get_transfer(pipe, texture, surface->face,
+				surface->level, surface->zslice,
+				PIPE_TRANSFER_READ, 0, 0, surface->width,
+				surface->height);
 
    debug_dump_transfer_bmp(pipe, filename, transfer);
 
-   pipe->tex_transfer_destroy(pipe, transfer);
+   pipe->transfer_destroy(pipe, transfer);
 #endif
 }
 
@@ -547,17 +573,20 @@ debug_dump_transfer_bmp(struct pipe_context *pipe,
    if (!transfer)
       goto error1;
 
-   rgba = MALLOC(transfer->width*transfer->height*4*sizeof(float));
+   rgba = MALLOC(transfer->box.width *
+		 transfer->box.height *
+		 transfer->box.depth *
+		 4*sizeof(float));
    if(!rgba)
       goto error1;
 
    pipe_get_tile_rgba(pipe, transfer, 0, 0,
-                      transfer->width, transfer->height,
+                      transfer->box.width, transfer->box.height,
                       rgba);
 
    debug_dump_float_rgba_bmp(filename,
-                             transfer->width, transfer->height,
-                             rgba, transfer->width);
+                             transfer->box.width, transfer->box.height,
+                             rgba, transfer->box.width);
 
    FREE(rgba);
 error1:

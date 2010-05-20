@@ -31,8 +31,6 @@
 #include "id_drm.h"
 #include "id_screen.h"
 #include "id_public.h"
-#include "id_screen.h"
-#include "id_objects.h"
 
 struct identity_drm_api
 {
@@ -70,7 +68,7 @@ identity_drm_destroy(struct drm_api *_api)
    struct drm_api *api = id_api->api;
    api->destroy(api);
 
-   free(id_api);
+   FREE(id_api);
 }
 
 struct drm_api *

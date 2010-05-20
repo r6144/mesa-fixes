@@ -1929,20 +1929,32 @@ emit_instruction(
       break;
 
    case TGSI_OPCODE_MUL:
+      /* do all fetches and adds, storing results in temp regs */
       FOR_EACH_DST0_ENABLED_CHANNEL( *inst, chan_index ) {
-         FETCH( func, *inst, 0, 0, chan_index );
-         FETCH( func, *inst, 1, 1, chan_index );
-         emit_mul( func, 0, 1 );
-         STORE( func, *inst, 0, 0, chan_index );
+         int r = chan_index + 1;
+         FETCH( func, *inst, 0, 0, chan_index ); /* load xmm[0] */
+         FETCH( func, *inst, r, 1, chan_index ); /* load xmm[r] */
+         emit_mul( func, r, 0 );   /* xmm[r] = xmm[r] * xmm[0] */
+      }
+      /* do all stores of the temp regs */
+      FOR_EACH_DST0_ENABLED_CHANNEL( *inst, chan_index ) {
+         int r = chan_index + 1;
+         STORE( func, *inst, r, 0, chan_index ); /* store xmm[r] */
       }
       break;
 
    case TGSI_OPCODE_ADD:
+      /* do all fetches and adds, storing results in temp regs */
       FOR_EACH_DST0_ENABLED_CHANNEL( *inst, chan_index ) {
-         FETCH( func, *inst, 0, 0, chan_index );
-         FETCH( func, *inst, 1, 1, chan_index );
-         emit_add( func, 0, 1 );
-         STORE( func, *inst, 0, 0, chan_index );
+         int r = chan_index + 1;
+         FETCH( func, *inst, 0, 0, chan_index ); /* load xmm[0] */
+         FETCH( func, *inst, r, 1, chan_index ); /* load xmm[r] */
+         emit_add( func, r, 0 );   /* xmm[r] = xmm[r] + xmm[0] */
+      }
+      /* do all stores of the temp regs */
+      FOR_EACH_DST0_ENABLED_CHANNEL( *inst, chan_index ) {
+         int r = chan_index + 1;
+         STORE( func, *inst, r, 0, chan_index ); /* store xmm[r] */
       }
       break;
 
@@ -2533,27 +2545,11 @@ emit_instruction(
       return 0;
       break;
 
-   case TGSI_OPCODE_BGNFOR:
-      return 0;
-      break;
-
-   case TGSI_OPCODE_REP:
-      return 0;
-      break;
-
    case TGSI_OPCODE_ELSE:
       return 0;
       break;
 
    case TGSI_OPCODE_ENDIF:
-      return 0;
-      break;
-
-   case TGSI_OPCODE_ENDFOR:
-      return 0;
-      break;
-
-   case TGSI_OPCODE_ENDREP:
       return 0;
       break;
 
@@ -2832,6 +2828,40 @@ static void soa_to_aos( struct x86_function *func,
    x86_pop( func, x86_make_reg( file_REG32, reg_BX ) );
 }
 
+
+/**
+ * Check if the instructions dst register is the same as any src
+ * register and warn if there's a posible SOA dependency.
+ */
+static void
+check_soa_dependencies(const struct tgsi_full_instruction *inst)
+{
+   switch (inst->Instruction.Opcode) {
+   case TGSI_OPCODE_ADD:
+   case TGSI_OPCODE_MOV:
+   case TGSI_OPCODE_MUL:
+   case TGSI_OPCODE_XPD:
+      /* OK - these opcodes correctly handle SOA dependencies */
+      break;
+   default:
+      if (tgsi_check_soa_dependencies(inst)) {
+         uint opcode = inst->Instruction.Opcode;
+
+         /* XXX: we only handle src/dst aliasing in a few opcodes
+          * currently.  Need to use an additional temporay to hold
+          * the result in the cases where the code is too opaque to
+          * fix.
+          */
+         if (opcode != TGSI_OPCODE_MOV) {
+            debug_printf("Warning: src/dst aliasing in instruction"
+                         " is not handled:\n");
+            tgsi_dump_instruction(inst, 1);
+         }
+      }
+   }
+}
+
+
 /**
  * Translate a TGSI vertex/fragment shader to SSE2 code.
  * Slightly different things are done for vertex vs. fragment shaders.
@@ -2921,27 +2951,14 @@ tgsi_emit_sse2(
 
 	 if (!ok) {
             uint opcode = parse.FullToken.FullInstruction.Instruction.Opcode;
+            uint proc = parse.FullHeader.Processor.Processor;
 	    debug_printf("failed to translate tgsi opcode %d (%s) to SSE (%s)\n", 
 			 opcode,
                          tgsi_get_opcode_name(opcode),
-                         parse.FullHeader.Processor.Processor == TGSI_PROCESSOR_VERTEX ?
-                         "vertex shader" : "fragment shader");
+                         tgsi_get_processor_name(proc));
 	 }
 
-         if (tgsi_check_soa_dependencies(&parse.FullToken.FullInstruction)) {
-            uint opcode = parse.FullToken.FullInstruction.Instruction.Opcode;
-
-            /* XXX: we only handle src/dst aliasing in a few opcodes
-             * currently.  Need to use an additional temporay to hold
-             * the result in the cases where the code is too opaque to
-             * fix.
-             */
-            if (opcode != TGSI_OPCODE_MOV) {
-               debug_printf("Warning: src/dst aliasing in instruction"
-                            " is not handled:\n");
-               tgsi_dump_instruction(&parse.FullToken.FullInstruction, 1);
-            }
-         }
+         check_soa_dependencies(&parse.FullToken.FullInstruction);
          break;
 
       case TGSI_TOKEN_TYPE_IMMEDIATE:

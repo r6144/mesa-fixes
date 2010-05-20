@@ -27,18 +27,22 @@
 
 
 #include "util/u_memory.h"
+#include "util/u_math.h"
+#include "util/u_cpu_detect.h"
 #include "util/u_format.h"
+#include "util/u_format_s3tc.h"
 #include "pipe/p_defines.h"
 #include "pipe/p_screen.h"
 
+#include "gallivm/lp_bld_limits.h"
 #include "lp_texture.h"
-#include "lp_buffer.h"
 #include "lp_fence.h"
 #include "lp_jit.h"
 #include "lp_screen.h"
 #include "lp_context.h"
 #include "lp_debug.h"
 #include "lp_public.h"
+#include "lp_limits.h"
 
 #include "state_tracker/sw_winsys.h"
 
@@ -49,16 +53,13 @@ static const struct debug_named_value lp_debug_flags[] = {
    { "pipe",   DEBUG_PIPE },
    { "tgsi",   DEBUG_TGSI },
    { "tex",    DEBUG_TEX },
-   { "asm",    DEBUG_ASM },
    { "setup",  DEBUG_SETUP },
    { "rast",   DEBUG_RAST },
    { "query",  DEBUG_QUERY },
    { "screen", DEBUG_SCREEN },
-   { "jit",    DEBUG_JIT },
    { "show_tiles",    DEBUG_SHOW_TILES },
    { "show_subtiles", DEBUG_SHOW_SUBTILES },
    { "counters", DEBUG_COUNTERS },
-   { "nopt", DEBUG_NO_LLVM_OPT },
    {NULL, 0}
 };
 #endif
@@ -79,7 +80,7 @@ llvmpipe_get_name(struct pipe_screen *screen)
 
 
 static int
-llvmpipe_get_param(struct pipe_screen *screen, int param)
+llvmpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
 {
    switch (param) {
    case PIPE_CAP_MAX_TEXTURE_IMAGE_UNITS:
@@ -94,6 +95,8 @@ llvmpipe_get_param(struct pipe_screen *screen, int param)
       return 1;
    case PIPE_CAP_GLSL:
       return 1;
+   case PIPE_CAP_SM3:
+      return 1;
    case PIPE_CAP_ANISOTROPIC_FILTER:
       return 0;
    case PIPE_CAP_POINT_SPRITE:
@@ -102,6 +105,8 @@ llvmpipe_get_param(struct pipe_screen *screen, int param)
       return PIPE_MAX_COLOR_BUFS;
    case PIPE_CAP_OCCLUSION_QUERY:
       return 1;
+   case PIPE_CAP_TIMER_QUERY:
+      return 0;
    case PIPE_CAP_TEXTURE_MIRROR_CLAMP:
       return 1;
    case PIPE_CAP_TEXTURE_MIRROR_REPEAT:
@@ -119,7 +124,7 @@ llvmpipe_get_param(struct pipe_screen *screen, int param)
    case PIPE_CAP_BLEND_EQUATION_SEPARATE:
       return 1;
    case PIPE_CAP_INDEP_BLEND_ENABLE:
-      return 0;
+      return 1;
    case PIPE_CAP_INDEP_BLEND_FUNC:
       return 0;
    case PIPE_CAP_TGSI_FS_COORD_ORIGIN_UPPER_LEFT:
@@ -128,14 +133,44 @@ llvmpipe_get_param(struct pipe_screen *screen, int param)
    case PIPE_CAP_TGSI_FS_COORD_ORIGIN_LOWER_LEFT:
    case PIPE_CAP_TGSI_FS_COORD_PIXEL_CENTER_HALF_INTEGER:
       return 0;
+   case PIPE_CAP_MAX_VS_INSTRUCTIONS:
+   case PIPE_CAP_MAX_FS_INSTRUCTIONS:
+   case PIPE_CAP_MAX_VS_ALU_INSTRUCTIONS:
+   case PIPE_CAP_MAX_FS_ALU_INSTRUCTIONS:
+   case PIPE_CAP_MAX_VS_TEX_INSTRUCTIONS:
+   case PIPE_CAP_MAX_FS_TEX_INSTRUCTIONS:
+   case PIPE_CAP_MAX_VS_TEX_INDIRECTIONS:
+   case PIPE_CAP_MAX_FS_TEX_INDIRECTIONS:
+      /* There is no limit in number of instructions beyond available memory */
+      return 32768;
+   case PIPE_CAP_MAX_VS_CONTROL_FLOW_DEPTH:
+   case PIPE_CAP_MAX_FS_CONTROL_FLOW_DEPTH:
+      return LP_MAX_TGSI_NESTING;
+   case PIPE_CAP_MAX_VS_INPUTS:
+   case PIPE_CAP_MAX_FS_INPUTS:
+      return PIPE_MAX_ATTRIBS;
+   case PIPE_CAP_MAX_FS_CONSTS:
+   case PIPE_CAP_MAX_VS_CONSTS:
+      /* There is no limit in number of constants beyond available memory */
+      return 32768;
+   case PIPE_CAP_MAX_VS_TEMPS:
+   case PIPE_CAP_MAX_FS_TEMPS:
+      return LP_MAX_TGSI_TEMPS;
+   case PIPE_CAP_MAX_VS_ADDRS:
+   case PIPE_CAP_MAX_FS_ADDRS:
+      return LP_MAX_TGSI_ADDRS;
+   case PIPE_CAP_MAX_VS_PREDS:
+   case PIPE_CAP_MAX_FS_PREDS:
+      return LP_MAX_TGSI_PREDS;
    default:
+      assert(0);
       return 0;
    }
 }
 
 
 static float
-llvmpipe_get_paramf(struct pipe_screen *screen, int param)
+llvmpipe_get_paramf(struct pipe_screen *screen, enum pipe_cap param)
 {
    switch (param) {
    case PIPE_CAP_MAX_LINE_WIDTH:
@@ -150,7 +185,13 @@ llvmpipe_get_paramf(struct pipe_screen *screen, int param)
       return 16.0; /* not actually signficant at this time */
    case PIPE_CAP_MAX_TEXTURE_LOD_BIAS:
       return 16.0; /* arbitrary */
+   case PIPE_CAP_GUARD_BAND_LEFT:
+   case PIPE_CAP_GUARD_BAND_TOP:
+   case PIPE_CAP_GUARD_BAND_RIGHT:
+   case PIPE_CAP_GUARD_BAND_BOTTOM:
+      return 0.0;
    default:
+      assert(0);
       return 0;
    }
 }
@@ -165,7 +206,7 @@ static boolean
 llvmpipe_is_format_supported( struct pipe_screen *_screen,
                               enum pipe_format format, 
                               enum pipe_texture_target target,
-                              unsigned tex_usage, 
+                              unsigned bind,
                               unsigned geom_flags )
 {
    struct llvmpipe_screen *screen = llvmpipe_screen(_screen);
@@ -173,7 +214,7 @@ llvmpipe_is_format_supported( struct pipe_screen *_screen,
    const struct util_format_description *format_desc;
 
    format_desc = util_format_description(format);
-   if(!format_desc)
+   if (!format_desc)
       return FALSE;
 
    assert(target == PIPE_TEXTURE_1D ||
@@ -181,61 +222,42 @@ llvmpipe_is_format_supported( struct pipe_screen *_screen,
           target == PIPE_TEXTURE_3D ||
           target == PIPE_TEXTURE_CUBE);
 
-   switch(format) {
-   case PIPE_FORMAT_DXT1_RGB:
-   case PIPE_FORMAT_DXT1_RGBA:
-   case PIPE_FORMAT_DXT3_RGBA:
-   case PIPE_FORMAT_DXT5_RGBA:
-      return FALSE;
-   default:
-      break;
-   }
-
-   if(tex_usage & PIPE_TEXTURE_USAGE_RENDER_TARGET) {
-      if(format_desc->block.width != 1 ||
-         format_desc->block.height != 1)
+   if (bind & PIPE_BIND_RENDER_TARGET) {
+      if (format_desc->colorspace == UTIL_FORMAT_COLORSPACE_ZS)
          return FALSE;
 
-      if(format_desc->layout != UTIL_FORMAT_LAYOUT_PLAIN)
+      if (format_desc->layout != UTIL_FORMAT_LAYOUT_PLAIN)
          return FALSE;
 
-      if(format_desc->colorspace != UTIL_FORMAT_COLORSPACE_RGB &&
-         format_desc->colorspace != UTIL_FORMAT_COLORSPACE_SRGB)
+      if (format_desc->block.width != 1 ||
+          format_desc->block.height != 1)
          return FALSE;
    }
 
-   if(tex_usage & PIPE_TEXTURE_USAGE_DISPLAY_TARGET) {
-      if(!winsys->is_displaytarget_format_supported(winsys, format))
+   if (bind & PIPE_BIND_DISPLAY_TARGET) {
+      if(!winsys->is_displaytarget_format_supported(winsys, bind, format))
          return FALSE;
    }
 
-   if(tex_usage & PIPE_TEXTURE_USAGE_DEPTH_STENCIL) {
-      if(format_desc->colorspace != UTIL_FORMAT_COLORSPACE_ZS)
+   if (bind & PIPE_BIND_DEPTH_STENCIL) {
+      if (format_desc->layout != UTIL_FORMAT_LAYOUT_PLAIN)
+         return FALSE;
+
+      if (format_desc->colorspace != UTIL_FORMAT_COLORSPACE_ZS)
          return FALSE;
 
       /* FIXME: Temporary restriction. See lp_state_fs.c. */
-      if(format_desc->block.bits != 32)
+      if (format_desc->block.bits != 32)
          return FALSE;
    }
 
-   /* FIXME: Temporary restrictions. See lp_bld_sample_soa.c */
-   if(tex_usage & PIPE_TEXTURE_USAGE_SAMPLER) {
-      if(format_desc->block.width != 1 ||
-         format_desc->block.height != 1)
-         return FALSE;
-
-      if(format_desc->layout != UTIL_FORMAT_LAYOUT_PLAIN)
-         return FALSE;
-
-      if(format_desc->colorspace != UTIL_FORMAT_COLORSPACE_RGB &&
-         format_desc->colorspace != UTIL_FORMAT_COLORSPACE_ZS)
-         return FALSE;
-
-      /* not supported yet */
-      if (format == PIPE_FORMAT_Z16_UNORM)
-         return FALSE;
+   if (format_desc->layout == UTIL_FORMAT_LAYOUT_S3TC) {
+      return util_format_s3tc_enabled;
    }
 
+   /*
+    * Everything else should be supported by u_format.
+    */
    return TRUE;
 }
 
@@ -249,7 +271,7 @@ llvmpipe_flush_frontbuffer(struct pipe_screen *_screen,
 {
    struct llvmpipe_screen *screen = llvmpipe_screen(_screen);
    struct sw_winsys *winsys = screen->winsys;
-   struct llvmpipe_texture *texture = llvmpipe_texture(surface->texture);
+   struct llvmpipe_resource *texture = llvmpipe_resource(surface->texture);
 
    assert(texture->dt);
    if (texture->dt)
@@ -280,7 +302,16 @@ llvmpipe_destroy_screen( struct pipe_screen *_screen )
 struct pipe_screen *
 llvmpipe_create_screen(struct sw_winsys *winsys)
 {
-   struct llvmpipe_screen *screen = CALLOC_STRUCT(llvmpipe_screen);
+   struct llvmpipe_screen *screen;
+
+#ifdef PIPE_ARCH_X86
+   /* require SSE2 due to LLVM PR6960. */
+   util_cpu_detect();
+   if (!util_cpu_caps.has_sse2)
+       return NULL;
+#endif
+
+   screen = CALLOC_STRUCT(llvmpipe_screen);
 
 #ifdef DEBUG
    LP_DEBUG = debug_get_flags_option("LP_DEBUG", lp_debug_flags, 0 );
@@ -302,11 +333,26 @@ llvmpipe_create_screen(struct sw_winsys *winsys)
    screen->base.context_create = llvmpipe_create_context;
    screen->base.flush_frontbuffer = llvmpipe_flush_frontbuffer;
 
-   llvmpipe_init_screen_texture_funcs(&screen->base);
-   llvmpipe_init_screen_buffer_funcs(&screen->base);
+   llvmpipe_init_screen_resource_funcs(&screen->base);
    llvmpipe_init_screen_fence_funcs(&screen->base);
 
    lp_jit_screen_init(screen);
+
+#ifdef PIPE_OS_WINDOWS
+   /* Multithreading not supported on windows until conditions and barriers are
+    * properly implemented. */
+   screen->num_threads = 0;
+#else
+#ifdef PIPE_OS_EMBEDDED
+   screen->num_threads = 0;
+#else
+   screen->num_threads = util_cpu_caps.nr_cpus;
+#endif
+   screen->num_threads = debug_get_num_option("LP_NUM_THREADS", screen->num_threads);
+   screen->num_threads = MIN2(screen->num_threads, LP_MAX_THREADS);
+#endif
+
+   util_format_s3tc_init();
 
    return &screen->base;
 }

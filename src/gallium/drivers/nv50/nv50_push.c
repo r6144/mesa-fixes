@@ -5,6 +5,7 @@
 
 #include "nouveau/nouveau_util.h"
 #include "nv50_context.h"
+#include "nv50_resource.h"
 
 struct push_context {
    struct nv50_context *nv50;
@@ -12,6 +13,7 @@ struct push_context {
    unsigned vtx_size;
 
    void *idxbuf;
+   int32_t idxbias;
    unsigned idxsize;
 
    float edgeflag;
@@ -143,6 +145,16 @@ emit_elt08(void *priv, unsigned start, unsigned count)
 }
 
 static void
+emit_elt08_biased(void *priv, unsigned start, unsigned count)
+{
+   struct push_context *ctx = priv;
+   uint8_t *idxbuf = ctx->idxbuf;
+
+   while (count--)
+      emit_vertex(ctx, idxbuf[start++] + ctx->idxbias);
+}
+
+static void
 emit_elt16(void *priv, unsigned start, unsigned count)
 {
    struct push_context *ctx = priv;
@@ -150,6 +162,16 @@ emit_elt16(void *priv, unsigned start, unsigned count)
 
    while (count--)
       emit_vertex(ctx, idxbuf[start++]);
+}
+
+static void
+emit_elt16_biased(void *priv, unsigned start, unsigned count)
+{
+   struct push_context *ctx = priv;
+   uint16_t *idxbuf = ctx->idxbuf;
+
+   while (count--)
+      emit_vertex(ctx, idxbuf[start++] + ctx->idxbias);
 }
 
 static void
@@ -163,6 +185,16 @@ emit_elt32(void *priv, unsigned start, unsigned count)
 }
 
 static void
+emit_elt32_biased(void *priv, unsigned start, unsigned count)
+{
+   struct push_context *ctx = priv;
+   uint32_t *idxbuf = ctx->idxbuf;
+
+   while (count--)
+      emit_vertex(ctx, idxbuf[start++] + ctx->idxbias);
+}
+
+static void
 emit_verts(void *priv, unsigned start, unsigned count)
 {
    while (count--)
@@ -171,7 +203,8 @@ emit_verts(void *priv, unsigned start, unsigned count)
 
 void
 nv50_push_elements_instanced(struct pipe_context *pipe,
-                             struct pipe_buffer *idxbuf, unsigned idxsize,
+                             struct pipe_resource *idxbuf,
+                             unsigned idxsize, int idxbias,
                              unsigned mode, unsigned start, unsigned count,
                              unsigned i_start, unsigned i_count)
 {
@@ -199,7 +232,7 @@ nv50_push_elements_instanced(struct pipe_context *pipe,
    for (i = 0; i < nv50->vtxelt->num_elements; i++) {
       struct pipe_vertex_element *ve = &nv50->vtxelt->pipe[i];
       struct pipe_vertex_buffer *vb = &nv50->vtxbuf[ve->vertex_buffer_index];
-      struct nouveau_bo *bo = nouveau_bo(vb->buffer);
+      struct nouveau_bo *bo = nv50_resource(vb->buffer)->bo;
       unsigned size, nr_components, n;
 
       if (!(nv50->vbo_fifo & (1 << i)))
@@ -260,13 +293,14 @@ nv50_push_elements_instanced(struct pipe_context *pipe,
 
    /* map index buffer, if present */
    if (idxbuf) {
-      struct nouveau_bo *bo = nouveau_bo(idxbuf);
+      struct nouveau_bo *bo = nv50_resource(idxbuf)->bo;
 
       if (nouveau_bo_map(bo, NOUVEAU_BO_RD)) {
          assert(bo->map);
          return;
       }
       ctx.idxbuf = bo->map;
+      ctx.idxbias = idxbias;
       ctx.idxsize = idxsize;
       nouveau_bo_unmap(bo);
    }
@@ -275,12 +309,12 @@ nv50_push_elements_instanced(struct pipe_context *pipe,
    s.edge = emit_edgeflag;
    if (idxbuf) {
       if (idxsize == 1)
-         s.emit = emit_elt08;
+         s.emit = idxbias ? emit_elt08_biased : emit_elt08;
       else
       if (idxsize == 2)
-         s.emit = emit_elt16;
+         s.emit = idxbias ? emit_elt16_biased : emit_elt16;
       else
-         s.emit = emit_elt32;
+         s.emit = idxbias ? emit_elt32_biased : emit_elt32;
    } else
       s.emit = emit_verts;
 

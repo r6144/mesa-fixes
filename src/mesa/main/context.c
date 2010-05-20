@@ -123,13 +123,12 @@
 #include "stencil.h"
 #include "texcompress_s3tc.h"
 #include "texstate.h"
+#include "transformfeedback.h"
 #include "mtypes.h"
 #include "varray.h"
 #include "version.h"
 #include "viewport.h"
 #include "vtxfmt.h"
-#include "glapi/glthread.h"
-#include "glapi/glapitable.h"
 #include "shader/program.h"
 #include "shader/prog_print.h"
 #include "shader/shader_api.h"
@@ -395,9 +394,28 @@ one_time_init( GLcontext *ctx )
 
       _mesa_get_cpu_features();
 
-      _mesa_init_remap_table();
+      switch (ctx->API) {
+#if FEATURE_GL
+      case API_OPENGL:
+	 _mesa_init_remap_table();
+	 break;
+#endif
+#if FEATURE_ES1
+      case API_OPENGLES:
+	 _mesa_init_remap_table_es1();
+	 break;
+#endif
+#if FEATURE_ES2
+      case API_OPENGLES2:
+	 _mesa_init_remap_table_es2();
+	 break;
+#endif
+      default:
+	 break;
+      }
 
       _mesa_init_sqrt_table();
+      _mesa_init_get_hash(ctx);
 
       for (i = 0; i < 256; i++) {
          _mesa_ubyte_to_float_color_tab[i] = (float) i / 255.0F;
@@ -560,6 +578,14 @@ _mesa_init_constants(GLcontext *ctx)
 
    /* GL_EXT_provoking_vertex */
    ctx->Const.QuadsFollowProvokingVertexConvention = GL_TRUE;
+
+   /* GL_EXT_transform_feedback */
+   ctx->Const.MaxTransformFeedbackSeparateAttribs = MAX_FEEDBACK_ATTRIBS;
+   ctx->Const.MaxTransformFeedbackSeparateComponents = 4 * MAX_FEEDBACK_ATTRIBS;
+   ctx->Const.MaxTransformFeedbackInterleavedComponents = 4 * MAX_FEEDBACK_ATTRIBS;
+
+   /* GL 3.2: hard-coded for now: */
+   ctx->Const.ProfileMask = GL_CONTEXT_COMPATIBILITY_PROFILE_BIT;
 }
 
 
@@ -627,6 +653,9 @@ check_context_limits(GLcontext *ctx)
 
    assert(ctx->Const.MaxDrawBuffers <= MAX_DRAW_BUFFERS);
 
+   /* if this fails, add more enum values to gl_buffer_index */
+   assert(BUFFER_COLOR0 + MAX_DRAW_BUFFERS <= BUFFER_COUNT);
+
    /* XXX probably add more tests */
 }
 
@@ -684,6 +713,7 @@ init_attrib_groups(GLcontext *ctx)
    _mesa_init_shader_state( ctx );
    _mesa_init_stencil( ctx );
    _mesa_init_transform( ctx );
+   _mesa_init_transform_feedback( ctx );
    _mesa_init_varray( ctx );
    _mesa_init_viewport( ctx );
 
@@ -739,8 +769,8 @@ generic_nop(void)
 /**
  * Allocate and initialize a new dispatch table.
  */
-static struct _glapi_table *
-alloc_dispatch_table(void)
+struct _glapi_table *
+_mesa_alloc_dispatch_table(int size)
 {
    /* Find the larger of Mesa's dispatch table and libGL's dispatch table.
     * In practice, this'll be the same for stand-alone Mesa.  But for DRI
@@ -748,7 +778,7 @@ alloc_dispatch_table(void)
     * DRI drivers.
     */
    GLint numEntries = MAX2(_glapi_get_dispatch_table_size(),
-                           sizeof(struct _glapi_table) / sizeof(_glapi_proc));
+                           size / sizeof(_glapi_proc));
    struct _glapi_table *table =
       (struct _glapi_table *) malloc(numEntries * sizeof(_glapi_proc));
    if (table) {
@@ -781,6 +811,7 @@ alloc_dispatch_table(void)
  * for debug flags.
  *
  * \param ctx the context to initialize
+ * \param api the GL API type to create the context for
  * \param visual describes the visual attributes for this context
  * \param share_list points to context to share textures, display lists,
  *        etc with, or NULL
@@ -789,26 +820,29 @@ alloc_dispatch_table(void)
  * \param driverContext pointer to driver-specific context data
  */
 GLboolean
-_mesa_initialize_context(GLcontext *ctx,
-                         const GLvisual *visual,
-                         GLcontext *share_list,
-                         const struct dd_function_table *driverFunctions,
-                         void *driverContext)
+_mesa_initialize_context_for_api(GLcontext *ctx,
+				 gl_api api,
+				 const GLvisual *visual,
+				 GLcontext *share_list,
+				 const struct dd_function_table *driverFunctions,
+				 void *driverContext)
 {
    struct gl_shared_state *shared;
+   int i;
 
    /*ASSERT(driverContext);*/
    assert(driverFunctions->NewTextureObject);
    assert(driverFunctions->FreeTexImageData);
 
-   /* misc one-time initializations */
-   one_time_init(ctx);
-
+   ctx->API = api;
    ctx->Visual = *visual;
    ctx->DrawBuffer = NULL;
    ctx->ReadBuffer = NULL;
    ctx->WinSysDrawBuffer = NULL;
    ctx->WinSysReadBuffer = NULL;
+
+   /* misc one-time initializations */
+   one_time_init(ctx);
 
    /* Plug in driver functions and context pointer here.
     * This is important because when we call alloc_shared_state() below
@@ -839,29 +873,35 @@ _mesa_initialize_context(GLcontext *ctx,
       return GL_FALSE;
    }
 
+#if FEATURE_dispatch
    /* setup the API dispatch tables */
-   ctx->Exec = alloc_dispatch_table();
-   ctx->Save = alloc_dispatch_table();
-   if (!ctx->Exec || !ctx->Save) {
+   switch (ctx->API) {
+#if FEATURE_GL
+   case API_OPENGL:
+      ctx->Exec = _mesa_create_exec_table();
+      break;
+#endif
+#if FEATURE_ES1
+   case API_OPENGLES:
+      ctx->Exec = _mesa_create_exec_table_es1();
+      break;
+#endif
+#if FEATURE_ES2
+   case API_OPENGLES2:
+      ctx->Exec = _mesa_create_exec_table_es2();
+      break;
+#endif
+   default:
+      _mesa_problem(ctx, "unknown or unsupported API");
+      break;
+   }
+
+   if (!ctx->Exec) {
       _mesa_release_shared_state(ctx, ctx->Shared);
-      if (ctx->Exec)
-         free(ctx->Exec);
       return GL_FALSE;
    }
-#if FEATURE_dispatch
-   _mesa_init_exec_table(ctx->Exec);
 #endif
    ctx->CurrentDispatch = ctx->Exec;
-
-#if FEATURE_dlist
-   _mesa_init_save_table(ctx->Save);
-   _mesa_install_save_vtxfmt( ctx, &ctx->ListState.ListVtxfmt );
-#endif
-
-   /* Neutral tnl module stuff */
-   _mesa_init_exec_vtxfmt( ctx ); 
-   ctx->TnlModule.Current = NULL;
-   ctx->TnlModule.SwapCount = 0;
 
    ctx->FragmentProgram._MaintainTexEnvProgram
       = (_mesa_getenv("MESA_TEX_PROG") != NULL);
@@ -873,15 +913,65 @@ _mesa_initialize_context(GLcontext *ctx,
       ctx->FragmentProgram._MaintainTexEnvProgram = GL_TRUE;
    }
 
-#ifdef FEATURE_extra_context_init
-   _mesa_initialize_context_extra(ctx);
+   switch (ctx->API) {
+   case API_OPENGL:
+      /* Neutral tnl module stuff */
+      _mesa_init_exec_vtxfmt( ctx ); 
+      ctx->TnlModule.Current = NULL;
+      ctx->TnlModule.SwapCount = 0;
+
+#if FEATURE_dlist
+      ctx->Save = _mesa_create_save_table();
+      if (!ctx->Save) {
+	 _mesa_release_shared_state(ctx, ctx->Shared);
+	 free(ctx->Exec);
+	 return GL_FALSE;
+      }
+
+      _mesa_install_save_vtxfmt( ctx, &ctx->ListState.ListVtxfmt );
 #endif
+      break;
+   case API_OPENGLES:
+      /**
+       * GL_OES_texture_cube_map says
+       * "Initially all texture generation modes are set to REFLECTION_MAP_OES"
+       */
+      for (i = 0; i < MAX_TEXTURE_UNITS; i++) {
+	 struct gl_texture_unit *texUnit = &ctx->Texture.Unit[i];
+	 texUnit->GenS.Mode = GL_REFLECTION_MAP_NV;
+	 texUnit->GenT.Mode = GL_REFLECTION_MAP_NV;
+	 texUnit->GenR.Mode = GL_REFLECTION_MAP_NV;
+	 texUnit->GenS._ModeBit = TEXGEN_REFLECTION_MAP_NV;
+	 texUnit->GenT._ModeBit = TEXGEN_REFLECTION_MAP_NV;
+	 texUnit->GenR._ModeBit = TEXGEN_REFLECTION_MAP_NV;
+      }
+      break;
+   case API_OPENGLES2:
+      ctx->FragmentProgram._MaintainTexEnvProgram = GL_TRUE;
+      ctx->VertexProgram._MaintainTnlProgram = GL_TRUE;
+      ctx->Point.PointSprite = GL_TRUE;  /* always on for ES 2.x */
+      break;
+   }
 
    ctx->FirstTimeCurrent = GL_TRUE;
 
    return GL_TRUE;
 }
 
+GLboolean
+_mesa_initialize_context(GLcontext *ctx,
+                         const GLvisual *visual,
+                         GLcontext *share_list,
+                         const struct dd_function_table *driverFunctions,
+                         void *driverContext)
+{
+   return _mesa_initialize_context_for_api(ctx,
+					   API_OPENGL,
+					   visual,
+					   share_list,
+					   driverFunctions,
+					   driverContext);
+}
 
 /**
  * Allocate and initialize a GLcontext structure.
@@ -889,6 +979,7 @@ _mesa_initialize_context(GLcontext *ctx,
  * we need to at least call driverFunctions->NewTextureObject to initialize
  * the rendering context.
  *
+ * \param api the GL API type to create the context for
  * \param visual a GLvisual pointer (we copy the struct contents)
  * \param share_list another context to share display lists with or NULL
  * \param driverFunctions points to the dd_function_table into which the
@@ -898,10 +989,11 @@ _mesa_initialize_context(GLcontext *ctx,
  * \return pointer to a new __GLcontextRec or NULL if error.
  */
 GLcontext *
-_mesa_create_context(const GLvisual *visual,
-                     GLcontext *share_list,
-                     const struct dd_function_table *driverFunctions,
-                     void *driverContext)
+_mesa_create_context_for_api(gl_api api,
+			     const GLvisual *visual,
+			     GLcontext *share_list,
+			     const struct dd_function_table *driverFunctions,
+			     void *driverContext)
 {
    GLcontext *ctx;
 
@@ -912,8 +1004,8 @@ _mesa_create_context(const GLvisual *visual,
    if (!ctx)
       return NULL;
 
-   if (_mesa_initialize_context(ctx, visual, share_list,
-                                driverFunctions, driverContext)) {
+   if (_mesa_initialize_context_for_api(ctx, api, visual, share_list,
+					driverFunctions, driverContext)) {
       return ctx;
    }
    else {
@@ -922,6 +1014,17 @@ _mesa_create_context(const GLvisual *visual,
    }
 }
 
+GLcontext *
+_mesa_create_context(const GLvisual *visual,
+		     GLcontext *share_list,
+		     const struct dd_function_table *driverFunctions,
+		     void *driverContext)
+{
+   return _mesa_create_context_for_api(API_OPENGL, visual,
+				       share_list,
+				       driverFunctions,
+				       driverContext);
+}
 
 /**
  * Free the data associated with the given context.
@@ -969,6 +1072,7 @@ _mesa_free_context_data( GLcontext *ctx )
    _mesa_free_sync_data(ctx);
 #endif
    _mesa_free_varray_data(ctx);
+   _mesa_free_transform_feedback(ctx);
 
    _mesa_delete_array_object(ctx, ctx->Array.DefaultArrayObj);
 

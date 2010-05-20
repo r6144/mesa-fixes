@@ -1,10 +1,8 @@
+import os
 Import('*')
-
-#if env['dri']:
-#	SConscript([
-#		'drm/SConscript',
-#	])
 	
+# Compatibility with old build scripts:
+#
 if 'xlib' in env['winsys']:
 	SConscript([
 		'libgl-xlib/SConscript',
@@ -14,3 +12,29 @@ if 'gdi' in env['winsys']:
 	SConscript([
 		'libgl-gdi/SConscript',
 	])
+
+if not 'graw-xlib' in env['targets'] and not env['msvc']:
+        # XXX: disable until MSVC can link correctly
+        SConscript('graw-null/SConscript')
+
+
+if env['dri']:
+	SConscript([
+		'SConscript.dri'
+	])
+
+if 'xorg' in env['statetrackers']:
+	if 'vmware' in env['winsys']:
+		SConscript([
+			'xorg-vmwgfx/SConscript',
+		])
+
+# Ideally all non-target directories would produce convenience
+# libraries, and the actual shared libraries and other installables
+# would be finally assembled in the targets subtree:
+#
+for target in env['targets']:
+    SConscript(os.path.join(target, 'SConscript'))
+
+
+

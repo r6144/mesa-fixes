@@ -45,9 +45,9 @@
 #include "util/u_format.h"
 #include "util/u_math.h"
 #include "util/u_memory.h"
+#include "util/u_sampler.h"
 #include "util/u_simple_shaders.h"
 #include "util/u_surface.h"
-#include "util/u_rect.h"
 
 #include "cso_cache/cso_context.h"
 
@@ -68,7 +68,7 @@ struct blit_state
    void *vs;
    void *fs[TGSI_WRITEMASK_XYZW + 1];
 
-   struct pipe_buffer *vbuf;  /**< quad vertices */
+   struct pipe_resource *vbuf;  /**< quad vertices */
    unsigned vbuf_slot;
 
    float vertices[4][2][4];   /**< vertex/texcoords for quad */
@@ -166,7 +166,7 @@ util_destroy_blit(struct blit_state *ctx)
       if (ctx->fs[i])
          pipe->delete_fs_state(pipe, ctx->fs[i]);
 
-   pipe_buffer_reference(&ctx->vbuf, NULL);
+   pipe_resource_reference(&ctx->vbuf, NULL);
 
    FREE(ctx);
 }
@@ -185,8 +185,7 @@ get_next_slot( struct blit_state *ctx )
 
    if (!ctx->vbuf) {
       ctx->vbuf = pipe_buffer_create(ctx->pipe->screen,
-                                     32,
-                                     PIPE_BUFFER_USAGE_VERTEX,
+                                     PIPE_BIND_VERTEX_BUFFER,
                                      max_slots * sizeof ctx->vertices);
    }
    
@@ -235,7 +234,7 @@ setup_vertex_data_tex(struct blit_state *ctx,
 
    offset = get_next_slot( ctx );
 
-   pipe_buffer_write_nooverlap(ctx->pipe->screen, ctx->vbuf,
+   pipe_buffer_write_nooverlap(ctx->pipe, ctx->vbuf,
                                offset, sizeof(ctx->vertices), ctx->vertices);
 
    return offset;
@@ -280,6 +279,7 @@ regions_overlap(int srcX0, int srcY0,
 void
 util_blit_pixels_writemask(struct blit_state *ctx,
                            struct pipe_surface *src,
+                           struct pipe_sampler_view *src_sampler_view,
                            int srcX0, int srcY0,
                            int srcX1, int srcY1,
                            struct pipe_surface *dst,
@@ -290,7 +290,7 @@ util_blit_pixels_writemask(struct blit_state *ctx,
 {
    struct pipe_context *pipe = ctx->pipe;
    struct pipe_screen *screen = pipe->screen;
-   struct pipe_texture *tex = NULL;
+   struct pipe_sampler_view *sampler_view = NULL;
    struct pipe_framebuffer_state fb;
    const int srcW = abs(srcX1 - srcX0);
    const int srcH = abs(srcY1 - srcY0);
@@ -302,9 +302,9 @@ util_blit_pixels_writemask(struct blit_state *ctx,
           filter == PIPE_TEX_MIPFILTER_LINEAR);
 
    assert(screen->is_format_supported(screen, src->format, PIPE_TEXTURE_2D,
-                                      PIPE_TEXTURE_USAGE_SAMPLER, 0));
+                                      PIPE_BIND_SAMPLER_VIEW, 0));
    assert(screen->is_format_supported(screen, dst->format, PIPE_TEXTURE_2D,
-                                      PIPE_TEXTURE_USAGE_RENDER_TARGET, 0));
+                                      PIPE_BIND_RENDER_TARGET, 0));
 
    /* do the regions overlap? */
    overlap = util_same_surface(src, dst) &&
@@ -333,7 +333,7 @@ util_blit_pixels_writemask(struct blit_state *ctx,
    }
    
    assert(screen->is_format_supported(screen, dst->format, PIPE_TEXTURE_2D,
-                                      PIPE_TEXTURE_USAGE_RENDER_TARGET, 0));
+                                      PIPE_BIND_RENDER_TARGET, 0));
 
    /* Create a temporary texture when src and dest alias or when src
     * is anything other than a single-level 2d texture.
@@ -344,7 +344,9 @@ util_blit_pixels_writemask(struct blit_state *ctx,
        src->texture->target != PIPE_TEXTURE_2D ||
        src->texture->last_level != 0)
    {
-      struct pipe_texture texTemp;
+      struct pipe_resource texTemp;
+      struct pipe_resource *tex;
+      struct pipe_sampler_view sv_templ;
       struct pipe_surface *texSurf;
       const int srcLeft = MIN2(srcX0, srcX1);
       const int srcTop = MIN2(srcY0, srcY1);
@@ -371,13 +373,22 @@ util_blit_pixels_writemask(struct blit_state *ctx,
       texTemp.width0 = srcW;
       texTemp.height0 = srcH;
       texTemp.depth0 = 1;
+      texTemp.bind = PIPE_BIND_SAMPLER_VIEW;
 
-      tex = screen->texture_create(screen, &texTemp);
+      tex = screen->resource_create(screen, &texTemp);
       if (!tex)
          return;
 
+      u_sampler_view_default_template(&sv_templ, tex, tex->format);
+
+      sampler_view = ctx->pipe->create_sampler_view(ctx->pipe, tex, &sv_templ);
+      if (!sampler_view) {
+         pipe_resource_reference(&tex, NULL);
+         return;
+      }
+
       texSurf = screen->get_tex_surface(screen, tex, 0, 0, 0, 
-                                        PIPE_BUFFER_USAGE_GPU_WRITE);
+                                        PIPE_BIND_BLIT_DESTINATION);
 
       /* load temp texture */
       if (pipe->surface_copy) {
@@ -399,22 +410,25 @@ util_blit_pixels_writemask(struct blit_state *ctx,
       s1 = 1.0f;
       t0 = 0.0f;
       t1 = 1.0f;
+
+      pipe_resource_reference(&tex, NULL);
    }
    else {
-      pipe_texture_reference(&tex, src->texture);
-      s0 = srcX0 / (float)tex->width0;
-      s1 = srcX1 / (float)tex->width0;
-      t0 = srcY0 / (float)tex->height0;
-      t1 = srcY1 / (float)tex->height0;
+      pipe_sampler_view_reference(&sampler_view, src_sampler_view);
+      s0 = srcX0 / (float)src->texture->width0;
+      s1 = srcX1 / (float)src->texture->width0;
+      t0 = srcY0 / (float)src->texture->height0;
+      t1 = srcY1 / (float)src->texture->height0;
    }
 
+   
 
    /* save state (restored below) */
    cso_save_blend(ctx->cso);
    cso_save_depth_stencil_alpha(ctx->cso);
    cso_save_rasterizer(ctx->cso);
    cso_save_samplers(ctx->cso);
-   cso_save_sampler_textures(ctx->cso);
+   cso_save_fragment_sampler_views(ctx->cso);
    cso_save_viewport(ctx->cso);
    cso_save_framebuffer(ctx->cso);
    cso_save_fragment_shader(ctx->cso);
@@ -447,7 +461,7 @@ util_blit_pixels_writemask(struct blit_state *ctx,
    cso_set_viewport(ctx->cso, &ctx->viewport);
 
    /* texture */
-   cso_set_sampler_textures(ctx->cso, 1, &tex);
+   cso_set_fragment_sampler_views(ctx->cso, 1, &sampler_view);
 
    if (ctx->fs[writemask] == NULL)
       ctx->fs[writemask] =
@@ -486,7 +500,7 @@ util_blit_pixels_writemask(struct blit_state *ctx,
    cso_restore_depth_stencil_alpha(ctx->cso);
    cso_restore_rasterizer(ctx->cso);
    cso_restore_samplers(ctx->cso);
-   cso_restore_sampler_textures(ctx->cso);
+   cso_restore_fragment_sampler_views(ctx->cso);
    cso_restore_viewport(ctx->cso);
    cso_restore_framebuffer(ctx->cso);
    cso_restore_fragment_shader(ctx->cso);
@@ -494,13 +508,14 @@ util_blit_pixels_writemask(struct blit_state *ctx,
    cso_restore_clip(ctx->cso);
    cso_restore_vertex_elements(ctx->cso);
 
-   pipe_texture_reference(&tex, NULL);
+   pipe_sampler_view_reference(&sampler_view, NULL);
 }
 
 
 void
 util_blit_pixels(struct blit_state *ctx,
                  struct pipe_surface *src,
+                 struct pipe_sampler_view *src_sampler_view,
                  int srcX0, int srcY0,
                  int srcX1, int srcY1,
                  struct pipe_surface *dst,
@@ -508,7 +523,7 @@ util_blit_pixels(struct blit_state *ctx,
                  int dstX1, int dstY1,
                  float z, uint filter )
 {
-   util_blit_pixels_writemask( ctx, src, 
+   util_blit_pixels_writemask( ctx, src, src_sampler_view,
                                srcX0, srcY0,
                                srcX1, srcY1,
                                dst,
@@ -524,7 +539,7 @@ util_blit_pixels(struct blit_state *ctx,
  */
 void util_blit_flush( struct blit_state *ctx )
 {
-   pipe_buffer_reference(&ctx->vbuf, NULL);
+   pipe_resource_reference(&ctx->vbuf, NULL);
    ctx->vbuf_slot = 0;
 } 
 
@@ -539,21 +554,23 @@ void util_blit_flush( struct blit_state *ctx )
  */
 void
 util_blit_pixels_tex(struct blit_state *ctx,
-                 struct pipe_texture *tex,
-                 int srcX0, int srcY0,
-                 int srcX1, int srcY1,
-                 struct pipe_surface *dst,
-                 int dstX0, int dstY0,
-                 int dstX1, int dstY1,
-                 float z, uint filter)
+                     struct pipe_sampler_view *src_sampler_view,
+                     int srcX0, int srcY0,
+                     int srcX1, int srcY1,
+                     struct pipe_surface *dst,
+                     int dstX0, int dstY0,
+                     int dstX1, int dstY1,
+                     float z, uint filter)
 {
    struct pipe_framebuffer_state fb;
    float s0, t0, s1, t1;
    unsigned offset;
+   struct pipe_resource *tex = src_sampler_view->texture;
 
    assert(filter == PIPE_TEX_MIPFILTER_NEAREST ||
           filter == PIPE_TEX_MIPFILTER_LINEAR);
 
+   assert(tex);
    assert(tex->width0 != 0);
    assert(tex->height0 != 0);
 
@@ -564,7 +581,7 @@ util_blit_pixels_tex(struct blit_state *ctx,
 
    assert(ctx->pipe->screen->is_format_supported(ctx->pipe->screen, dst->format,
                                                  PIPE_TEXTURE_2D,
-                                                 PIPE_TEXTURE_USAGE_RENDER_TARGET,
+                                                 PIPE_BIND_RENDER_TARGET,
                                                  0));
 
    /* save state (restored below) */
@@ -572,7 +589,7 @@ util_blit_pixels_tex(struct blit_state *ctx,
    cso_save_depth_stencil_alpha(ctx->cso);
    cso_save_rasterizer(ctx->cso);
    cso_save_samplers(ctx->cso);
-   cso_save_sampler_textures(ctx->cso);
+   cso_save_fragment_sampler_views(ctx->cso);
    cso_save_framebuffer(ctx->cso);
    cso_save_fragment_shader(ctx->cso);
    cso_save_vertex_shader(ctx->cso);
@@ -604,7 +621,7 @@ util_blit_pixels_tex(struct blit_state *ctx,
    cso_set_viewport(ctx->cso, &ctx->viewport);
 
    /* texture */
-   cso_set_sampler_textures(ctx->cso, 1, &tex);
+   cso_set_fragment_sampler_views(ctx->cso, 1, &src_sampler_view);
 
    /* shaders */
    cso_set_fragment_shader_handle(ctx->cso, ctx->fs[TGSI_WRITEMASK_XYZW]);
@@ -638,7 +655,7 @@ util_blit_pixels_tex(struct blit_state *ctx,
    cso_restore_depth_stencil_alpha(ctx->cso);
    cso_restore_rasterizer(ctx->cso);
    cso_restore_samplers(ctx->cso);
-   cso_restore_sampler_textures(ctx->cso);
+   cso_restore_fragment_sampler_views(ctx->cso);
    cso_restore_framebuffer(ctx->cso);
    cso_restore_fragment_shader(ctx->cso);
    cso_restore_vertex_shader(ctx->cso);

@@ -15,12 +15,14 @@ GL_TINY = 0$(MESA_MAJOR)0$(MESA_MINOR)0$(MESA_TINY)
 
 INCLUDE_DIRS = \
 	-I$(TOP)/include \
+	-I$(TOP)/src/mapi \
 	-I$(TOP)/src/mesa \
 	-I$(TOP)/src/mesa/main \
 	-I$(TOP)/src/gallium/include \
 	-I$(TOP)/src/gallium/drivers \
 	-I$(TOP)/src/gallium/state_trackers/glx/xlib \
-	-I$(TOP)/src/gallium/auxiliary
+	-I$(TOP)/src/gallium/auxiliary \
+	$(X11_CFLAGS)
 
 DEFINES += \
 	-DGALLIUM_SOFTPIPE
@@ -38,10 +40,11 @@ XLIB_TARGET_OBJECTS = $(XLIB_TARGET_SOURCES:.c=.o)
 LIBS = \
 	$(GALLIUM_DRIVERS) \
 	$(TOP)/src/gallium/state_trackers/glx/xlib/libxlib.a \
-	$(TOP)/src/gallium/winsys/xlib/libws_xlib.a \
+	$(TOP)/src/gallium/winsys/sw/xlib/libws_xlib.a \
 	$(TOP)/src/gallium/drivers/trace/libtrace.a \
+	$(TOP)/src/gallium/drivers/rbug/librbug.a \
 	$(TOP)/src/gallium/drivers/identity/libidentity.a \
-	$(TOP)/src/mesa/libglapi.a \
+	$(TOP)/src/mapi/glapi/libglapi.a \
 	$(TOP)/src/mesa/libmesagallium.a \
 	$(GALLIUM_AUXILIARIES) \
 	$(CELL_SPU_LIB) \

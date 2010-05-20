@@ -14,18 +14,19 @@
  * The above copyright notice and this permission notice shall be included
  * in all copies or substantial portions of the Software.
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * BRIAN PAUL BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
- * AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
  */
 
-#include <stdio.h>
 #include <string.h>
 #include "util/u_debug.h"
 #include "util/u_memory.h"
+#include "util/u_string.h"
 #include "state_tracker/drm_api.h"
 #include "egllog.h"
 
@@ -40,8 +41,8 @@ static void
 x11_probe_destroy(struct native_probe *nprobe)
 {
    if (nprobe->data)
-      free(nprobe->data);
-   free(nprobe);
+      FREE(nprobe->data);
+   FREE(nprobe);
 }
 
 struct native_probe *
@@ -61,7 +62,7 @@ native_create_probe(EGLNativeDisplayType dpy)
    if (!xdpy) {
       xdpy = XOpenDisplay(NULL);
       if (!xdpy) {
-         free(nprobe);
+         FREE(nprobe);
          return NULL;
       }
    }
@@ -118,9 +119,9 @@ native_get_name(void)
       api = drm_api_create();
 
    if (api)
-      snprintf(x11_name, sizeof(x11_name), "X11/%s", api->name);
+      util_snprintf(x11_name, sizeof(x11_name), "X11/%s", api->name);
    else
-      snprintf(x11_name, sizeof(x11_name), "X11");
+      util_snprintf(x11_name, sizeof(x11_name), "X11");
 
    return x11_name;
 }

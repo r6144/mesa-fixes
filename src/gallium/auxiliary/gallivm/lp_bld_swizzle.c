@@ -60,21 +60,38 @@ lp_build_broadcast(LLVMBuilderRef builder,
 }
 
 
+/**
+ * Broadcast
+ */
 LLVMValueRef
 lp_build_broadcast_scalar(struct lp_build_context *bld,
                           LLVMValueRef scalar)
 {
    const struct lp_type type = bld->type;
-   LLVMValueRef res;
-   unsigned i;
 
-   res = bld->undef;
-   for(i = 0; i < type.length; ++i) {
-      LLVMValueRef index = LLVMConstInt(LLVMInt32Type(), i, 0);
-      res = LLVMBuildInsertElement(bld->builder, res, scalar, index, "");
+   assert(lp_check_elem_type(type, LLVMTypeOf(scalar)));
+
+   if (type.length == 1) {
+      return scalar;
    }
-
-   return res;
+   else {
+      LLVMValueRef res;
+#if HAVE_LLVM >= 0x207
+      res = LLVMBuildInsertElement(bld->builder, bld->undef, scalar,
+                                   LLVMConstInt(LLVMInt32Type(), 0, 0), "");
+      res = LLVMBuildShuffleVector(bld->builder, res, bld->undef,
+                                   lp_build_const_int_vec(type, 0), "");
+#else
+      /* XXX: The above path provokes a bug in LLVM 2.6 */
+      unsigned i;
+      res = bld->undef;
+      for(i = 0; i < type.length; ++i) {
+         LLVMValueRef index = LLVMConstInt(LLVMInt32Type(), i, 0);
+         res = LLVMBuildInsertElement(bld->builder, res, scalar, index, "");
+      }
+#endif
+      return res;
+   }
 }
 
 
@@ -144,9 +161,9 @@ lp_build_broadcast_aos(struct lp_build_context *bld,
 #endif
 
          if(shift > 0)
-            tmp = LLVMBuildLShr(bld->builder, a, lp_build_int_const_scalar(type4, shift*type.width), "");
+            tmp = LLVMBuildLShr(bld->builder, a, lp_build_const_int_vec(type4, shift*type.width), "");
          if(shift < 0)
-            tmp = LLVMBuildShl(bld->builder, a, lp_build_int_const_scalar(type4, -shift*type.width), "");
+            tmp = LLVMBuildShl(bld->builder, a, lp_build_const_int_vec(type4, -shift*type.width), "");
 
          assert(tmp);
          if(tmp)
@@ -237,3 +254,78 @@ lp_build_swizzle2_aos(struct lp_build_context *bld,
 }
 
 
+/**
+ * Extended swizzle of a single channel of a SoA vector.
+ *
+ * @param bld         building context
+ * @param unswizzled  array with the 4 unswizzled values
+ * @param swizzle     one of the PIPE_SWIZZLE_*
+ *
+ * @return  the swizzled value.
+ */
+LLVMValueRef
+lp_build_swizzle_soa_channel(struct lp_build_context *bld,
+                             const LLVMValueRef *unswizzled,
+                             unsigned swizzle)
+{
+   switch (swizzle) {
+   case PIPE_SWIZZLE_RED:
+   case PIPE_SWIZZLE_GREEN:
+   case PIPE_SWIZZLE_BLUE:
+   case PIPE_SWIZZLE_ALPHA:
+      return unswizzled[swizzle];
+   case PIPE_SWIZZLE_ZERO:
+      return bld->zero;
+   case PIPE_SWIZZLE_ONE:
+      return bld->one;
+   default:
+      assert(0);
+      return bld->undef;
+   }
+}
+
+
+/**
+ * Extended swizzle of a SoA vector.
+ *
+ * @param bld         building context
+ * @param unswizzled  array with the 4 unswizzled values
+ * @param swizzles    array of PIPE_SWIZZLE_*
+ * @param swizzled    output swizzled values
+ */
+void
+lp_build_swizzle_soa(struct lp_build_context *bld,
+                     const LLVMValueRef *unswizzled,
+                     const unsigned char swizzles[4],
+                     LLVMValueRef *swizzled)
+{
+   unsigned chan;
+
+   for (chan = 0; chan < 4; ++chan) {
+      swizzled[chan] = lp_build_swizzle_soa_channel(bld, unswizzled,
+                                                    swizzles[chan]);
+   }
+}
+
+
+/**
+ * Do an extended swizzle of a SoA vector inplace.
+ *
+ * @param bld         building context
+ * @param values      intput/output array with the 4 values
+ * @param swizzles    array of PIPE_SWIZZLE_*
+ */
+void
+lp_build_swizzle_soa_inplace(struct lp_build_context *bld,
+                             LLVMValueRef *values,
+                             const unsigned char swizzles[4])
+{
+   LLVMValueRef unswizzled[4];
+   unsigned chan;
+
+   for (chan = 0; chan < 4; ++chan) {
+      unswizzled[chan] = values[chan];
+   }
+
+   lp_build_swizzle_soa(bld, unswizzled, swizzles, values);
+}

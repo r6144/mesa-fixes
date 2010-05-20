@@ -61,6 +61,44 @@ static INLINE struct brw_reg sechalf( struct brw_reg reg )
    return reg;
 }
 
+/* Return the SrcReg index of the channels that can be immediate float operands
+ * instead of usage of PROGRAM_CONSTANT values through push/pull.
+ */
+GLboolean
+brw_wm_arg_can_be_immediate(enum prog_opcode opcode, int arg)
+{
+   int opcode_array[] = {
+      [OPCODE_ADD] = 2,
+      [OPCODE_CMP] = 3,
+      [OPCODE_DP3] = 2,
+      [OPCODE_DP4] = 2,
+      [OPCODE_DPH] = 2,
+      [OPCODE_MAX] = 2,
+      [OPCODE_MIN] = 2,
+      [OPCODE_MOV] = 1,
+      [OPCODE_MUL] = 2,
+      [OPCODE_SEQ] = 2,
+      [OPCODE_SGE] = 2,
+      [OPCODE_SGT] = 2,
+      [OPCODE_SLE] = 2,
+      [OPCODE_SLT] = 2,
+      [OPCODE_SNE] = 2,
+      [OPCODE_XPD] = 2,
+   };
+
+   /* These opcodes get broken down in a way that allow two
+    * args to be immediates.
+    */
+   if (opcode == OPCODE_MAD || opcode == OPCODE_LRP) {
+      if (arg == 1 || arg == 2)
+	 return GL_TRUE;
+   }
+
+   if (opcode > ARRAY_SIZE(opcode_array))
+      return GL_FALSE;
+
+   return arg == opcode_array[opcode] - 1;
+}
 
 /**
  * Computes the screen-space x,y position of the pixels.
@@ -545,8 +583,11 @@ void emit_sop(struct brw_compile *p,
    for (i = 0; i < 4; i++) {
       if (mask & (1<<i)) {	
 	 brw_push_insn_state(p);
-	 brw_CMP(p, brw_null_reg(), cond, arg1[i], arg0[i]);
-	 brw_SEL(p, dst[i], brw_null_reg(), brw_imm_f(1.0));
+	 brw_CMP(p, brw_null_reg(), cond, arg0[i], arg1[i]);
+	 brw_set_predicate_control(p, BRW_PREDICATE_NONE);
+	 brw_MOV(p, dst[i], brw_imm_f(0));
+	 brw_set_predicate_control(p, BRW_PREDICATE_NORMAL);
+	 brw_MOV(p, dst[i], brw_imm_f(1.0));
 	 brw_pop_insn_state(p);
       }
    }
@@ -617,14 +658,10 @@ void emit_cmp(struct brw_compile *p,
 
    for (i = 0; i < 4; i++) {
       if (mask & (1<<i)) {	
-	 brw_set_saturate(p, (mask & SATURATE) ? 1 : 0);
-	 brw_MOV(p, dst[i], arg2[i]);
-	 brw_set_saturate(p, 0);
-
 	 brw_CMP(p, brw_null_reg(), BRW_CONDITIONAL_L, arg0[i], brw_imm_f(0));
 
 	 brw_set_saturate(p, (mask & SATURATE) ? 1 : 0);
-	 brw_MOV(p, dst[i], arg1[i]);
+	 brw_SEL(p, dst[i], arg1[i], arg2[i]);
 	 brw_set_saturate(p, 0);
 	 brw_set_predicate_control_flag_value(p, 0xff);
       }
@@ -930,7 +967,7 @@ void emit_tex(struct brw_wm_compile *c,
    }
 
    /* Pre-Ironlake, the 8-wide sampler always took u,v,r. */
-   if (!intel->is_ironlake && c->dispatch_width == 8)
+   if (intel->gen < 5 && c->dispatch_width == 8)
       nr_texcoords = 3;
 
    /* For shadow comparisons, we have to supply u,v,r. */
@@ -948,7 +985,7 @@ void emit_tex(struct brw_wm_compile *c,
 
    /* Fill in the shadow comparison reference value. */
    if (shadow) {
-      if (intel->is_ironlake) {
+      if (intel->gen == 5) {
 	 /* Fill in the cube map array index value. */
 	 brw_MOV(p, brw_message_reg(cur_mrf), brw_imm_f(0));
 	 cur_mrf += mrf_per_channel;
@@ -961,11 +998,11 @@ void emit_tex(struct brw_wm_compile *c,
       cur_mrf += mrf_per_channel;
    }
 
-   if (intel->is_ironlake) {
+   if (intel->gen == 5) {
       if (shadow)
-	 msg_type = BRW_SAMPLER_MESSAGE_SAMPLE_COMPARE_IGDNG;
+	 msg_type = BRW_SAMPLER_MESSAGE_SAMPLE_COMPARE_GEN5;
       else
-	 msg_type = BRW_SAMPLER_MESSAGE_SAMPLE_IGDNG;
+	 msg_type = BRW_SAMPLER_MESSAGE_SAMPLE_GEN5;
    } else {
       /* Note that G45 and older determines shadow compare and dispatch width
        * from message length for most messages.
@@ -1013,16 +1050,16 @@ void emit_txb(struct brw_wm_compile *c,
     * undefined, and trust the execution mask to keep the undefined pixels
     * from mattering.
     */
-   if (c->dispatch_width == 16 || !intel->is_ironlake) {
-      if (intel->is_ironlake)
-	 msg_type = BRW_SAMPLER_MESSAGE_SAMPLE_BIAS_IGDNG;
+   if (c->dispatch_width == 16 || intel->gen < 5) {
+      if (intel->gen == 5)
+	 msg_type = BRW_SAMPLER_MESSAGE_SAMPLE_BIAS_GEN5;
       else
 	 msg_type = BRW_SAMPLER_MESSAGE_SIMD16_SAMPLE_BIAS;
       mrf_per_channel = 2;
       dst_retyped = retype(vec16(dst[0]), BRW_REGISTER_TYPE_UW);
       response_length = 8;
    } else {
-      msg_type = BRW_SAMPLER_MESSAGE_SAMPLE_BIAS_IGDNG;
+      msg_type = BRW_SAMPLER_MESSAGE_SAMPLE_BIAS_GEN5;
       mrf_per_channel = 1;
       dst_retyped = retype(vec8(dst[0]), BRW_REGISTER_TYPE_UW);
       response_length = 4;
@@ -1680,7 +1717,7 @@ void brw_wm_emit( struct brw_wm_compile *c )
 
       printf("wm-native:\n");
       for (i = 0; i < p->nr_insn; i++)
-	 brw_disasm(stderr, &p->store[i]);
+	 brw_disasm(stderr, &p->store[i], p->brw->intel.gen);
       printf("\n");
    }
 }

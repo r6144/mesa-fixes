@@ -43,7 +43,6 @@
 #include "st_program.h"
 #include "st_cb_bitmap.h"
 #include "st_texture.h"
-#include "st_inlines.h"
 
 #include "pipe/p_context.h"
 #include "pipe/p_defines.h"
@@ -54,6 +53,7 @@
 #include "cso_cache/cso_context.h"
 
 
+#if FEATURE_drawpix
 
 /**
  * glBitmaps are drawn as textured quads.  The user's bitmap pattern
@@ -92,7 +92,7 @@ struct bitmap_cache
    /** Bitmap's Z position */
    GLfloat zpos;
 
-   struct pipe_texture *texture;
+   struct pipe_resource *texture;
    struct pipe_transfer *trans;
 
    GLboolean empty;
@@ -114,6 +114,7 @@ struct bitmap_cache
 static struct st_fragment_program *
 make_bitmap_fragment_program(GLcontext *ctx, GLuint samplerIndex)
 {
+   struct st_context *st = st_context(ctx);
    struct st_fragment_program *stfp;
    struct gl_program *p;
    GLuint ic = 0;
@@ -145,7 +146,7 @@ make_bitmap_fragment_program(GLcontext *ctx, GLuint samplerIndex)
    p->Instructions[ic].Opcode = OPCODE_KIL;
    p->Instructions[ic].SrcReg[0].File = PROGRAM_TEMPORARY;
 
-   if (ctx->st->bitmap.tex_format == PIPE_FORMAT_L8_UNORM)
+   if (st->bitmap.tex_format == PIPE_FORMAT_L8_UNORM)
       p->Instructions[ic].SrcReg[0].Swizzle = SWIZZLE_XXXX;
 
    p->Instructions[ic].SrcReg[0].Index = 0;
@@ -187,7 +188,7 @@ find_free_bit(uint bitfield)
 static struct st_fragment_program *
 combined_bitmap_fragment_program(GLcontext *ctx)
 {
-   struct st_context *st = ctx->st;
+   struct st_context *st = st_context(ctx);
    struct st_fragment_program *stfp = st->fp;
 
    if (!stfp->bitmap_program) {
@@ -253,15 +254,16 @@ unpack_bitmap(struct st_context *st,
 /**
  * Create a texture which represents a bitmap image.
  */
-static struct pipe_texture *
+static struct pipe_resource *
 make_bitmap_texture(GLcontext *ctx, GLsizei width, GLsizei height,
                     const struct gl_pixelstore_attrib *unpack,
                     const GLubyte *bitmap)
 {
-   struct pipe_context *pipe = ctx->st->pipe;
+   struct st_context *st = st_context(ctx);
+   struct pipe_context *pipe = st->pipe;
    struct pipe_transfer *transfer;
    ubyte *dest;
-   struct pipe_texture *pt;
+   struct pipe_resource *pt;
 
    /* PBO source... */
    bitmap = _mesa_map_pbo_source(ctx, unpack, bitmap);
@@ -272,30 +274,30 @@ make_bitmap_texture(GLcontext *ctx, GLsizei width, GLsizei height,
    /**
     * Create texture to hold bitmap pattern.
     */
-   pt = st_texture_create(ctx->st, PIPE_TEXTURE_2D, ctx->st->bitmap.tex_format,
+   pt = st_texture_create(st, PIPE_TEXTURE_2D, st->bitmap.tex_format,
                           0, width, height, 1,
-                          PIPE_TEXTURE_USAGE_SAMPLER);
+                          PIPE_BIND_SAMPLER_VIEW);
    if (!pt) {
       _mesa_unmap_pbo_source(ctx, unpack);
       return NULL;
    }
 
-   transfer = st_no_flush_get_tex_transfer(st_context(ctx), pt, 0, 0, 0,
+   transfer = pipe_get_transfer(st->pipe, pt, 0, 0, 0,
 					   PIPE_TRANSFER_WRITE,
 					   0, 0, width, height);
 
-   dest = pipe->transfer_map(pipe, transfer);
+   dest = pipe_transfer_map(pipe, transfer);
 
    /* Put image into texture transfer */
    memset(dest, 0xff, height * transfer->stride);
-   unpack_bitmap(ctx->st, 0, 0, width, height, unpack, bitmap,
+   unpack_bitmap(st, 0, 0, width, height, unpack, bitmap,
                  dest, transfer->stride);
 
    _mesa_unmap_pbo_source(ctx, unpack);
 
    /* Release transfer */
-   pipe->transfer_unmap(pipe, transfer);
-   pipe->tex_transfer_destroy(pipe, transfer);
+   pipe_transfer_unmap(pipe, transfer);
+   pipe->transfer_destroy(pipe, transfer);
 
    return pt;
 }
@@ -334,13 +336,13 @@ setup_bitmap_vertex_data(struct st_context *st,
    GLuint i;
 
    if (st->bitmap.vbuf_slot >= max_slots) {
-      pipe_buffer_reference(&st->bitmap.vbuf, NULL);
+      pipe_resource_reference(&st->bitmap.vbuf, NULL);
       st->bitmap.vbuf_slot = 0;
    }
 
    if (!st->bitmap.vbuf) {
-      st->bitmap.vbuf = pipe_buffer_create(pipe->screen, 32, 
-                                           PIPE_BUFFER_USAGE_VERTEX,
+      st->bitmap.vbuf = pipe_buffer_create(pipe->screen, 
+                                           PIPE_BIND_VERTEX_BUFFER,
                                            max_slots * sizeof(st->bitmap.vertices));
    }
 
@@ -380,7 +382,7 @@ setup_bitmap_vertex_data(struct st_context *st,
    }
 
    /* put vertex data into vbuf */
-   st_no_flush_pipe_buffer_write_nooverlap(st,
+   pipe_buffer_write_nooverlap(st->pipe,
                                            st->bitmap.vbuf,
                                            st->bitmap.vbuf_slot * sizeof st->bitmap.vertices,
                                            sizeof st->bitmap.vertices,
@@ -397,12 +399,12 @@ setup_bitmap_vertex_data(struct st_context *st,
 static void
 draw_bitmap_quad(GLcontext *ctx, GLint x, GLint y, GLfloat z,
                  GLsizei width, GLsizei height,
-                 struct pipe_texture *pt,
+                 struct pipe_sampler_view *sv,
                  const GLfloat *color)
 {
-   struct st_context *st = ctx->st;
-   struct pipe_context *pipe = ctx->st->pipe;
-   struct cso_context *cso = ctx->st->cso_context;
+   struct st_context *st = st_context(ctx);
+   struct pipe_context *pipe = st->pipe;
+   struct cso_context *cso = st->cso_context;
    struct st_fragment_program *stfp;
    GLuint maxSize;
    GLuint offset;
@@ -435,7 +437,7 @@ draw_bitmap_quad(GLcontext *ctx, GLint x, GLint y, GLfloat z,
 
    cso_save_rasterizer(cso);
    cso_save_samplers(cso);
-   cso_save_sampler_textures(cso);
+   cso_save_fragment_sampler_views(cso);
    cso_save_viewport(cso);
    cso_save_fragment_shader(cso);
    cso_save_vertex_shader(cso);
@@ -465,11 +467,11 @@ draw_bitmap_quad(GLcontext *ctx, GLint x, GLint y, GLfloat z,
 
    /* user textures, plus the bitmap texture */
    {
-      struct pipe_texture *textures[PIPE_MAX_SAMPLERS];
+      struct pipe_sampler_view *sampler_views[PIPE_MAX_SAMPLERS];
       uint num = MAX2(stfp->bitmap_sampler + 1, st->state.num_textures);
-      memcpy(textures, st->state.sampler_texture, sizeof(textures));
-      textures[stfp->bitmap_sampler] = pt;
-      cso_set_sampler_textures(cso, num, textures);
+      memcpy(sampler_views, st->state.sampler_views, sizeof(sampler_views));
+      sampler_views[stfp->bitmap_sampler] = sv;
+      cso_set_fragment_sampler_views(cso, num, sampler_views);
    }
 
    /* viewport state: viewport matching window dims */
@@ -507,7 +509,7 @@ draw_bitmap_quad(GLcontext *ctx, GLint x, GLint y, GLfloat z,
    /* restore state */
    cso_restore_rasterizer(cso);
    cso_restore_samplers(cso);
-   cso_restore_sampler_textures(cso);
+   cso_restore_fragment_sampler_views(cso);
    cso_restore_viewport(cso);
    cso_restore_fragment_shader(cso);
    cso_restore_vertex_shader(cso);
@@ -530,7 +532,7 @@ reset_cache(struct st_context *st)
    cache->ymax = -1000000;
 
    if (cache->trans) {
-      pipe->tex_transfer_destroy(pipe, cache->trans);
+      pipe->transfer_destroy(pipe, cache->trans);
       cache->trans = NULL;
    }
 
@@ -540,7 +542,8 @@ reset_cache(struct st_context *st)
    cache->texture = st_texture_create(st, PIPE_TEXTURE_2D,
                                       st->bitmap.tex_format, 0,
                                       BITMAP_CACHE_WIDTH, BITMAP_CACHE_HEIGHT,
-                                      1, PIPE_TEXTURE_USAGE_SAMPLER);
+                                      1,
+				      PIPE_BIND_SAMPLER_VIEW);
 }
 
 
@@ -576,11 +579,11 @@ create_cache_trans(struct st_context *st)
    /* Map the texture transfer.
     * Subsequent glBitmap calls will write into the texture image.
     */
-   cache->trans = st_no_flush_get_tex_transfer(st, cache->texture, 0, 0, 0,
+   cache->trans = pipe_get_transfer(st->pipe, cache->texture, 0, 0, 0,
 					       PIPE_TRANSFER_WRITE, 0, 0,
 					       BITMAP_CACHE_WIDTH,
 					       BITMAP_CACHE_HEIGHT);
-   cache->buffer = pipe->transfer_map(pipe, cache->trans);
+   cache->buffer = pipe_transfer_map(pipe, cache->trans);
 
    /* init image to all 0xff */
    memset(cache->buffer, 0xff, cache->trans->stride * BITMAP_CACHE_HEIGHT);
@@ -598,6 +601,7 @@ st_flush_bitmap_cache(struct st_context *st)
 
       if (st->ctx->DrawBuffer) {
          struct pipe_context *pipe = st->pipe;
+         struct pipe_sampler_view *sv;
 
          assert(cache->xmin <= cache->xmax);
  
@@ -613,24 +617,29 @@ st_flush_bitmap_cache(struct st_context *st)
          if (cache->trans) {
             if (0)
                print_cache(cache);
-            pipe->transfer_unmap(pipe, cache->trans);
+            pipe_transfer_unmap(pipe, cache->trans);
             cache->buffer = NULL;
 
-            pipe->tex_transfer_destroy(pipe, cache->trans);
+            pipe->transfer_destroy(pipe, cache->trans);
             cache->trans = NULL;
          }
 
-         draw_bitmap_quad(st->ctx,
-                          cache->xpos,
-                          cache->ypos,
-                          cache->zpos,
-                          BITMAP_CACHE_WIDTH, BITMAP_CACHE_HEIGHT,
-                          cache->texture,
-                          cache->color);
+         sv = st_create_texture_sampler_view(st->pipe, cache->texture);
+         if (sv) {
+            draw_bitmap_quad(st->ctx,
+                             cache->xpos,
+                             cache->ypos,
+                             cache->zpos,
+                             BITMAP_CACHE_WIDTH, BITMAP_CACHE_HEIGHT,
+                             sv,
+                             cache->color);
+
+            pipe_sampler_view_reference(&sv, NULL);
+         }
       }
 
       /* release/free the texture */
-      pipe_texture_reference(&cache->texture, NULL);
+      pipe_resource_reference(&cache->texture, NULL);
 
       reset_cache(st);
    }
@@ -646,7 +655,7 @@ st_flush_bitmap( struct st_context *st )
    /* Release vertex buffer to avoid synchronous rendering if we were
     * to map it in the next frame.
     */
-   pipe_buffer_reference(&st->bitmap.vbuf, NULL);
+   pipe_resource_reference(&st->bitmap.vbuf, NULL);
    st->bitmap.vbuf_slot = 0;
 }
 
@@ -725,8 +734,8 @@ static void
 st_Bitmap(GLcontext *ctx, GLint x, GLint y, GLsizei width, GLsizei height,
           const struct gl_pixelstore_attrib *unpack, const GLubyte *bitmap )
 {
-   struct st_context *st = ctx->st;
-   struct pipe_texture *pt;
+   struct st_context *st = st_context(ctx);
+   struct pipe_resource *pt;
 
    if (width == 0 || height == 0)
       return;
@@ -749,12 +758,20 @@ st_Bitmap(GLcontext *ctx, GLint x, GLint y, GLsizei width, GLsizei height,
 
    pt = make_bitmap_texture(ctx, width, height, unpack, bitmap);
    if (pt) {
+      struct pipe_sampler_view *sv = st_create_texture_sampler_view(st->pipe, pt);
+
       assert(pt->target == PIPE_TEXTURE_2D);
-      draw_bitmap_quad(ctx, x, y, ctx->Current.RasterPos[2],
-                       width, height, pt,
-                       st->ctx->Current.RasterColor);
+
+      if (sv) {
+         draw_bitmap_quad(ctx, x, y, ctx->Current.RasterPos[2],
+                          width, height, sv,
+                          st->ctx->Current.RasterColor);
+
+         pipe_sampler_view_reference(&sv, NULL);
+      }
+
       /* release/free the texture */
-      pipe_texture_reference(&pt, NULL);
+      pipe_resource_reference(&pt, NULL);
    }
 }
 
@@ -791,15 +808,15 @@ st_init_bitmap(struct st_context *st)
 
    /* find a usable texture format */
    if (screen->is_format_supported(screen, PIPE_FORMAT_I8_UNORM, PIPE_TEXTURE_2D, 
-                                   PIPE_TEXTURE_USAGE_SAMPLER, 0)) {
+                                   PIPE_BIND_SAMPLER_VIEW, 0)) {
       st->bitmap.tex_format = PIPE_FORMAT_I8_UNORM;
    }
    else if (screen->is_format_supported(screen, PIPE_FORMAT_A8_UNORM, PIPE_TEXTURE_2D, 
-                                        PIPE_TEXTURE_USAGE_SAMPLER, 0)) {
+                                        PIPE_BIND_SAMPLER_VIEW, 0)) {
       st->bitmap.tex_format = PIPE_FORMAT_A8_UNORM;
    }
    else if (screen->is_format_supported(screen, PIPE_FORMAT_L8_UNORM, PIPE_TEXTURE_2D, 
-                                        PIPE_TEXTURE_USAGE_SAMPLER, 0)) {
+                                        PIPE_BIND_SAMPLER_VIEW, 0)) {
       st->bitmap.tex_format = PIPE_FORMAT_L8_UNORM;
    }
    else {
@@ -829,17 +846,19 @@ st_destroy_bitmap(struct st_context *st)
    }
 
    if (st->bitmap.vbuf) {
-      pipe_buffer_reference(&st->bitmap.vbuf, NULL);
+      pipe_resource_reference(&st->bitmap.vbuf, NULL);
       st->bitmap.vbuf = NULL;
    }
 
    if (cache) {
       if (cache->trans) {
-         pipe->transfer_unmap(pipe, cache->trans);
-         pipe->tex_transfer_destroy(pipe, cache->trans);
+         pipe_transfer_unmap(pipe, cache->trans);
+         pipe->transfer_destroy(pipe, cache->trans);
       }
-      pipe_texture_reference(&st->bitmap.cache->texture, NULL);
+      pipe_resource_reference(&st->bitmap.cache->texture, NULL);
       free(st->bitmap.cache);
       st->bitmap.cache = NULL;
    }
 }
+
+#endif /* FEATURE_drawpix */

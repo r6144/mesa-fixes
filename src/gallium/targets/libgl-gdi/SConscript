@@ -9,6 +9,7 @@ if env['platform'] == 'windows':
 
     env.Append(CPPPATH = [
         '#src/gallium/state_trackers/wgl',
+        '#src/gallium/winsys/sw',
     ])
 
     env.Append(LIBS = [
@@ -21,26 +22,20 @@ if env['platform'] == 'windows':
     sources = []
     drivers = []
 
-    if 'softpipe' in env['drivers']:
+    if True:
         sources = ['gdi_softpipe_winsys.c']
         drivers = [softpipe]
 
-    if 'llvmpipe' in env['drivers']:
-        env.Tool('llvm')
-        if 'LLVM_VERSION' in env:
-            sources = ['gdi_llvmpipe_winsys.c']
-            drivers = [llvmpipe]
+    if env['llvm']:
+        sources = ['gdi_llvmpipe_winsys.c']
+        drivers = [llvmpipe]
 
-    if not sources or not drivers:
-        print 'warning: softpipe or llvmpipe not selected, gdi winsys disabled'
-        Return()
-    
     if env['gcc']:
         sources += ['#src/gallium/state_trackers/wgl/opengl32.mingw.def']
     else:
         sources += ['#src/gallium/state_trackers/wgl/opengl32.def']
         
-    drivers += [trace]
+    drivers += [trace, rbug]
 
     env['no_import_lib'] = 1
 

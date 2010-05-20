@@ -84,8 +84,17 @@ extern void
 _eglUnloadDrivers(void);
 
 
+extern _EGLDriver *
+_eglLoadDefaultDriver(EGLDisplay dpy, EGLint *major, EGLint *minor);
+
+
 PUBLIC void
 _eglInitDriverFallbacks(_EGLDriver *drv);
+
+
+PUBLIC void
+_eglSearchPathForEach(EGLBoolean (*callback)(const char *, size_t, void *),
+                      void *callback_data);
 
 
 PUBLIC void

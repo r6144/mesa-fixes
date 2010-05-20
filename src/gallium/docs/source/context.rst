@@ -40,8 +40,7 @@ buffers, surfaces) are bound to the driver.
   are mostly restricted to the first one right now).
 
 * ``set_framebuffer_state``
-* ``set_fragment_sampler_textures``
-* ``set_vertex_sampler_textures``
+
 * ``set_vertex_buffers``
 
 
@@ -51,6 +50,7 @@ Non-CSO State
 These pieces of state are too small, variable, and/or trivial to have CSO
 objects. They all follow simple, one-method binding calls, e.g.
 ``set_blend_color``.
+
 * ``set_stencil_ref`` sets the stencil front and back reference values
   which are used as comparison values in stencil test.
 * ``set_blend_color``
@@ -61,6 +61,41 @@ objects. They all follow simple, one-method binding calls, e.g.
   not have the scissor test enabled, then the scissor bounds never need to
   be set since they will not be used.
 * ``set_viewport_state``
+
+
+Sampler Views
+^^^^^^^^^^^^^
+
+These are the means to bind textures to shader stages. To create one, specify
+its format, swizzle and LOD range in sampler view template.
+
+If texture format is different than template format, it is said the texture
+is being cast to another format. Casting can be done only between compatible
+formats, that is formats that have matching component order and sizes.
+
+Swizzle fields specify they way in which fetched texel components are placed
+in the result register. For example, ``swizzle_r`` specifies what is going to be
+placed in first component of result register.
+
+The ``first_level`` and ``last_level`` fields of sampler view template specify
+the LOD range the texture is going to be constrained to.
+
+* ``set_fragment_sampler_views`` binds an array of sampler views to
+  fragment shader stage. Every binding point acquires a reference
+  to a respective sampler view and releases a reference to the previous
+  sampler view.
+
+* ``set_vertex_sampler_views`` binds an array of sampler views to vertex
+  shader stage. Every binding point acquires a reference to a respective
+  sampler view and releases a reference to the previous sampler view.
+
+* ``create_sampler_view`` creates a new sampler view. ``texture`` is associated
+  with the sampler view which results in sampler view holding a reference
+  to the texture. Format specified in template must be compatible
+  with texture format.
+
+* ``sampler_view_destroy`` destroys a sampler view and releases its reference
+  to associated texture.
 
 
 Clearing
@@ -118,6 +153,12 @@ vertex attributes.
 If ``indexBuffer`` is NULL, the sequential numbers are used directly
 as indices to fetch vertex attributes.
 
+``indexBias`` is a value which is added to every index read from the index 
+buffer before fetching vertex attributes.
+
+``minIndex`` and ``maxIndex`` describe minimum and maximum index contained in
+the index buffer.
+
 If a given vertex element has ``instance_divisor`` set to 0, it is said
 it contains per-vertex data and effective vertex attribute address needs
 to be recalculated for every index.
@@ -159,9 +200,16 @@ returned).  Otherwise, if the ``wait`` parameter is FALSE, the call
 will not block and the return value will be TRUE if the query has
 completed or FALSE otherwise.
 
-A common type of query is the occlusion query which counts the number of
-fragments/pixels which are written to the framebuffer (and not culled by
-Z/stencil/alpha testing or shader KILL instructions).
+The most common type of query is the occlusion query,
+``PIPE_QUERY_OCCLUSION_COUNTER``, which counts the number of fragments which
+are written to the framebuffer without being culled by
+:ref:`Depth, Stencil, & Alpha` testing or shader KILL instructions.
+
+Another type of query, ``PIPE_QUERY_TIME_ELAPSED``, returns the amount of
+time, in nanoseconds, the context takes to perform operations.
+
+Gallium does not guarantee the availability of any query types; one must
+always check the capabilities of the :ref:`Screen` first.
 
 
 Conditional Rendering
@@ -204,9 +252,7 @@ Flushing
 Resource Busy Queries
 ^^^^^^^^^^^^^^^^^^^^^
 
-``is_texture_referenced``
-
-``is_buffer_referenced``
+``is_resource_referenced``
 
 
 
@@ -230,3 +276,55 @@ The interfaces to these calls are likely to change to make it easier
 for a driver to batch multiple blits with the same source and
 destination.
 
+
+Transfers
+^^^^^^^^^
+
+These methods are used to get data to/from a resource.
+
+``get_transfer`` creates a transfer object.
+
+``transfer_destroy`` destroys the transfer object. May cause
+data to be written to the resource at this point.
+
+``transfer_map`` creates a memory mapping for the transfer object.
+The returned map points to the start of the mapped range according to
+the box region, not the beginning of the resource.
+
+``transfer_unmap`` remove the memory mapping for the transfer object.
+Any pointers into the map should be considered invalid and discarded.
+
+``transfer_inline_write`` performs a simplified transfer for simple writes.
+Basically get_transfer, transfer_map, data write, transfer_unmap, and
+transfer_destroy all in one.
+
+.. _transfer_flush_region:
+
+transfer_flush_region
+%%%%%%%%%%%%%%%%%%%%%
+
+If a transfer was created with ``FLUSH_EXPLICIT``, it will not automatically
+be flushed on write or unmap. Flushes must be requested with
+``transfer_flush_region``. Flush ranges are relative to the mapped range, not
+the beginning of the resource.
+
+.. _pipe_transfer:
+
+PIPE_TRANSFER
+^^^^^^^^^^^^^
+
+These flags control the behavior of a transfer object.
+
+* ``READ``: resource contents are read at transfer create time.
+* ``WRITE``: resource contents will be written back at transfer destroy time.
+* ``MAP_DIRECTLY``: a transfer should directly map the resource. May return
+  NULL if not supported.
+* ``DISCARD``: The memory within the mapped region is discarded.
+  Cannot be used with ``READ``.
+* ``DONTBLOCK``: Fail if the resource cannot be mapped immediately.
+* ``UNSYNCHRONIZED``: Do not synchronize pending operations on the resource
+  when mapping. The interaction of any writes to the map and any
+  operations pending on the resource are undefined. Cannot be used with
+  ``READ``.
+* ``FLUSH_EXPLICIT``: Written ranges will be notified later with
+  :ref:`transfer_flush_region`. Cannot be used with ``READ``.

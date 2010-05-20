@@ -418,18 +418,12 @@ struct brw_vertex_info {
 struct brw_query_object {
    struct gl_query_object Base;
 
-   /** Doubly linked list of active query objects in the context. */
-   struct brw_query_object *prev, *next;
-
    /** Last query BO associated with this query. */
    dri_bo *bo;
    /** First index in bo with query data for this object. */
    int first_index;
    /** Last index in bo with query data for this object. */
    int last_index;
-
-   /* Total count of pixels from previous BOs */
-   unsigned int count;
 };
 
 
@@ -664,7 +658,7 @@ struct brw_context
    } cc;
 
    struct {
-      struct brw_query_object active_head;
+      struct brw_query_object *obj;
       dri_bo *bo;
       int index;
       GLboolean active;
@@ -687,7 +681,8 @@ void brwInitVtbl( struct brw_context *brw );
 /*======================================================================
  * brw_context.c
  */
-GLboolean brwCreateContext( const __GLcontextModes *mesaVis,
+GLboolean brwCreateContext( int api,
+			    const __GLcontextModes *mesaVis,
 			    __DRIcontext *driContextPriv,
 			    void *sharedContextPrivate);
 
@@ -725,7 +720,7 @@ void brw_upload_urb_fence(struct brw_context *brw);
 void brw_upload_cs_urb_state(struct brw_context *brw);
 
 /* brw_disasm.c */
-int brw_disasm (FILE *file, struct brw_instruction *inst);
+int brw_disasm (FILE *file, struct brw_instruction *inst, int gen);
 
 /*======================================================================
  * Inline conversion functions.  These are better-typed than the

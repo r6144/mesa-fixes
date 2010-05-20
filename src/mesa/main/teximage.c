@@ -46,6 +46,7 @@
 #include "texfetch.h"
 #include "teximage.h"
 #include "texstate.h"
+#include "texpal.h"
 #include "mtypes.h"
 
 
@@ -354,34 +355,6 @@ _mesa_base_tex_format( GLcontext *ctx, GLint internalFormat )
 #endif /* FEATURE_EXT_texture_sRGB */
 
    return -1; /* error */
-}
-
-
-/**
- * Test if it is a supported compressed format.
- * 
- * \param internalFormat the internal format token provided by the user.
- * 
- * \ret GL_TRUE if \p internalFormat is a supported compressed format, or
- * GL_FALSE otherwise.
- *
- * Currently only GL_COMPRESSED_RGB_FXT1_3DFX and GL_COMPRESSED_RGBA_FXT1_3DFX
- * are supported.
- */
-static GLboolean
-is_compressed_format(GLcontext *ctx, GLenum internalFormat)
-{
-   GLint supported[100]; /* 100 should be plenty */
-   GLuint i, n;
-
-   n = _mesa_get_compressed_formats(ctx, supported, GL_TRUE);
-   ASSERT(n < 100);
-   for (i = 0; i < n; i++) {
-      if ((GLint) internalFormat == supported[i]) {
-         return GL_TRUE;
-      }
-   }
-   return GL_FALSE;
 }
 
 
@@ -1307,8 +1280,8 @@ texture_error_check( GLcontext *ctx, GLenum target,
       if (type != GL_UNSIGNED_SHORT_8_8_MESA &&
           type != GL_UNSIGNED_SHORT_8_8_REV_MESA) {
          char message[100];
-         sprintf(message,
-                 "glTexImage%d(format/type YCBCR mismatch", dimensions);
+         _mesa_snprintf(message, sizeof(message),
+                        "glTexImage%dD(format/type YCBCR mismatch", dimensions);
          _mesa_error(ctx, GL_INVALID_ENUM, message);
          return GL_TRUE; /* error */
       }
@@ -1323,9 +1296,9 @@ texture_error_check( GLcontext *ctx, GLenum target,
       if (border != 0) {
          if (!isProxy) {
             char message[100];
-            sprintf(message,
-                    "glTexImage%d(format=GL_YCBCR_MESA and border=%d)",
-                    dimensions, border);
+            _mesa_snprintf(message, sizeof(message),
+                           "glTexImage%dD(format=GL_YCBCR_MESA and border=%d)",
+                           dimensions, border);
             _mesa_error(ctx, GL_INVALID_VALUE, message);
          }
          return GL_TRUE;
@@ -1349,16 +1322,16 @@ texture_error_check( GLcontext *ctx, GLenum target,
    }
 
    /* additional checks for compressed textures */
-   if (is_compressed_format(ctx, internalFormat)) {
+   if (_mesa_is_compressed_format(ctx, internalFormat)) {
       if (!target_can_be_compressed(ctx, target) && !isProxy) {
          _mesa_error(ctx, GL_INVALID_ENUM,
-                     "glTexImage%d(target)", dimensions);
+                     "glTexImage%dD(target)", dimensions);
          return GL_TRUE;
       }
       if (border != 0) {
          if (!isProxy) {
             _mesa_error(ctx, GL_INVALID_OPERATION,
-                        "glTexImage%D(border!=0)", dimensions);
+                        "glTexImage%dD(border!=0)", dimensions);
          }
          return GL_TRUE;
       }
@@ -1536,7 +1509,7 @@ subtexture_error_check2( GLcontext *ctx, GLuint dimensions,
 
       if (!target_can_be_compressed(ctx, target)) {
          _mesa_error(ctx, GL_INVALID_ENUM,
-                     "glTexSubImage%D(target=%s)", dimensions,
+                     "glTexSubImage%dD(target=%s)", dimensions,
                      _mesa_lookup_enum_by_nr(target));
          return GL_TRUE;
       }
@@ -1547,19 +1520,19 @@ subtexture_error_check2( GLcontext *ctx, GLuint dimensions,
       /* offset must be multiple of block size */
       if ((xoffset % bw != 0) || (yoffset % bh != 0)) {
          _mesa_error(ctx, GL_INVALID_OPERATION,
-                     "glTexSubImage%D(xoffset = %d, yoffset = %d)",
+                     "glTexSubImage%dD(xoffset = %d, yoffset = %d)",
                      dimensions, xoffset, yoffset);
          return GL_TRUE;
       }
       /* size must be multiple of bw by bh or equal to whole texture size */
       if ((width % bw != 0) && (GLuint) width != destTex->Width) {
          _mesa_error(ctx, GL_INVALID_OPERATION,
-                     "glTexSubImage%D(width = %d)", dimensions, width);
+                     "glTexSubImage%dD(width = %d)", dimensions, width);
          return GL_TRUE;
       }         
       if ((height % bh != 0) && (GLuint) height != destTex->Height) {
          _mesa_error(ctx, GL_INVALID_OPERATION,
-                     "glTexSubImage%D(height = %d)", dimensions, height);
+                     "glTexSubImage%dD(height = %d)", dimensions, height);
          return GL_TRUE;
       }         
    }
@@ -1715,15 +1688,15 @@ copytexture_error_check( GLcontext *ctx, GLuint dimensions,
       return GL_TRUE;
    }
 
-   if (is_compressed_format(ctx, internalFormat)) {
+   if (_mesa_is_compressed_format(ctx, internalFormat)) {
       if (!target_can_be_compressed(ctx, target)) {
          _mesa_error(ctx, GL_INVALID_ENUM,
-                     "glCopyTexImage%d(target)", dimensions);
+                     "glCopyTexImage%dD(target)", dimensions);
          return GL_TRUE;
       }
       if (border != 0) {
          _mesa_error(ctx, GL_INVALID_OPERATION,
-                     "glCopyTexImage%D(border!=0)", dimensions);
+                     "glCopyTexImage%dD(border!=0)", dimensions);
          return GL_TRUE;
       }
    }
@@ -1731,7 +1704,7 @@ copytexture_error_check( GLcontext *ctx, GLuint dimensions,
       /* make sure we have depth/stencil buffers */
       if (!ctx->ReadBuffer->_DepthBuffer) {
          _mesa_error(ctx, GL_INVALID_OPERATION,
-                     "glCopyTexImage%D(no depth)", dimensions);
+                     "glCopyTexImage%dD(no depth)", dimensions);
          return GL_TRUE;
       }
    }
@@ -1739,7 +1712,7 @@ copytexture_error_check( GLcontext *ctx, GLuint dimensions,
       /* make sure we have depth/stencil buffers */
       if (!ctx->ReadBuffer->_DepthBuffer || !ctx->ReadBuffer->_StencilBuffer) {
          _mesa_error(ctx, GL_INVALID_OPERATION,
-                     "glCopyTexImage%D(no depth/stencil buffer)", dimensions);
+                     "glCopyTexImage%dD(no depth/stencil buffer)", dimensions);
          return GL_TRUE;
       }
    }
@@ -1904,24 +1877,24 @@ copytexsubimage_error_check2( GLcontext *ctx, GLuint dimensions,
    if (_mesa_is_format_compressed(teximage->TexFormat)) {
       if (!target_can_be_compressed(ctx, target)) {
          _mesa_error(ctx, GL_INVALID_ENUM,
-                     "glCopyTexSubImage%d(target)", dimensions);
+                     "glCopyTexSubImage%dD(target)", dimensions);
          return GL_TRUE;
       }
       /* offset must be multiple of 4 */
       if ((xoffset & 3) || (yoffset & 3)) {
          _mesa_error(ctx, GL_INVALID_VALUE,
-                     "glCopyTexSubImage%D(xoffset or yoffset)", dimensions);
+                     "glCopyTexSubImage%dD(xoffset or yoffset)", dimensions);
          return GL_TRUE;
       }
       /* size must be multiple of 4 */
       if ((width & 3) != 0 && (GLuint) width != teximage->Width) {
          _mesa_error(ctx, GL_INVALID_VALUE,
-                     "glCopyTexSubImage%D(width)", dimensions);
+                     "glCopyTexSubImage%dD(width)", dimensions);
          return GL_TRUE;
       }         
       if ((height & 3) != 0 && (GLuint) height != teximage->Height) {
          _mesa_error(ctx, GL_INVALID_VALUE,
-                     "glCopyTexSubImage%D(height)", dimensions);
+                     "glCopyTexSubImage%dD(height)", dimensions);
          return GL_TRUE;
       }         
    }
@@ -1941,7 +1914,7 @@ copytexsubimage_error_check2( GLcontext *ctx, GLuint dimensions,
    if (teximage->_BaseFormat == GL_DEPTH_COMPONENT) {
       if (!ctx->ReadBuffer->_DepthBuffer) {
          _mesa_error(ctx, GL_INVALID_OPERATION,
-                     "glCopyTexSubImage%D(no depth buffer)",
+                     "glCopyTexSubImage%dD(no depth buffer)",
                      dimensions);
          return GL_TRUE;
       }
@@ -1949,7 +1922,7 @@ copytexsubimage_error_check2( GLcontext *ctx, GLuint dimensions,
    else if (teximage->_BaseFormat == GL_DEPTH_STENCIL_EXT) {
       if (!ctx->ReadBuffer->_DepthBuffer || !ctx->ReadBuffer->_StencilBuffer) {
          _mesa_error(ctx, GL_INVALID_OPERATION,
-                     "glCopyTexSubImage%D(no depth/stencil buffer)",
+                     "glCopyTexSubImage%dD(no depth/stencil buffer)",
                      dimensions);
          return GL_TRUE;
       }
@@ -2456,6 +2429,12 @@ _mesa_EGLImageTargetTexture2DOES (GLenum target, GLeglImageOES image)
    struct gl_texture_image *texImage;
    GET_CURRENT_CONTEXT(ctx);
    ASSERT_OUTSIDE_BEGIN_END_AND_FLUSH(ctx);
+
+   if (!ctx->Extensions.OES_EGL_image) {
+      _mesa_error(ctx, GL_INVALID_OPERATION,
+                  "glEGLImageTargetTexture2DOES(unsupported)");
+      return;
+   }
 
    if (target != GL_TEXTURE_2D) {
       _mesa_error(ctx, GL_INVALID_ENUM,
@@ -3107,7 +3086,7 @@ compressed_texture_error_check(GLcontext *ctx, GLint dimensions,
    maxTextureSize = 1 << (maxLevels - 1);
 
    /* This will detect any invalid internalFormat value */
-   if (!is_compressed_format(ctx, internalFormat))
+   if (!_mesa_is_compressed_format(ctx, internalFormat))
       return GL_INVALID_ENUM;
 
    /* This should really never fail */
@@ -3212,7 +3191,7 @@ compressed_subtexture_error_check(GLcontext *ctx, GLint dimensions,
    maxTextureSize = 1 << (maxLevels - 1);
 
    /* this will catch any invalid compressed format token */
-   if (!is_compressed_format(ctx, format))
+   if (!_mesa_is_compressed_format(ctx, format))
       return GL_INVALID_ENUM;
 
    if (width < 1 || width > maxTextureSize)
@@ -3402,7 +3381,6 @@ _mesa_CompressedTexImage1DARB(GLenum target, GLint level,
    }
 }
 
-
 void GLAPIENTRY
 _mesa_CompressedTexImage2DARB(GLenum target, GLint level,
                               GLenum internalFormat, GLsizei width,
@@ -3417,6 +3395,24 @@ _mesa_CompressedTexImage2DARB(GLenum target, GLint level,
                   _mesa_lookup_enum_by_nr(target), level,
                   _mesa_lookup_enum_by_nr(internalFormat),
                   width, height, border, imageSize, data);
+
+#if FEATURE_ES
+   switch (internalFormat) {
+   case GL_PALETTE4_RGB8_OES:
+   case GL_PALETTE4_RGBA8_OES:
+   case GL_PALETTE4_R5_G6_B5_OES:
+   case GL_PALETTE4_RGBA4_OES:
+   case GL_PALETTE4_RGB5_A1_OES:
+   case GL_PALETTE8_RGB8_OES:
+   case GL_PALETTE8_RGBA8_OES:
+   case GL_PALETTE8_R5_G6_B5_OES:
+   case GL_PALETTE8_RGBA4_OES:
+   case GL_PALETTE8_RGB5_A1_OES:
+      _mesa_cpal_compressed_teximage2d(target, level, internalFormat,
+				       width, height, imageSize, data);
+      return;
+   }
+#endif
 
    if (target == GL_TEXTURE_2D ||
        (ctx->Extensions.ARB_texture_cube_map &&

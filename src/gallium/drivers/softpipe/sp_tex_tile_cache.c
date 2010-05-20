@@ -69,10 +69,10 @@ sp_destroy_tex_tile_cache(struct softpipe_tex_tile_cache *tc)
       /*assert(tc->entries[pos].x < 0);*/
    }
    if (tc->transfer) {
-      tc->pipe->tex_transfer_destroy(tc->pipe, tc->transfer);
+      tc->pipe->transfer_destroy(tc->pipe, tc->transfer);
    }
    if (tc->tex_trans) {
-      tc->pipe->tex_transfer_destroy(tc->pipe, tc->tex_trans);
+      tc->pipe->transfer_destroy(tc->pipe, tc->tex_trans);
    }
 
    FREE( tc );
@@ -115,19 +115,34 @@ sp_tex_tile_cache_validate_texture(struct softpipe_tex_tile_cache *tc)
    }
 }
 
+static boolean
+sp_tex_tile_is_compat_view(struct softpipe_tex_tile_cache *tc,
+                           struct pipe_sampler_view *view)
+{
+   if (!view)
+      return FALSE;
+   return (tc->texture == view->texture &&
+           tc->format == view->format &&
+           tc->swizzle_r == view->swizzle_r &&
+           tc->swizzle_g == view->swizzle_g &&
+           tc->swizzle_b == view->swizzle_b &&
+           tc->swizzle_a == view->swizzle_a);
+}
+
 /**
- * Specify the texture to cache.
+ * Specify the sampler view to cache.
  */
 void
-sp_tex_tile_cache_set_texture(struct softpipe_tex_tile_cache *tc,
-                          struct pipe_texture *texture)
+sp_tex_tile_cache_set_sampler_view(struct softpipe_tex_tile_cache *tc,
+                                   struct pipe_sampler_view *view)
 {
+   struct pipe_resource *texture = view ? view->texture : NULL;
    uint i;
 
    assert(!tc->transfer);
 
-   if (tc->texture != texture) {
-      pipe_texture_reference(&tc->texture, texture);
+   if (!sp_tex_tile_is_compat_view(tc, view)) {
+      pipe_resource_reference(&tc->texture, texture);
 
       if (tc->tex_trans) {
          if (tc->tex_trans_map) {
@@ -135,8 +150,16 @@ sp_tex_tile_cache_set_texture(struct softpipe_tex_tile_cache *tc,
             tc->tex_trans_map = NULL;
          }
 
-         tc->pipe->tex_transfer_destroy(tc->pipe, tc->tex_trans);
+         tc->pipe->transfer_destroy(tc->pipe, tc->tex_trans);
          tc->tex_trans = NULL;
+      }
+
+      if (view) {
+         tc->swizzle_r = view->swizzle_r;
+         tc->swizzle_g = view->swizzle_g;
+         tc->swizzle_b = view->swizzle_b;
+         tc->swizzle_a = view->swizzle_a;
+         tc->format = view->format;
       }
 
       /* mark as entries as invalid/empty */
@@ -230,18 +253,19 @@ sp_find_cached_tile_tex(struct softpipe_tex_tile_cache *tc,
                tc->tex_trans_map = NULL;
             }
 
-            tc->pipe->tex_transfer_destroy(tc->pipe, tc->tex_trans);
+            tc->pipe->transfer_destroy(tc->pipe, tc->tex_trans);
             tc->tex_trans = NULL;
          }
 
          tc->tex_trans = 
-            tc->pipe->get_tex_transfer(tc->pipe, tc->texture, 
-                                     addr.bits.face, 
-                                     addr.bits.level, 
-                                     addr.bits.z, 
-                                     PIPE_TRANSFER_READ, 0, 0,
-                                     u_minify(tc->texture->width0, addr.bits.level),
-                                     u_minify(tc->texture->height0, addr.bits.level));
+            pipe_get_transfer(tc->pipe, tc->texture, 
+			      addr.bits.face, 
+			      addr.bits.level, 
+			      addr.bits.z, 
+			      PIPE_TRANSFER_READ | PIPE_TRANSFER_UNSYNCHRONIZED,
+			      0, 0,
+			      u_minify(tc->texture->width0, addr.bits.level),
+			      u_minify(tc->texture->height0, addr.bits.level));
          
          tc->tex_trans_map = tc->pipe->transfer_map(tc->pipe, tc->tex_trans);
 
@@ -251,12 +275,18 @@ sp_find_cached_tile_tex(struct softpipe_tex_tile_cache *tc,
       }
 
       /* get tile from the transfer (view into texture) */
-      pipe_get_tile_rgba(tc->pipe,
-                         tc->tex_trans,
-                         addr.bits.x * TILE_SIZE, 
-                         addr.bits.y * TILE_SIZE,
-                         TILE_SIZE, TILE_SIZE,
-                         (float *) tile->data.color);
+      pipe_get_tile_swizzle(tc->pipe,
+			    tc->tex_trans,
+                            addr.bits.x * TILE_SIZE, 
+                            addr.bits.y * TILE_SIZE,
+                            TILE_SIZE,
+                            TILE_SIZE,
+                            tc->swizzle_r,
+                            tc->swizzle_g,
+                            tc->swizzle_b,
+                            tc->swizzle_a,
+                            tc->format,
+                            (float *) tile->data.color);
       tile->addr = addr;
    }
 

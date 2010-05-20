@@ -28,11 +28,9 @@
 #include "state_tracker/drm_api.h"
 
 #include "util/u_memory.h"
+#include "rbug/rbug_public.h"
 #include "tr_drm.h"
 #include "tr_screen.h"
-#include "tr_context.h"
-#include "tr_buffer.h"
-#include "tr_texture.h"
 #include "tr_public.h"
 
 struct trace_drm_api
@@ -64,7 +62,7 @@ trace_drm_create_screen(struct drm_api *_api, int fd,
    screen = api->create_screen(api, fd, arg);
 
 
-   return trace_screen_create(screen);
+   return trace_screen_create(rbug_screen_create(screen));
 }
 
 static void
@@ -76,7 +74,7 @@ trace_drm_destroy(struct drm_api *_api)
    if (api->destroy)
       api->destroy(api);
 
-   free(tr_api);
+   FREE(tr_api);
 }
 
 struct drm_api *
@@ -87,7 +85,7 @@ trace_drm_create(struct drm_api *api)
    if (!api)
       goto error;
 
-   if (!trace_enabled())
+   if (!trace_enabled() && !rbug_enabled())
       goto error;
 
    tr_api = CALLOC_STRUCT(trace_drm_api);

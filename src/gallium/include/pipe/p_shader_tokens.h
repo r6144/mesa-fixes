@@ -73,9 +73,8 @@ enum tgsi_file_type {
    TGSI_FILE_SAMPLER      =5,
    TGSI_FILE_ADDRESS      =6,
    TGSI_FILE_IMMEDIATE    =7,
-   TGSI_FILE_LOOP         =8,
-   TGSI_FILE_PREDICATE    =9,
-   TGSI_FILE_SYSTEM_VALUE =10,
+   TGSI_FILE_PREDICATE    =8,
+   TGSI_FILE_SYSTEM_VALUE =9,
    TGSI_FILE_COUNT      /**< how many TGSI_FILE_ types */
 };
 
@@ -276,12 +275,10 @@ struct tgsi_property_data {
 #define TGSI_OPCODE_TXL                 72
 #define TGSI_OPCODE_BRK                 73
 #define TGSI_OPCODE_IF                  74
-#define TGSI_OPCODE_BGNFOR              75
-#define TGSI_OPCODE_REP                 76
+                                /* gap */
 #define TGSI_OPCODE_ELSE                77
 #define TGSI_OPCODE_ENDIF               78
-#define TGSI_OPCODE_ENDFOR              79
-#define TGSI_OPCODE_ENDREP              80
+                                /* gap */
 #define TGSI_OPCODE_PUSHA               81
 #define TGSI_OPCODE_POPA                82
 #define TGSI_OPCODE_CEIL                83

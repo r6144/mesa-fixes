@@ -51,8 +51,9 @@ struct lp_jit_texture
    uint32_t height;
    uint32_t depth;
    uint32_t last_level;
-   uint32_t row_stride[LP_MAX_TEXTURE_2D_LEVELS];
-   const void *data[LP_MAX_TEXTURE_2D_LEVELS];
+   uint32_t row_stride[LP_MAX_TEXTURE_LEVELS];
+   uint32_t img_stride[LP_MAX_TEXTURE_LEVELS];
+   const void *data[LP_MAX_TEXTURE_LEVELS];
 };
 
 
@@ -62,7 +63,9 @@ enum {
    LP_JIT_TEXTURE_DEPTH,
    LP_JIT_TEXTURE_LAST_LEVEL,
    LP_JIT_TEXTURE_ROW_STRIDE,
-   LP_JIT_TEXTURE_DATA
+   LP_JIT_TEXTURE_IMG_STRIDE,
+   LP_JIT_TEXTURE_DATA,
+   LP_JIT_TEXTURE_NUM_FIELDS  /* number of fields above */
 };
 
 
@@ -84,6 +87,8 @@ struct lp_jit_context
 
    float alpha_ref_value;
 
+   uint32_t stencil_ref_front, stencil_ref_back;
+
    /** floats, not ints */
    float scissor_xmin, scissor_ymin, scissor_xmax, scissor_ymax;
 
@@ -94,37 +99,62 @@ struct lp_jit_context
 };
 
 
+/**
+ * These enum values must match the position of the fields in the
+ * lp_jit_context struct above.
+ */
+enum {
+   LP_JIT_CTX_CONSTANTS = 0,
+   LP_JIT_CTX_ALPHA_REF,
+   LP_JIT_CTX_STENCIL_REF_FRONT,
+   LP_JIT_CTX_STENCIL_REF_BACK,
+   LP_JIT_CTX_SCISSOR_XMIN,
+   LP_JIT_CTX_SCISSOR_YMIN,
+   LP_JIT_CTX_SCISSOR_XMAX,
+   LP_JIT_CTX_SCISSOR_YMAX,
+   LP_JIT_CTX_BLEND_COLOR,
+   LP_JIT_CTX_TEXTURES,
+   LP_JIT_CTX_COUNT
+};
+
+
 #define lp_jit_context_constants(_builder, _ptr) \
-   lp_build_struct_get(_builder, _ptr, 0, "constants")
+   lp_build_struct_get(_builder, _ptr, LP_JIT_CTX_CONSTANTS, "constants")
 
 #define lp_jit_context_alpha_ref_value(_builder, _ptr) \
-   lp_build_struct_get(_builder, _ptr, 1, "alpha_ref_value")
+   lp_build_struct_get(_builder, _ptr, LP_JIT_CTX_ALPHA_REF, "alpha_ref_value")
+
+#define lp_jit_context_stencil_ref_front_value(_builder, _ptr) \
+   lp_build_struct_get(_builder, _ptr, LP_JIT_CTX_STENCIL_REF_FRONT, "stencil_ref_front")
+
+#define lp_jit_context_stencil_ref_back_value(_builder, _ptr) \
+   lp_build_struct_get(_builder, _ptr, LP_JIT_CTX_STENCIL_REF_BACK, "stencil_ref_back")
 
 #define lp_jit_context_scissor_xmin_value(_builder, _ptr) \
-   lp_build_struct_get(_builder, _ptr, 2, "scissor_xmin")
+   lp_build_struct_get(_builder, _ptr, LP_JIT_CTX_SCISSOR_XMIN, "scissor_xmin")
 
 #define lp_jit_context_scissor_ymin_value(_builder, _ptr) \
-   lp_build_struct_get(_builder, _ptr, 3, "scissor_ymin")
+   lp_build_struct_get(_builder, _ptr, LP_JIT_CTX_SCISSOR_YMIN, "scissor_ymin")
 
 #define lp_jit_context_scissor_xmax_value(_builder, _ptr) \
-   lp_build_struct_get(_builder, _ptr, 4, "scissor_xmax")
+   lp_build_struct_get(_builder, _ptr, LP_JIT_CTX_SCISSOR_XMAX, "scissor_xmax")
 
 #define lp_jit_context_scissor_ymax_value(_builder, _ptr) \
-   lp_build_struct_get(_builder, _ptr, 5, "scissor_ymax")
+   lp_build_struct_get(_builder, _ptr, LP_JIT_CTX_SCISSOR_YMAX, "scissor_ymax")
 
 #define lp_jit_context_blend_color(_builder, _ptr) \
-   lp_build_struct_get(_builder, _ptr, 6, "blend_color")
-
-#define LP_JIT_CONTEXT_TEXTURES_INDEX 7
+   lp_build_struct_get(_builder, _ptr, LP_JIT_CTX_BLEND_COLOR, "blend_color")
 
 #define lp_jit_context_textures(_builder, _ptr) \
-   lp_build_struct_get_ptr(_builder, _ptr, LP_JIT_CONTEXT_TEXTURES_INDEX, "textures")
+   lp_build_struct_get_ptr(_builder, _ptr, LP_JIT_CTX_TEXTURES, "textures")
+
 
 
 typedef void
 (*lp_jit_frag_func)(const struct lp_jit_context *context,
                     uint32_t x,
                     uint32_t y,
+                    float facing,
                     const void *a0,
                     const void *dadx,
                     const void *dady,
@@ -135,7 +165,38 @@ typedef void
                     const int32_t c3,
                     const int32_t *step1,
                     const int32_t *step2,
-                    const int32_t *step3);
+                    const int32_t *step3,
+                    uint32_t *counter);
+
+
+/** cast wrapper to avoid compiler warnings */
+static INLINE lp_jit_frag_func
+cast_voidptr_to_lp_jit_frag_func(void *v)
+{
+   union {
+      void *v;
+      lp_jit_frag_func f;
+   } u;
+   assert(sizeof(u.v) == sizeof(u.f));
+   u.v = v;
+   return u.f;
+}
+
+
+/** cast wrapper */
+static INLINE void *
+cast_lp_jit_frag_func_to_voidptr(lp_jit_frag_func f)
+{
+   union {
+      void *v;
+      lp_jit_frag_func f;
+   } u;
+   assert(sizeof(u.v) == sizeof(u.f));
+   u.f = f;
+   return u.v;
+}
+
+
 
 
 void

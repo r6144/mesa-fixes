@@ -56,7 +56,7 @@ dump_ctx_printf(struct dump_ctx *ctx, const char *format, ...)
    va_list ap;
    (void)ctx;
    va_start(ap, format);
-   debug_vprintf(format, ap);
+   _debug_vprintf(format, ap);
    va_end(ap);
 }
 
@@ -100,7 +100,6 @@ static const char *file_names[TGSI_FILE_COUNT] =
    "SAMP",
    "ADDR",
    "IMM",
-   "LOOP",
    "PRED",
    "SV"
 };
@@ -494,6 +493,30 @@ iter_instruction(
       TXT( "  " );
    ctx->indent += info->post_indent;
    
+   if (inst->Instruction.Predicate) {
+      CHR( '(' );
+
+      if (inst->Predicate.Negate)
+         CHR( '!' );
+
+      TXT( "PRED[" );
+      SID( inst->Predicate.Index );
+      CHR( ']' );
+
+      if (inst->Predicate.SwizzleX != TGSI_SWIZZLE_X ||
+          inst->Predicate.SwizzleY != TGSI_SWIZZLE_Y ||
+          inst->Predicate.SwizzleZ != TGSI_SWIZZLE_Z ||
+          inst->Predicate.SwizzleW != TGSI_SWIZZLE_W) {
+         CHR( '.' );
+         ENM( inst->Predicate.SwizzleX, swizzle_names );
+         ENM( inst->Predicate.SwizzleY, swizzle_names );
+         ENM( inst->Predicate.SwizzleZ, swizzle_names );
+         ENM( inst->Predicate.SwizzleW, swizzle_names );
+      }
+
+      TXT( ") " );
+   }
+
    TXT( info->mnemonic );
 
    switch (inst->Instruction.Saturate) {
@@ -586,7 +609,6 @@ iter_instruction(
    /* update indentation */
    if (inst->Instruction.Opcode == TGSI_OPCODE_IF ||
        inst->Instruction.Opcode == TGSI_OPCODE_ELSE ||
-       inst->Instruction.Opcode == TGSI_OPCODE_BGNFOR ||
        inst->Instruction.Opcode == TGSI_OPCODE_BGNLOOP) {
       ctx->indentation += indent_spaces;
    }

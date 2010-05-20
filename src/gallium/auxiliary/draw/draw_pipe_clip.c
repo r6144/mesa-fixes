@@ -157,6 +157,10 @@ static void interp( const struct clip_stage *clip,
 }
 
 
+/**
+ * Emit a post-clip polygon to the next pipeline stage.  The polygon
+ * will be convex and the provoking vertex will always be vertex[0].
+ */
 static void emit_poly( struct draw_stage *stage,
 		       struct vertex_header **inlist,
 		       unsigned n,
@@ -164,10 +168,18 @@ static void emit_poly( struct draw_stage *stage,
 {
    struct prim_header header;
    unsigned i;
+   ushort edge_first, edge_middle, edge_last;
 
-   const ushort edge_first  = DRAW_PIPE_EDGE_FLAG_2;
-   const ushort edge_middle = DRAW_PIPE_EDGE_FLAG_0;
-   const ushort edge_last   = DRAW_PIPE_EDGE_FLAG_1;
+   if (stage->draw->rasterizer->flatshade_first) {
+      edge_first  = DRAW_PIPE_EDGE_FLAG_0;
+      edge_middle = DRAW_PIPE_EDGE_FLAG_1;
+      edge_last   = DRAW_PIPE_EDGE_FLAG_2;
+   }
+   else {
+      edge_first  = DRAW_PIPE_EDGE_FLAG_2;
+      edge_middle = DRAW_PIPE_EDGE_FLAG_0;
+      edge_last   = DRAW_PIPE_EDGE_FLAG_1;
+   }
 
    /* later stages may need the determinant, but only the sign matters */
    header.det = origPrim->det;
@@ -175,9 +187,17 @@ static void emit_poly( struct draw_stage *stage,
    header.pad = 0;
 
    for (i = 2; i < n; i++, header.flags = edge_middle) {
-      header.v[0] = inlist[i-1];
-      header.v[1] = inlist[i];
-      header.v[2] = inlist[0];	/* keep in v[2] for flatshading */
+      /* order the triangle verts to respect the provoking vertex mode */
+      if (stage->draw->rasterizer->flatshade_first) {
+         header.v[0] = inlist[0];  /* the provoking vertex */
+         header.v[1] = inlist[i-1];
+         header.v[2] = inlist[i];
+      }
+      else {
+         header.v[0] = inlist[i-1];
+         header.v[1] = inlist[i];
+         header.v[2] = inlist[0];  /* the provoking vertex */
+      }
 
       if (i == n-1)
          header.flags |= edge_last;
@@ -185,7 +205,8 @@ static void emit_poly( struct draw_stage *stage,
       if (0) {
          const struct draw_vertex_shader *vs = stage->draw->vs.vertex_shader;
          uint j, k;
-         debug_printf("Clipped tri:\n");
+         debug_printf("Clipped tri: (flat-shade-first = %d)\n",
+                      stage->draw->rasterizer->flatshade_first);
          for (j = 0; j < 3; j++) {
             for (k = 0; k < vs->info.num_outputs; k++) {
                debug_printf("  Vert %d: Attr %d:  %f %f %f %f\n", j, k,
@@ -291,12 +312,21 @@ do_clip_tri( struct draw_stage *stage,
       }
    }
 
-   /* If flat-shading, copy color to new provoking vertex.
+   /* If flat-shading, copy provoking vertex color to polygon vertex[0]
     */
-   if (clipper->flat && inlist[0] != header->v[2]) {
-      inlist[0] = dup_vert(stage, inlist[0], tmpnr++);
-
-      copy_colors(stage, inlist[0], header->v[2]);
+   if (clipper->flat) {
+      if (stage->draw->rasterizer->flatshade_first) {
+         if (inlist[0] != header->v[0]) {
+            inlist[0] = dup_vert(stage, inlist[0], tmpnr++);
+            copy_colors(stage, inlist[0], header->v[0]);
+         }
+      }
+      else {
+         if (inlist[0] != header->v[2]) {
+            inlist[0] = dup_vert(stage, inlist[0], tmpnr++);
+            copy_colors(stage, inlist[0], header->v[2]);
+         }
+      }
    }
 
    /* Emit the polygon as triangles to the setup stage:

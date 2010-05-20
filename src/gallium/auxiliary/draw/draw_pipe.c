@@ -66,6 +66,7 @@ boolean draw_pipeline_init( struct draw_context *draw )
    /* these defaults are oriented toward the needs of softpipe */
    draw->pipeline.wide_point_threshold = 1000000.0; /* infinity */
    draw->pipeline.wide_line_threshold = 1.0;
+   draw->pipeline.wide_point_sprites = FALSE;
    draw->pipeline.line_stipple = TRUE;
    draw->pipeline.point_sprite = TRUE;
 
@@ -169,7 +170,25 @@ static void do_triangle( struct draw_context *draw,
  * Set up macros for draw_pt_decompose.h template code.
  * This code uses vertex indexes / elements.
  */
-#define QUAD(i0,i1,i2,i3)                       \
+
+/* emit first quad vertex as first vertex in triangles */
+#define QUAD_FIRST_PV(i0,i1,i2,i3)              \
+   do_triangle( draw,                           \
+                ( DRAW_PIPE_RESET_STIPPLE |     \
+                  DRAW_PIPE_EDGE_FLAG_0 |       \
+                  DRAW_PIPE_EDGE_FLAG_1 ),      \
+                verts + stride * elts[i0],      \
+                verts + stride * elts[i1],      \
+                verts + stride * elts[i2]);     \
+   do_triangle( draw,                           \
+                ( DRAW_PIPE_EDGE_FLAG_1 |       \
+                  DRAW_PIPE_EDGE_FLAG_2 ),      \
+                verts + stride * elts[i0],      \
+                verts + stride * elts[i2],      \
+                verts + stride * elts[i3])
+
+/* emit last quad vertex as last vertex in triangles */
+#define QUAD_LAST_PV(i0,i1,i2,i3)               \
    do_triangle( draw,                           \
                 ( DRAW_PIPE_RESET_STIPPLE |     \
                   DRAW_PIPE_EDGE_FLAG_0 |       \
@@ -225,7 +244,7 @@ static void do_triangle( struct draw_context *draw,
 
 
 /**
- * Code to run the pipeline on a fairly arbitary collection of vertices.
+ * Code to run the pipeline on a fairly arbitrary collection of vertices.
  * For drawing indexed primitives.
  *
  * Vertex headers must be pre-initialized with the
@@ -260,9 +279,27 @@ void draw_pipeline_run( struct draw_context *draw,
 
 /*
  * Set up macros for draw_pt_decompose.h template code.
- * This code is for non-indexed rendering (no elts).
+ * This code is for non-indexed (aka linear) rendering (no elts).
  */
-#define QUAD(i0,i1,i2,i3)                                        \
+
+/* emit first quad vertex as first vertex in triangles */
+#define QUAD_FIRST_PV(i0,i1,i2,i3)                               \
+   do_triangle( draw,                                            \
+                ( DRAW_PIPE_RESET_STIPPLE |                      \
+                  DRAW_PIPE_EDGE_FLAG_0 |                        \
+                  DRAW_PIPE_EDGE_FLAG_1 ),                       \
+                verts + stride * ((i0) & ~DRAW_PIPE_FLAG_MASK),  \
+                verts + stride * (i1),                           \
+                verts + stride * (i2));                          \
+   do_triangle( draw,                                            \
+                ( DRAW_PIPE_EDGE_FLAG_1 |                        \
+                  DRAW_PIPE_EDGE_FLAG_2 ),                       \
+                verts + stride * ((i0) & ~DRAW_PIPE_FLAG_MASK),  \
+                verts + stride * (i2),                           \
+                verts + stride * (i3))
+
+/* emit last quad vertex as last vertex in triangles */
+#define QUAD_LAST_PV(i0,i1,i2,i3)                                \
    do_triangle( draw,                                            \
                 ( DRAW_PIPE_RESET_STIPPLE |                      \
                   DRAW_PIPE_EDGE_FLAG_0 |                        \

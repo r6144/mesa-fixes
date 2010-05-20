@@ -102,14 +102,19 @@ enum sse_cc {
 #define cc_Z  cc_E
 #define cc_NZ cc_NE
 
-/* Begin/end/retreive function creation:
+
+/** generic pointer to function */
+typedef void (*x86_func)(void);
+
+
+/* Begin/end/retrieve function creation:
  */
 
 
 void x86_init_func( struct x86_function *p );
 void x86_init_func_size( struct x86_function *p, unsigned code_size );
 void x86_release_func( struct x86_function *p );
-void (*x86_get_func( struct x86_function *p ))( void );
+x86_func x86_get_func( struct x86_function *p );
 
 /* Debugging:
  */
@@ -311,8 +316,8 @@ void x87_fucom( struct x86_function *p, struct x86_reg arg );
 
 
 
-/* Retreive a reference to one of the function arguments, taking into
- * account any push/pop activity.  Note - doesn't track explict
+/* Retrieve a reference to one of the function arguments, taking into
+ * account any push/pop activity.  Note - doesn't track explicit
  * manipulation of ESP by other instructions.
  */
 struct x86_reg x86_fn_arg( struct x86_function *p, unsigned arg );

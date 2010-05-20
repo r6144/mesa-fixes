@@ -37,7 +37,7 @@
 #define LP_BLD_SWIZZLE_H
 
 
-#include "os/os_llvm.h"
+#include "gallivm/lp_bld.h"
 
 
 struct lp_type;
@@ -86,6 +86,25 @@ lp_build_swizzle2_aos(struct lp_build_context *bld,
                       LLVMValueRef a,
                       LLVMValueRef b,
                       const unsigned char swizzle[4]);
+
+
+LLVMValueRef
+lp_build_swizzle_soa_channel(struct lp_build_context *bld,
+                             const LLVMValueRef *unswizzled,
+                             unsigned swizzle);
+
+
+void
+lp_build_swizzle_soa(struct lp_build_context *bld,
+                     const LLVMValueRef *unswizzled,
+                     const unsigned char swizzles[4],
+                     LLVMValueRef *swizzled);
+
+
+void
+lp_build_swizzle_soa_inplace(struct lp_build_context *bld,
+                             LLVMValueRef *values,
+                             const unsigned char swizzles[4]);
 
 
 #endif /* !LP_BLD_SWIZZLE_H */

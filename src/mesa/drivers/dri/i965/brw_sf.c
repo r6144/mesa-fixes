@@ -46,6 +46,7 @@
 static void compile_sf_prog( struct brw_context *brw,
 			     struct brw_sf_prog_key *key )
 {
+   struct intel_context *intel = &brw->intel;
    struct brw_sf_compile c;
    const GLuint *program;
    GLuint program_size;
@@ -107,6 +108,14 @@ static void compile_sf_prog( struct brw_context *brw,
     */
    program = brw_get_program(&c.func, &program_size);
 
+   if (INTEL_DEBUG & DEBUG_SF) {
+      printf("sf:\n");
+      for (i = 0; i < program_size / sizeof(struct brw_instruction); i++)
+	 brw_disasm(stdout, &((struct brw_instruction *)program)[i],
+		    intel->gen);
+      printf("\n");
+   }
+
    /* Upload
     */
    dri_bo_unreference(brw->sf.prog_bo);
@@ -154,6 +163,7 @@ static void upload_sf_prog(struct brw_context *brw)
       break;
    }
 
+   /* _NEW_POINT */
    key.do_point_sprite = ctx->Point.PointSprite;
    if (key.do_point_sprite) {
       int i;

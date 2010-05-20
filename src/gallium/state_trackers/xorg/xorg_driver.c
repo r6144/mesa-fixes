@@ -141,8 +141,6 @@ xorg_tracker_have_modesetting(ScrnInfoPtr pScrn, struct pci_device *device)
 
 static Bool drv_init_front_buffer_functions(ScrnInfoPtr pScrn);
 static Bool drv_close_screen(int scrnIndex, ScreenPtr pScreen);
-static Bool drv_save_hw_state(ScrnInfoPtr pScrn);
-static Bool drv_restore_hw_state(ScrnInfoPtr pScrn);
 
 
 /*
@@ -336,17 +334,9 @@ static Bool
 drv_close_resource_management(ScrnInfoPtr pScrn)
 {
     modesettingPtr ms = modesettingPTR(pScrn);
-    int i;
 
     if (ms->screen) {
 	assert(ms->ctx == NULL);
-
-	for (i = 0; i < XORG_NR_FENCES; i++) {
-	    if (ms->fence[i]) {
-		ms->screen->fence_finish(ms->screen, ms->fence[i], 0);
-		ms->screen->fence_reference(ms->screen, &ms->fence[i], NULL);
-	    }
-	}
 	ms->screen->destroy(ms->screen);
     }
     ms->screen = NULL;
@@ -357,6 +347,22 @@ drv_close_resource_management(ScrnInfoPtr pScrn)
 #endif
 
     return TRUE;
+}
+
+static void
+drv_cleanup_fences(ScrnInfoPtr pScrn)
+{
+    modesettingPtr ms = modesettingPTR(pScrn);
+    int i;
+
+    assert(ms->screen);
+
+    for (i = 0; i < XORG_NR_FENCES; i++) {
+	if (ms->fence[i]) {
+	    ms->screen->fence_finish(ms->screen, ms->fence[i], 0);
+	    ms->screen->fence_reference(ms->screen, &ms->fence[i], NULL);
+	}
+    }
 }
 
 static Bool
@@ -388,7 +394,6 @@ drv_pre_init(ScrnInfoPtr pScrn, int flags)
 	return FALSE;
 
     ms = modesettingPTR(pScrn);
-    ms->SaveGeneration = -1;
     ms->pEnt = pEnt;
     ms->cust = cust;
 
@@ -471,18 +476,13 @@ drv_pre_init(ScrnInfoPtr pScrn, int flags)
 	ms->SWCursor = TRUE;
     }
 
-    drv_save_hw_state(pScrn);
-
     xorg_crtc_init(pScrn);
     xorg_output_init(pScrn);
 
     if (!xf86InitialConfiguration(pScrn, TRUE)) {
 	xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "No valid modes.\n");
-	drv_restore_hw_state(pScrn);
 	return FALSE;
     }
-
-    drv_restore_hw_state(pScrn);
 
     /*
      * If the driver can do gamma correction, it should call xf86SetGamma() here.
@@ -517,22 +517,6 @@ drv_pre_init(ScrnInfoPtr pScrn, int flags)
     if (!xf86LoadSubModule(pScrn, "dri2"))
 	return FALSE;
 #endif
-
-    return TRUE;
-}
-
-static Bool
-drv_save_hw_state(ScrnInfoPtr pScrn)
-{
-    /*xf86CrtcConfigPtr xf86_config = XF86_CRTC_CONFIG_PTR(pScrn);*/
-
-    return TRUE;
-}
-
-static Bool
-drv_restore_hw_state(ScrnInfoPtr pScrn)
-{
-    /*xf86CrtcConfigPtr config = XF86_CRTC_CONFIG_PTR(pScrn);*/
 
     return TRUE;
 }
@@ -676,10 +660,9 @@ drv_screen_init(int scrnIndex, ScreenPtr pScreen, int argc, char **argv)
     }
 
     if (ms->screen) {
-	float maxf;
 	int max;
-	maxf = ms->screen->get_paramf(ms->screen, PIPE_CAP_MAX_TEXTURE_2D_LEVELS);
-	max = (1 << (int)(maxf - 1.0f));
+	max = ms->screen->get_param(ms->screen, PIPE_CAP_MAX_TEXTURE_2D_LEVELS);
+	max = 1 << (max - 1);
 	max_width = max < max_width ? max : max_width;
 	max_height = max < max_height ? max : max_height;
     }
@@ -849,7 +832,9 @@ drv_leave_vt(int scrnIndex, int flags)
     drmModeRmFB(ms->fd, ms->fb_id);
     ms->fb_id = -1;
 
-    drv_restore_hw_state(pScrn);
+    /* idle hardware */
+    if (!ms->kms)
+	drv_cleanup_fences(pScrn);
 
     if (drmDropMaster(ms->fd))
 	xf86DrvMsg(pScrn->scrnIndex, X_WARNING,
@@ -877,15 +862,6 @@ drv_enter_vt(int scrnIndex, int flags)
 	    xf86DrvMsg(pScrn->scrnIndex, X_WARNING,
 		       "drmSetMaster failed: %s\n", strerror(errno));
 	}
-    }
-
-    /*
-     * Only save state once per server generation since that's what most
-     * drivers do.  Could change this to save state at each VT enter.
-     */
-    if (ms->SaveGeneration != serverGeneration) {
-	ms->SaveGeneration = serverGeneration;
-	drv_save_hw_state(pScrn);
     }
 
     if (!ms->create_front_buffer(pScrn))
@@ -918,10 +894,6 @@ drv_close_screen(int scrnIndex, ScreenPtr pScreen)
     modesettingPtr ms = modesettingPTR(pScrn);
     CustomizerPtr cust = ms->cust;
 
-    if (pScrn->vtSema) {
-	drv_leave_vt(scrnIndex, 0);
-    }
-
     if (ms->cursor) {
        FreeCursor(ms->cursor, None);
        ms->cursor = NULL;
@@ -952,6 +924,11 @@ drv_close_screen(int scrnIndex, ScreenPtr pScreen)
     if (ms->exa)
 	xorg_exa_close(pScrn);
     ms->exa = NULL;
+
+    /* calls drop master make sure we don't talk to 3D HW after that */
+    if (pScrn->vtSema) {
+	drv_leave_vt(scrnIndex, 0);
+    }
 
     drv_close_resource_management(pScrn);
 
@@ -986,7 +963,7 @@ drv_destroy_front_buffer_ga3d(ScrnInfoPtr pScrn)
 	ms->fb_id = -1;
     }
 
-    pipe_texture_reference(&ms->root_texture, NULL);
+    pipe_resource_reference(&ms->root_texture, NULL);
     return TRUE;
 }
 
@@ -994,7 +971,7 @@ static Bool
 drv_create_front_buffer_ga3d(ScrnInfoPtr pScrn)
 {
     modesettingPtr ms = modesettingPTR(pScrn);
-    struct pipe_texture *tex;
+    struct pipe_resource *tex;
     struct winsys_handle whandle;
     unsigned fb_id;
     int ret;
@@ -1010,7 +987,7 @@ drv_create_front_buffer_ga3d(ScrnInfoPtr pScrn)
     memset(&whandle, 0, sizeof(whandle));
     whandle.type = DRM_API_HANDLE_TYPE_KMS;
 
-    if (!ms->screen->texture_get_handle(ms->screen, tex, &whandle))
+    if (!ms->screen->resource_get_handle(ms->screen, tex, &whandle))
 	goto err_destroy;
 
     ret = drmModeAddFB(ms->fd,
@@ -1034,14 +1011,14 @@ drv_create_front_buffer_ga3d(ScrnInfoPtr pScrn)
     pScrn->frameY0 = 0;
     drv_adjust_frame(pScrn->scrnIndex, pScrn->frameX0, pScrn->frameY0, 0);
 
-    pipe_texture_reference(&ms->root_texture, tex);
-    pipe_texture_reference(&tex, NULL);
+    pipe_resource_reference(&ms->root_texture, tex);
+    pipe_resource_reference(&tex, NULL);
     ms->fb_id = fb_id;
 
     return TRUE;
 
 err_destroy:
-    pipe_texture_reference(&tex, NULL);
+    pipe_resource_reference(&tex, NULL);
     return FALSE;
 }
 
@@ -1051,7 +1028,7 @@ drv_bind_front_buffer_ga3d(ScrnInfoPtr pScrn)
     modesettingPtr ms = modesettingPTR(pScrn);
     ScreenPtr pScreen = pScrn->pScreen;
     PixmapPtr rootPixmap = pScreen->GetScreenPixmap(pScreen);
-    struct pipe_texture *check;
+    struct pipe_resource *check;
 
     xorg_exa_set_displayed_usage(rootPixmap);
     xorg_exa_set_shared_usage(rootPixmap);
@@ -1063,7 +1040,7 @@ drv_bind_front_buffer_ga3d(ScrnInfoPtr pScrn)
     if (ms->root_texture != check)
 	FatalError("Created new root texture\n");
 
-    pipe_texture_reference(&check, NULL);
+    pipe_resource_reference(&check, NULL);
     return TRUE;
 }
 

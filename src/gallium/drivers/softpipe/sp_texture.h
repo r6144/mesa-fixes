@@ -30,7 +30,6 @@
 
 
 #include "pipe/p_state.h"
-#include "pipe/p_video_state.h"
 
 
 #define SP_MAX_TEXTURE_2D_LEVELS 13  /* 4K x 4K */
@@ -42,31 +41,39 @@ struct pipe_screen;
 struct softpipe_context;
 
 
-struct softpipe_texture
+/**
+ * Subclass of pipe_resource.
+ */
+struct softpipe_resource
 {
-   struct pipe_texture base;
+   struct pipe_resource base;
 
    unsigned long level_offset[SP_MAX_TEXTURE_2D_LEVELS];
    unsigned stride[SP_MAX_TEXTURE_2D_LEVELS];
 
    /**
-    * Display target, for textures with the PIPE_TEXTURE_USAGE_DISPLAY_TARGET
-    * usage.
+    * Display target, only valid for PIPE_TEXTURE_2D with the
+    * PIPE_BIND_DISPLAY_TARGET usage.
     */
    struct sw_displaytarget *dt;
 
    /**
-    * Malloc'ed data for regular textures, or a mapping to dt above.
+    * Malloc'ed data for regular buffers and textures, or a mapping to dt above.
     */
    void *data;
 
    /* True if texture images are power-of-two in all dimensions:
     */
    boolean pot;
+   boolean userBuffer;
 
    unsigned timestamp;
 };
 
+
+/**
+ * Subclass of pipe_transfer.
+ */
 struct softpipe_transfer
 {
    struct pipe_transfer base;
@@ -74,21 +81,13 @@ struct softpipe_transfer
    unsigned long offset;
 };
 
-struct softpipe_video_surface
-{
-   struct pipe_video_surface base;
-
-   /* The data is held here:
-    */
-   struct pipe_texture *tex;
-};
 
 
 /** cast wrappers */
-static INLINE struct softpipe_texture *
-softpipe_texture(struct pipe_texture *pt)
+static INLINE struct softpipe_resource *
+softpipe_resource(struct pipe_resource *pt)
 {
-   return (struct softpipe_texture *) pt;
+   return (struct softpipe_resource *) pt;
 }
 
 static INLINE struct softpipe_transfer *
@@ -97,17 +96,11 @@ softpipe_transfer(struct pipe_transfer *pt)
    return (struct softpipe_transfer *) pt;
 }
 
-static INLINE struct softpipe_video_surface *
-softpipe_video_surface(struct pipe_video_surface *pvs)
-{
-   return (struct softpipe_video_surface *) pvs;
-}
-
 
 extern void
 softpipe_init_screen_texture_funcs(struct pipe_screen *screen);
 
-void
+extern void
 softpipe_init_texture_funcs(struct pipe_context *pipe);
 
 

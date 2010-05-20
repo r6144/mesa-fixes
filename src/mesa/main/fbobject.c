@@ -180,8 +180,12 @@ _mesa_get_attachment(GLcontext *ctx, struct gl_framebuffer *fb,
       return &fb->Attachment[BUFFER_COLOR0 + i];
    case GL_DEPTH_STENCIL_ATTACHMENT:
       /* fall-through */
+   case GL_DEPTH_BUFFER:
+      /* fall-through / new in GL 3.0 */
    case GL_DEPTH_ATTACHMENT_EXT:
       return &fb->Attachment[BUFFER_DEPTH];
+   case GL_STENCIL_BUFFER:
+      /* fall-through / new in GL 3.0 */
    case GL_STENCIL_ATTACHMENT_EXT:
       return &fb->Attachment[BUFFER_STENCIL];
    default:
@@ -625,7 +629,7 @@ _mesa_test_framebuffer_completeness(GLcontext *ctx, struct gl_framebuffer *fb)
       }
    }
 
-#ifndef FEATURE_OES_framebuffer_object
+#if !FEATURE_OES_framebuffer_object
    /* Check that all DrawBuffers are present */
    for (j = 0; j < ctx->Const.MaxDrawBuffers; j++) {
       if (fb->ColorDrawBuffer[j] != GL_NONE) {
@@ -883,6 +887,7 @@ _mesa_base_fbo_format(GLcontext *ctx, GLenum internalFormat)
    case GL_RGB10_A2:
    case GL_RGBA12:
    case GL_RGBA16:
+   case GL_RGBA16_SNORM:
       return GL_RGBA;
    case GL_STENCIL_INDEX:
    case GL_STENCIL_INDEX1_EXT:
@@ -1016,6 +1021,12 @@ _mesa_EGLImageTargetRenderbufferStorageOES (GLenum target, GLeglImageOES image)
    GET_CURRENT_CONTEXT(ctx);
    ASSERT_OUTSIDE_BEGIN_END(ctx);
 
+   if (!ctx->Extensions.OES_EGL_image) {
+      _mesa_error(ctx, GL_INVALID_OPERATION,
+                  "glEGLImageTargetRenderbufferStorageOES(unsupported)");
+      return;
+   }
+
    if (target != GL_RENDERBUFFER) {
       _mesa_error(ctx, GL_INVALID_ENUM, "EGLImageTargetRenderbufferStorageOES");
       return;
@@ -1100,7 +1111,22 @@ _mesa_RenderbufferStorageMultisample(GLenum target, GLsizei samples,
    renderbuffer_storage(target, internalFormat, width, height, samples);
 }
 
+void GLAPIENTRY
+_es_RenderbufferStorageEXT(GLenum target, GLenum internalFormat,
+			   GLsizei width, GLsizei height)
+{
+   switch (internalFormat) {
+   case GL_RGB565:
+      /* XXX this confuses GL_RENDERBUFFER_INTERNAL_FORMAT_OES */
+      /* choose a closest format */
+      internalFormat = GL_RGB5;
+      break;
+   default:
+      break;
+   }
 
+   renderbuffer_storage(target, internalFormat, width, height, 0);
+}
 
 void GLAPIENTRY
 _mesa_GetRenderbufferParameterivEXT(GLenum target, GLenum pname, GLint *params)

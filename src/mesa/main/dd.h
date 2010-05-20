@@ -706,27 +706,6 @@ struct dd_function_table {
    /*@}*/
 
 
-   /** 
-    * \name State-query functions
-    *
-    * Return GL_TRUE if query was completed, GL_FALSE otherwise.
-    */
-   /*@{*/
-   /** Return the value or values of a selected parameter */
-   GLboolean (*GetBooleanv)(GLcontext *ctx, GLenum pname, GLboolean *result);
-   /** Return the value or values of a selected parameter */
-   GLboolean (*GetDoublev)(GLcontext *ctx, GLenum pname, GLdouble *result);
-   /** Return the value or values of a selected parameter */
-   GLboolean (*GetFloatv)(GLcontext *ctx, GLenum pname, GLfloat *result);
-   /** Return the value or values of a selected parameter */
-   GLboolean (*GetIntegerv)(GLcontext *ctx, GLenum pname, GLint *result);
-   /** Return the value or values of a selected parameter */
-   GLboolean (*GetInteger64v)(GLcontext *ctx, GLenum pname, GLint64 *result);
-   /** Return the value or values of a selected parameter */
-   GLboolean (*GetPointerv)(GLcontext *ctx, GLenum pname, GLvoid **result);
-   /*@}*/
-   
-
    /**
     * \name Vertex/pixel buffer object functions
     */
@@ -1059,6 +1038,22 @@ struct dd_function_table {
 					     void *image_handle);
 #endif
 
+#if FEATURE_EXT_transform_feedback
+   struct gl_transform_feedback_object *
+        (*NewTransformFeedback)(GLcontext *ctx, GLuint name);
+   void (*DeleteTransformFeedback)(GLcontext *ctx,
+                                   struct gl_transform_feedback_object *obj);
+   void (*BeginTransformFeedback)(GLcontext *ctx, GLenum mode,
+                                  struct gl_transform_feedback_object *obj);
+   void (*EndTransformFeedback)(GLcontext *ctx,
+                                struct gl_transform_feedback_object *obj);
+   void (*PauseTransformFeedback)(GLcontext *ctx,
+                                  struct gl_transform_feedback_object *obj);
+   void (*ResumeTransformFeedback)(GLcontext *ctx,
+                                   struct gl_transform_feedback_object *obj);
+   void (*DrawTransformFeedback)(GLcontext *ctx, GLenum mode,
+                                 struct gl_transform_feedback_object *obj);
+#endif
 };
 
 
@@ -1085,23 +1080,23 @@ typedef struct {
     * \name Vertex
     */
    /*@{*/
-   void (GLAPIENTRYP ArrayElement)( GLint ); /* NOTE */
+   void (GLAPIENTRYP ArrayElement)( GLint );
    void (GLAPIENTRYP Color3f)( GLfloat, GLfloat, GLfloat );
    void (GLAPIENTRYP Color3fv)( const GLfloat * );
    void (GLAPIENTRYP Color4f)( GLfloat, GLfloat, GLfloat, GLfloat );
    void (GLAPIENTRYP Color4fv)( const GLfloat * );
    void (GLAPIENTRYP EdgeFlag)( GLboolean );
-   void (GLAPIENTRYP EvalCoord1f)( GLfloat );          /* NOTE */
-   void (GLAPIENTRYP EvalCoord1fv)( const GLfloat * ); /* NOTE */
-   void (GLAPIENTRYP EvalCoord2f)( GLfloat, GLfloat ); /* NOTE */
-   void (GLAPIENTRYP EvalCoord2fv)( const GLfloat * ); /* NOTE */
-   void (GLAPIENTRYP EvalPoint1)( GLint );             /* NOTE */
-   void (GLAPIENTRYP EvalPoint2)( GLint, GLint );      /* NOTE */
+   void (GLAPIENTRYP EvalCoord1f)( GLfloat );
+   void (GLAPIENTRYP EvalCoord1fv)( const GLfloat * );
+   void (GLAPIENTRYP EvalCoord2f)( GLfloat, GLfloat );
+   void (GLAPIENTRYP EvalCoord2fv)( const GLfloat * );
+   void (GLAPIENTRYP EvalPoint1)( GLint );
+   void (GLAPIENTRYP EvalPoint2)( GLint, GLint );
    void (GLAPIENTRYP FogCoordfEXT)( GLfloat );
    void (GLAPIENTRYP FogCoordfvEXT)( const GLfloat * );
    void (GLAPIENTRYP Indexf)( GLfloat );
    void (GLAPIENTRYP Indexfv)( const GLfloat * );
-   void (GLAPIENTRYP Materialfv)( GLenum face, GLenum pname, const GLfloat * ); /* NOTE */
+   void (GLAPIENTRYP Materialfv)( GLenum face, GLenum pname, const GLfloat * );
    void (GLAPIENTRYP MultiTexCoord1fARB)( GLenum, GLfloat );
    void (GLAPIENTRYP MultiTexCoord1fvARB)( GLenum, const GLfloat * );
    void (GLAPIENTRYP MultiTexCoord2fARB)( GLenum, GLfloat, GLfloat );
@@ -1128,8 +1123,8 @@ typedef struct {
    void (GLAPIENTRYP Vertex3fv)( const GLfloat * );
    void (GLAPIENTRYP Vertex4f)( GLfloat, GLfloat, GLfloat, GLfloat );
    void (GLAPIENTRYP Vertex4fv)( const GLfloat * );
-   void (GLAPIENTRYP CallList)( GLuint );	/* NOTE */
-   void (GLAPIENTRYP CallLists)( GLsizei, GLenum, const GLvoid * );	/* NOTE */
+   void (GLAPIENTRYP CallList)( GLuint );
+   void (GLAPIENTRYP CallLists)( GLsizei, GLenum, const GLvoid * );
    void (GLAPIENTRYP Begin)( GLenum );
    void (GLAPIENTRYP End)( void );
    /* GL_NV_vertex_program */
@@ -1153,8 +1148,6 @@ typedef struct {
 #endif
    /*@}*/
 
-   /*
-    */
    void (GLAPIENTRYP Rectf)( GLfloat, GLfloat, GLfloat, GLfloat );
 
    /**
@@ -1186,6 +1179,11 @@ typedef struct {
 						   const GLvoid **indices,
 						   GLsizei primcount,
 						   const GLint *basevertex);
+   void (GLAPIENTRYP DrawArraysInstanced)(GLenum mode, GLint first,
+                                          GLsizei count, GLsizei primcount);
+   void (GLAPIENTRYP DrawElementsInstanced)(GLenum mode, GLsizei count,
+                                            GLenum type, const GLvoid *indices,
+                                            GLsizei primcount);
    /*@}*/
 
    /**

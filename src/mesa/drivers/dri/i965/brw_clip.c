@@ -42,7 +42,6 @@
 #include "brw_state.h"
 #include "brw_clip.h"
 
-
 #define FRONT_UNFILLED_BIT  0x1
 #define BACK_UNFILLED_BIT   0x2
 
@@ -72,7 +71,7 @@ static void compile_clip_prog( struct brw_context *brw,
     */
    c.header_position_offset = ATTR_SIZE;
 
-   if (intel->is_ironlake)
+   if (intel->gen == 5)
        delta = 3 * REG_SIZE;
    else
        delta = REG_SIZE;
@@ -85,7 +84,7 @@ static void compile_clip_prog( struct brw_context *brw,
 
    c.nr_attrs = brw_count_bits(c.key.attrs);
    
-   if (intel->is_ironlake)
+   if (intel->gen == 5)
        c.nr_regs = (c.nr_attrs + 1) / 2 + 3;  /* are vertices packed, or reg-aligned? */
    else
        c.nr_regs = (c.nr_attrs + 1) / 2 + 1;  /* are vertices packed, or reg-aligned? */
@@ -127,6 +126,14 @@ static void compile_clip_prog( struct brw_context *brw,
     */
    program = brw_get_program(&c.func, &program_size);
 
+    if (INTEL_DEBUG & DEBUG_CLIP) {
+      printf("clip:\n");
+      for (i = 0; i < program_size / sizeof(struct brw_instruction); i++)
+	 brw_disasm(stdout, &((struct brw_instruction *)program)[i],
+		    intel->gen);
+      printf("\n");
+    }
+
    /* Upload
     */
    dri_bo_unreference(brw->clip.prog_bo);
@@ -162,7 +169,7 @@ static void upload_clip_prog(struct brw_context *brw)
    /* _NEW_TRANSFORM */
    key.nr_userclip = brw_count_bits(ctx->Transform.ClipPlanesEnabled);
 
-   if (intel->is_ironlake)
+   if (intel->gen == 5)
        key.clip_mode = BRW_CLIPMODE_KERNEL_CLIP;
    else
        key.clip_mode = BRW_CLIPMODE_NORMAL;

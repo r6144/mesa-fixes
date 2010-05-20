@@ -250,7 +250,7 @@
 
 /** For GL_ARB_draw_buffers */
 /*@{*/
-#define MAX_DRAW_BUFFERS 4
+#define MAX_DRAW_BUFFERS 8
 /*@}*/
 
 
@@ -261,6 +261,11 @@
 
 /** For GL_ATI_envmap_bump - support bump mapping on first 8 units */
 #define SUPPORTED_ATI_BUMP_UNITS 0xff
+
+/** For GL_EXT_transform_feedback */
+#define MAX_FEEDBACK_ATTRIBS 32
+
+
 
 /**
  * \name Mesa-specific parameters

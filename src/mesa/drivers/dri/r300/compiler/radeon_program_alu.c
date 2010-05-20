@@ -175,6 +175,26 @@ static void transform_ABS(struct radeon_compiler* c,
 	rc_remove_instruction(inst);
 }
 
+static void transform_CEIL(struct radeon_compiler* c,
+	struct rc_instruction* inst)
+{
+	/* Assuming:
+	 *     ceil(x) = -floor(-x)
+	 *
+	 * After inlining floor:
+	 *     ceil(x) = -(-x-frac(-x))
+	 *
+	 * After simplification:
+	 *     ceil(x) = x+frac(-x)
+	 */
+
+	int tempreg = rc_find_free_temporary(c);
+	emit1(c, inst->Prev, RC_OPCODE_FRC, 0, dstreg(RC_FILE_TEMPORARY, tempreg), negate(inst->U.I.SrcReg[0]));
+	emit2(c, inst->Prev, RC_OPCODE_ADD, inst->U.I.SaturateMode, inst->U.I.DstReg,
+		inst->U.I.SrcReg[0], srcreg(RC_FILE_TEMPORARY, tempreg));
+	rc_remove_instruction(inst);
+}
+
 static void transform_DP3(struct radeon_compiler* c,
 	struct rc_instruction* inst)
 {
@@ -458,7 +478,7 @@ static void transform_XPD(struct radeon_compiler* c,
  * no userData necessary.
  *
  * Eliminates the following ALU instructions:
- *  ABS, DPH, DST, FLR, LIT, LRP, POW, SEQ, SFL, SGE, SGT, SLE, SLT, SNE, SUB, SWZ, XPD
+ *  ABS, CEIL, DPH, DST, FLR, LIT, LRP, POW, SEQ, SFL, SGE, SGT, SLE, SLT, SNE, SUB, SWZ, XPD
  * using:
  *  MOV, ADD, MUL, MAD, FRC, DP3, LG2, EX2, CMP
  *
@@ -474,6 +494,7 @@ int radeonTransformALU(
 {
 	switch(inst->U.I.Opcode) {
 	case RC_OPCODE_ABS: transform_ABS(c, inst); return 1;
+	case RC_OPCODE_CEIL: transform_CEIL(c, inst); return 1;
 	case RC_OPCODE_DPH: transform_DPH(c, inst); return 1;
 	case RC_OPCODE_DST: transform_DST(c, inst); return 1;
 	case RC_OPCODE_FLR: transform_FLR(c, inst); return 1;
@@ -506,6 +527,58 @@ static void transform_r300_vertex_ABS(struct radeon_compiler* c,
 	inst->U.I.SrcReg[1].Negate ^= RC_MASK_XYZW;
 }
 
+static void transform_r300_vertex_CMP(struct radeon_compiler* c,
+	struct rc_instruction* inst)
+{
+	/* There is no decent CMP available, so let's rig one up.
+	 * CMP is defined as dst = src0 < 0.0 ? src1 : src2
+	 * The following sequence consumes two temps and two extra slots
+	 * (the second temp and the second slot is consumed by transform_LRP),
+	 * but should be equivalent:
+	 *
+	 * SLT tmp0, src0, 0.0
+	 * LRP dst, tmp0, src1, src2
+	 *
+	 * Yes, I know, I'm a mad scientist. ~ C. & M. */
+	int tempreg0 = rc_find_free_temporary(c);
+
+	/* SLT tmp0, src0, 0.0 */
+	emit2(c, inst->Prev, RC_OPCODE_SLT, 0,
+		dstreg(RC_FILE_TEMPORARY, tempreg0),
+		inst->U.I.SrcReg[0], builtin_zero);
+
+	/* LRP dst, tmp0, src1, src2 */
+	transform_LRP(c,
+		emit3(c, inst->Prev, RC_OPCODE_LRP, 0,
+		      inst->U.I.DstReg,
+		      srcreg(RC_FILE_TEMPORARY, tempreg0), inst->U.I.SrcReg[1],  inst->U.I.SrcReg[2]));
+
+	rc_remove_instruction(inst);
+}
+
+static void transform_r300_vertex_fix_LIT(struct radeon_compiler* c,
+	struct rc_instruction* inst)
+{
+	int tempreg = rc_find_free_temporary(c);
+	unsigned constant_swizzle;
+	int constant = rc_constants_add_immediate_scalar(&c->Program.Constants,
+							 0.0000000000000000001,
+							 &constant_swizzle);
+
+	/* MOV dst, src */
+	emit1(c, inst->Prev, RC_OPCODE_MOV, 0,
+		dstreg(RC_FILE_TEMPORARY, tempreg),
+		inst->U.I.SrcReg[0]);
+
+	/* MAX dst.z, src, 0.00...001 */
+	emit2(c, inst->Prev, RC_OPCODE_MAX, 0,
+		dstregtmpmask(tempreg, RC_MASK_Y),
+		srcreg(RC_FILE_TEMPORARY, tempreg),
+		srcregswz(RC_FILE_CONSTANT, constant, constant_swizzle));
+
+	inst->U.I.SrcReg[0] = srcreg(RC_FILE_TEMPORARY, tempreg);
+}
+
 /**
  * For use with radeonLocalTransform, this transforms non-native ALU
  * instructions of the r300 up to r500 vertex engine.
@@ -517,9 +590,12 @@ int r300_transform_vertex_alu(
 {
 	switch(inst->U.I.Opcode) {
 	case RC_OPCODE_ABS: transform_r300_vertex_ABS(c, inst); return 1;
+	case RC_OPCODE_CEIL: transform_CEIL(c, inst); return 1;
+	case RC_OPCODE_CMP: transform_r300_vertex_CMP(c, inst); return 1;
 	case RC_OPCODE_DP3: transform_DP3(c, inst); return 1;
 	case RC_OPCODE_DPH: transform_DPH(c, inst); return 1;
 	case RC_OPCODE_FLR: transform_FLR(c, inst); return 1;
+	case RC_OPCODE_LIT: transform_r300_vertex_fix_LIT(c, inst); return 1;
 	case RC_OPCODE_LRP: transform_LRP(c, inst); return 1;
 	case RC_OPCODE_SUB: transform_SUB(c, inst); return 1;
 	case RC_OPCODE_SWZ: transform_SWZ(c, inst); return 1;
@@ -737,7 +813,7 @@ int radeonTransformDeriv(struct radeon_compiler* c,
 	if (inst->U.I.Opcode != RC_OPCODE_DDX && inst->U.I.Opcode != RC_OPCODE_DDY)
 		return 0;
 
-	inst->U.I.SrcReg[1].Swizzle = RC_MAKE_SWIZZLE(RC_SWIZZLE_ONE, RC_SWIZZLE_ONE, RC_SWIZZLE_ONE, RC_SWIZZLE_ONE);
+	inst->U.I.SrcReg[1].Swizzle = RC_SWIZZLE_1111;
 	inst->U.I.SrcReg[1].Negate = RC_MASK_XYZW;
 
 	return 1;
