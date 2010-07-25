@@ -97,6 +97,7 @@ do_blit_readpixels(GLcontext * ctx,
     struct radeon_bo *dst_buffer;
     GLint dst_x = 0, dst_y = 0;
 
+    return GL_FALSE; /* Works around the th125 problem including a crash in copy_rows() here */
     /* It's not worth if number of pixels to copy is really small */
     if (width * height < 100) {
         return GL_FALSE;
