@@ -54,7 +54,6 @@
 #include "xmlconfig.h"
 #include "main/glheader.h"
 #include "main/mtypes.h"
-#include "GL/internal/glcore.h"
 #include "GL/internal/dri_interface.h"
 
 #define GLX_BAD_CONTEXT                    5
@@ -70,7 +69,6 @@ extern const __DRIdri2Extension driDRI2Extension;
 extern const __DRIextension driReadDrawableExtension;
 extern const __DRIcopySubBufferExtension driCopySubBufferExtension;
 extern const __DRIswapControlExtension driSwapControlExtension;
-extern const __DRIframeTrackingExtension driFrameTrackingExtension;
 extern const __DRImediaStreamCounterExtension driMediaStreamCounterExtension;
 extern const __DRI2configQueryExtension dri2ConfigQueryExtension;
 
@@ -150,7 +148,7 @@ struct __DriverAPIRec {
      * Context creation callback
      */	    	    
     GLboolean (*CreateContext)(gl_api api,
-			       const __GLcontextModes *glVis,
+			       const struct gl_config *glVis,
 			       __DRIcontext *driContextPriv,
                                void *sharedContextPrivate);
 
@@ -164,7 +162,7 @@ struct __DriverAPIRec {
      */
     GLboolean (*CreateBuffer)(__DRIscreen *driScrnPriv,
                               __DRIdrawable *driDrawPriv,
-                              const __GLcontextModes *glVis,
+                              const struct gl_config *glVis,
                               GLboolean pixmapBuffer);
     
     /**
@@ -514,7 +512,11 @@ struct __DRIscreenRec {
      * 
      * This pointer is never touched by the DRI layer.
      */
+#ifdef __cplusplus
+    void *priv;
+#else
     void *private;
+#endif
 
     /* Extensions provided by the loader. */
     const __DRIgetDrawableInfoExtension *getDrawableInfo;
@@ -533,8 +535,10 @@ struct __DRIscreenRec {
     /* The lock actually in use, old sarea or DRI2 */
     drmLock *lock;
 
+    driOptionCache optionInfo;
     driOptionCache optionCache;
    unsigned int api_mask;
+   void *loaderPrivate;
 };
 
 extern void

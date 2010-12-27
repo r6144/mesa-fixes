@@ -1,3 +1,5 @@
+.. _context:
+
 Context
 =======
 
@@ -43,6 +45,7 @@ buffers, surfaces) are bound to the driver.
 
 * ``set_vertex_buffers``
 
+* ``set_index_buffer``
 
 Non-CSO State
 ^^^^^^^^^^^^^
@@ -54,12 +57,15 @@ objects. They all follow simple, one-method binding calls, e.g.
 * ``set_stencil_ref`` sets the stencil front and back reference values
   which are used as comparison values in stencil test.
 * ``set_blend_color``
+* ``set_sample_mask``
 * ``set_clip_state``
 * ``set_polygon_stipple``
 * ``set_scissor_state`` sets the bounds for the scissor test, which culls
   pixels before blending to render targets. If the :ref:`Rasterizer` does
   not have the scissor test enabled, then the scissor bounds never need to
-  be set since they will not be used.
+  be set since they will not be used.  Note that scissor xmin and ymin are
+  inclusive, but  xmax and ymax are exclusive.  The inclusive ranges in x
+  and y would be [xmin..xmax-1] and [ymin..ymax-1].
 * ``set_viewport_state``
 
 
@@ -78,7 +84,14 @@ in the result register. For example, ``swizzle_r`` specifies what is going to be
 placed in first component of result register.
 
 The ``first_level`` and ``last_level`` fields of sampler view template specify
-the LOD range the texture is going to be constrained to.
+the LOD range the texture is going to be constrained to. Note that these
+values are in addition to the respective min_lod, max_lod values in the
+pipe_sampler_state (that is if min_lod is 2.0, and first_level 3, the first mip
+level used for sampling from the resource is effectively the fifth).
+
+The ``first_layer`` and ``last_layer`` fields specify the layer range the
+texture is going to be constrained to. Similar to the LOD range, this is added
+to the array index which is used for sampling.
 
 * ``set_fragment_sampler_views`` binds an array of sampler views to
   fragment shader stage. Every binding point acquires a reference
@@ -97,67 +110,82 @@ the LOD range the texture is going to be constrained to.
 * ``sampler_view_destroy`` destroys a sampler view and releases its reference
   to associated texture.
 
+Surfaces
+^^^^^^^^
+
+These are the means to use resources as color render targets or depthstencil
+attachments. To create one, specify the mip level, the range of layers, and
+the bind flags (either PIPE_BIND_DEPTH_STENCIL or PIPE_BIND_RENDER_TARGET).
+Note that layer values are in addition to what is indicated by the geometry
+shader output variable XXX_FIXME (that is if first_layer is 3 and geometry
+shader indicates index 2, the 5th layer of the resource will be used). These
+first_layer and last_layer parameters will only be used for 1d array, 2d array,
+cube, and 3d textures otherwise they are 0.
+
+* ``create_surface`` creates a new surface.
+
+* ``surface_destroy`` destroys a surface and releases its reference to the
+  associated resource.
 
 Clearing
 ^^^^^^^^
 
+Clear is one of the most difficult concepts to nail down to a single
+interface (due to both different requirements from APIs and also driver/hw
+specific differences).
+
 ``clear`` initializes some or all of the surfaces currently bound to
 the framebuffer to particular RGBA, depth, or stencil values.
+Currently, this does not take into account color or stencil write masks (as
+used by GL), and always clears the whole surfaces (no scissoring as used by
+GL clear or explicit rectangles like d3d9 uses). It can, however, also clear
+only depth or stencil in a combined depth/stencil surface, if the driver
+supports PIPE_CAP_DEPTHSTENCIL_CLEAR_SEPARATE.
+If a surface includes several layers then all layers will be cleared.
 
-Clear is one of the most difficult concepts to nail down to a single
-interface and it seems likely that we will want to add additional
-clear paths, for instance clearing surfaces not bound to the
-framebuffer, or read-modify-write clears such as depth-only or
-stencil-only clears of packed depth-stencil buffers.  
+``clear_render_target`` clears a single color rendertarget with the specified
+color value. While it is only possible to clear one surface at a time (which can
+include several layers), this surface need not be bound to the framebuffer.
+
+``clear_depth_stencil`` clears a single depth, stencil or depth/stencil surface
+with the specified depth and stencil values (for combined depth/stencil buffers,
+is is also possible to only clear one or the other part). While it is only
+possible to clear one surface at a time (which can include several layers),
+this surface need not be bound to the framebuffer.
 
 
 Drawing
 ^^^^^^^
 
-``draw_arrays`` draws a specified primitive.
+``draw_vbo`` draws a specified primitive.  The primitive mode and other
+properties are described by ``pipe_draw_info``.
 
-This command is equivalent to calling ``draw_arrays_instanced``
-with ``startInstance`` set to 0 and ``instanceCount`` set to 1.
+The ``mode``, ``start``, and ``count`` fields of ``pipe_draw_info`` specify the
+the mode of the primitive and the vertices to be fetched, in the range between
+``start`` to ``start``+``count``-1, inclusive.
 
-``draw_elements`` draws a specified primitive using an optional
-index buffer.
+Every instance with instanceID in the range between ``start_instance`` and
+``start_instance``+``instance_count``-1, inclusive, will be drawn.
 
-This command is equivalent to calling ``draw_elements_instanced``
-with ``startInstance`` set to 0 and ``instanceCount`` set to 1.
+All vertex indices must fall inside the range given by ``min_index`` and
+``max_index``.  In case non-indexed draw, ``min_index`` should be set to
+``start`` and ``max_index`` should be set to ``start``+``count``-1.
 
-``draw_range_elements``
+``index_bias`` is a value added to every vertex index before fetching vertex
+attributes.  It does not affect ``min_index`` and ``max_index``.
 
-XXX: this is (probably) a temporary entrypoint, as the range
-information should be available from the vertex_buffer state.
-Using this to quickly evaluate a specialized path in the draw
-module.
+If there is an index buffer bound, and ``indexed`` field is true, all vertex
+indices will be looked up in the index buffer.  ``min_index``, ``max_index``,
+and ``index_bias`` apply after index lookup.
 
-``draw_arrays_instanced`` draws multiple instances of the same primitive.
+When drawing indexed primitives, the primitive restart index can be
+used to draw disjoint primitive strips.  For example, several separate
+line strips can be drawn by designating a special index value as the
+restart index.  The ``primitive_restart`` flag enables/disables this
+feature.  The ``restart_index`` field specifies the restart index value.
 
-This command is equivalent to calling ``draw_elements_instanced``
-with ``indexBuffer`` set to NULL and ``indexSize`` set to 0.
-
-``draw_elements_instanced`` draws multiple instances of the same primitive
-using an optional index buffer.
-
-For instanceID in the range between ``startInstance``
-and ``startInstance``+``instanceCount``-1, inclusive, draw a primitive
-specified by ``mode`` and sequential numbers in the range between ``start``
-and ``start``+``count``-1, inclusive.
-
-If ``indexBuffer`` is not NULL, it specifies an index buffer with index
-byte size of ``indexSize``. The sequential numbers are used to lookup
-the index buffer and the resulting indices in turn are used to fetch
-vertex attributes.
-
-If ``indexBuffer`` is NULL, the sequential numbers are used directly
-as indices to fetch vertex attributes.
-
-``indexBias`` is a value which is added to every index read from the index 
-buffer before fetching vertex attributes.
-
-``minIndex`` and ``maxIndex`` describe minimum and maximum index contained in
-the index buffer.
+When primitive restart is in use, array indexes are compared to the
+restart index before adding the index_bias offset.
 
 If a given vertex element has ``instance_divisor`` set to 0, it is said
 it contains per-vertex data and effective vertex attribute address needs
@@ -259,22 +287,43 @@ Resource Busy Queries
 Blitting
 ^^^^^^^^
 
-These methods emulate classic blitter controls. They are not guaranteed to be
-available; if they are set to NULL, then they are not present.
+These methods emulate classic blitter controls.
 
-These methods operate directly on ``pipe_surface`` objects, and stand
+These methods operate directly on ``pipe_resource`` objects, and stand
 apart from any 3D state in the context.  Blitting functionality may be
 moved to a separate abstraction at some point in the future.
 
-``surface_fill`` performs a fill operation on a section of a surface.
+``resource_copy_region`` blits a region of a resource to a region of another
+resource, provided that both resources have the same format, or compatible
+formats, i.e., formats for which copying the bytes from the source resource
+unmodified to the destination resource will achieve the same effect of a
+textured quad blitter.. The source and destination may be the same resource,
+but overlapping blits are not permitted.
 
-``surface_copy`` blits a region of a surface to a region of another surface,
-provided that both surfaces are the same format. The source and destination
-may be the same surface, and overlapping blits are permitted.
+``resource_resolve`` resolves a multisampled resource into a non-multisampled
+one. Formats and dimensions must match. This function must be present if a driver
+supports multisampling.
 
 The interfaces to these calls are likely to change to make it easier
 for a driver to batch multiple blits with the same source and
 destination.
+
+
+Stream Output
+^^^^^^^^^^^^^
+
+Stream output, also known as transform feedback allows writing the results of the
+vertex pipeline (after the geometry shader or vertex shader if no geometry shader
+is present) to be written to a buffer created with a ``PIPE_BIND_STREAM_OUTPUT``
+flag.
+
+First a stream output state needs to be created with the
+``create_stream_output_state`` call. It specific the details of what's being written,
+to which buffer and with what kind of a writemask.
+
+Then target buffers needs to be set with the call to ``set_stream_output_buffers``
+which sets the buffers and the offsets from the start of those buffer to where
+the data will be written to.
 
 
 Transfers

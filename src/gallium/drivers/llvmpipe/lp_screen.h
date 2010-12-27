@@ -34,11 +34,10 @@
 #ifndef LP_SCREEN_H
 #define LP_SCREEN_H
 
-#include "gallivm/lp_bld.h"
-#include <llvm-c/ExecutionEngine.h>
-
 #include "pipe/p_screen.h"
 #include "pipe/p_defines.h"
+#include "os/os_thread.h"
+#include "gallivm/lp_bld.h"
 
 
 struct sw_winsys;
@@ -50,19 +49,14 @@ struct llvmpipe_screen
 
    struct sw_winsys *winsys;
 
-   LLVMModuleRef module;
-   LLVMExecutionEngineRef engine;
-   LLVMModuleProviderRef provider;
-   LLVMTargetDataRef target;
-   LLVMPassManagerRef pass;
-
-   LLVMTypeRef context_ptr_type;
-
    unsigned num_threads;
 
    /* Increments whenever textures are modified.  Contexts can track this.
     */
    unsigned timestamp;
+
+   struct lp_rasterizer *rast;
+   pipe_mutex rast_mutex;
 };
 
 

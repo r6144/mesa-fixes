@@ -18,20 +18,25 @@ env.Prepend(LIBS = [
 ])
 
 if True:
-    env.Append(CPPDEFINES = 'GALLIUM_SOFTPIPE')
+    env.Append(CPPDEFINES = [
+        'GALLIUM_SOFTPIPE',
+        'GALLIUM_RBUG',
+        'GALLIUM_TRACE',
+    ])
     env.Prepend(LIBS = [softpipe])
 
 if env['llvm']:
     env.Append(CPPDEFINES = 'GALLIUM_LLVMPIPE')
-    env.Tool('udis86')
     env.Prepend(LIBS = [llvmpipe])
 
 swrastg_sources = [
     'swrast_drm_api.c'
 ]
 
-env.LoadableModule(
+module = env.LoadableModule(
     target ='swrastg_dri.so',
     source = swrastg_sources,
     SHLIBPREFIX = '',
 )
+
+env.Alias('dri-swrast', module)

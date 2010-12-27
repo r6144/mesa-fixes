@@ -31,19 +31,12 @@
 #include "pipe/p_compiler.h"
 #include "util/u_inlines.h"
 #include "state_tracker/xlib_sw_winsys.h"
-#include "target-helpers/wrap_screen.h"
 #include "util/u_debug.h"
-#include "softpipe/sp_public.h"
-#include "llvmpipe/lp_public.h"
 #include "egllog.h"
 
+#include "common/native_helper.h"
 #include "native_x11.h"
 #include "x11_screen.h"
-
-enum ximage_surface_type {
-   XIMAGE_SURFACE_TYPE_WINDOW,
-   XIMAGE_SURFACE_TYPE_PIXMAP,
-};
 
 struct ximage_display {
    struct native_display base;
@@ -59,26 +52,18 @@ struct ximage_display {
    int num_configs;
 };
 
-struct ximage_buffer {
-   struct pipe_resource *texture;
-   struct xlib_drawable xdraw;
-};
-
 struct ximage_surface {
    struct native_surface base;
    Drawable drawable;
-   enum ximage_surface_type type;
    enum pipe_format color_format;
    XVisualInfo visual;
    struct ximage_display *xdpy;
 
    unsigned int server_stamp;
    unsigned int client_stamp;
-   int width, height;
-   struct ximage_buffer buffers[NUM_NATIVE_ATTACHMENTS];
-   uint valid_mask;
 
-   struct pipe_surface *draw_surface;
+   struct resource_surface *rsurf;
+   struct xlib_drawable xdraw;
 };
 
 struct ximage_config {
@@ -104,68 +89,10 @@ ximage_config(const struct native_config *nconf)
    return (struct ximage_config *) nconf;
 }
 
-static void
-ximage_surface_free_buffer(struct native_surface *nsurf,
-                           enum native_attachment which)
-{
-   struct ximage_surface *xsurf = ximage_surface(nsurf);
-   struct ximage_buffer *xbuf = &xsurf->buffers[which];
-
-   pipe_resource_reference(&xbuf->texture, NULL);
-}
-
-static boolean
-ximage_surface_alloc_buffer(struct native_surface *nsurf,
-                            enum native_attachment which)
-{
-   struct ximage_surface *xsurf = ximage_surface(nsurf);
-   struct ximage_buffer *xbuf = &xsurf->buffers[which];
-   struct pipe_screen *screen = xsurf->xdpy->base.screen;
-   struct pipe_resource templ;
-
-   /* free old data */
-   if (xbuf->texture)
-      ximage_surface_free_buffer(&xsurf->base, which);
-
-   memset(&templ, 0, sizeof(templ));
-   templ.target = PIPE_TEXTURE_2D;
-   templ.format = xsurf->color_format;
-   templ.width0 = xsurf->width;
-   templ.height0 = xsurf->height;
-   templ.depth0 = 1;
-   templ.bind = PIPE_BIND_RENDER_TARGET;
-
-   switch (which) {
-   case NATIVE_ATTACHMENT_FRONT_LEFT:
-   case NATIVE_ATTACHMENT_FRONT_RIGHT:
-      templ.bind |= PIPE_BIND_SCANOUT;
-      break;
-   case NATIVE_ATTACHMENT_BACK_LEFT:
-   case NATIVE_ATTACHMENT_BACK_RIGHT:
-      templ.bind |= PIPE_BIND_DISPLAY_TARGET;
-      break;
-   default:
-      break;
-   }
-   xbuf->texture = screen->resource_create(screen, &templ);
-   if (xbuf->texture) {
-      xbuf->xdraw.visual = xsurf->visual.visual;
-      xbuf->xdraw.depth = xsurf->visual.depth;
-      xbuf->xdraw.drawable = xsurf->drawable;
-   }
-
-   /* clean up the buffer if allocation failed */
-   if (!xbuf->texture)
-      ximage_surface_free_buffer(&xsurf->base, which);
-
-   return (xbuf->texture != NULL);
-}
-
 /**
- * Update the geometry of the surface.  Return TRUE if the geometry has changed
- * since last call.
+ * Update the geometry of the surface.  This is a slow functions.
  */
-static boolean
+static void
 ximage_surface_update_geometry(struct native_surface *nsurf)
 {
    struct ximage_surface *xsurf = ximage_surface(nsurf);
@@ -173,102 +100,41 @@ ximage_surface_update_geometry(struct native_surface *nsurf)
    Window root;
    int x, y;
    unsigned int w, h, border, depth;
-   boolean updated = FALSE;
 
    ok = XGetGeometry(xsurf->xdpy->dpy, xsurf->drawable,
          &root, &x, &y, &w, &h, &border, &depth);
-   if (ok && (xsurf->width != w || xsurf->height != h)) {
-      xsurf->width = w;
-      xsurf->height = h;
-
+   if (ok && resource_surface_set_size(xsurf->rsurf, w, h))
       xsurf->server_stamp++;
-      updated = TRUE;
-   }
-
-   return updated;
-}
-
-static void
-ximage_surface_notify_invalid(struct native_surface *nsurf)
-{
-   struct ximage_surface *xsurf = ximage_surface(nsurf);
-   struct ximage_display *xdpy = xsurf->xdpy;
-
-   xdpy->event_handler->invalid_surface(&xdpy->base,
-         &xsurf->base, xsurf->server_stamp);
 }
 
 /**
- * Update the buffers of the surface.  It is a slow function due to the
- * round-trip to the server.
+ * Update the buffers of the surface.
  */
 static boolean
 ximage_surface_update_buffers(struct native_surface *nsurf, uint buffer_mask)
 {
    struct ximage_surface *xsurf = ximage_surface(nsurf);
-   boolean updated;
-   uint new_valid;
-   int att;
 
-   updated = ximage_surface_update_geometry(&xsurf->base);
-   if (updated) {
-      /* all buffers become invalid */
-      xsurf->valid_mask = 0x0;
-   }
-   else {
-      buffer_mask &= ~xsurf->valid_mask;
-      /* all requested buffers are valid */
-      if (!buffer_mask) {
-         xsurf->client_stamp = xsurf->server_stamp;
-         return TRUE;
-      }
+   if (xsurf->client_stamp != xsurf->server_stamp) {
+      ximage_surface_update_geometry(&xsurf->base);
+      xsurf->client_stamp = xsurf->server_stamp;
    }
 
-   new_valid = 0x0;
-   for (att = 0; att < NUM_NATIVE_ATTACHMENTS; att++) {
-      if (native_attachment_mask_test(buffer_mask, att)) {
-         /* reallocate the texture */
-         if (!ximage_surface_alloc_buffer(&xsurf->base, att))
-            break;
-
-         new_valid |= (1 << att);
-         if (buffer_mask == new_valid)
-            break;
-      }
-   }
-
-   xsurf->valid_mask |= new_valid;
-   xsurf->client_stamp = xsurf->server_stamp;
-
-   return (new_valid == buffer_mask);
+   return resource_surface_add_resources(xsurf->rsurf, buffer_mask);
 }
 
-static boolean
-ximage_surface_draw_buffer(struct native_surface *nsurf,
-                           enum native_attachment which)
+/**
+ * Emulate an invalidate event.
+ */
+static void
+ximage_surface_invalidate(struct native_surface *nsurf)
 {
    struct ximage_surface *xsurf = ximage_surface(nsurf);
-   struct ximage_buffer *xbuf = &xsurf->buffers[which];
-   struct pipe_screen *screen = xsurf->xdpy->base.screen;
-   struct pipe_surface *psurf;
+   struct ximage_display *xdpy = xsurf->xdpy;
 
-   assert(xsurf->drawable && xbuf->texture);
-
-   psurf = xsurf->draw_surface;
-   if (!psurf || psurf->texture != xbuf->texture) {
-      pipe_surface_reference(&xsurf->draw_surface, NULL);
-
-      psurf = screen->get_tex_surface(screen,
-            xbuf->texture, 0, 0, 0, PIPE_BIND_DISPLAY_TARGET);
-      if (!psurf)
-         return FALSE;
-
-      xsurf->draw_surface = psurf;
-   }
-
-   screen->flush_frontbuffer(screen, psurf, &xbuf->xdraw);
-
-   return TRUE;
+   xsurf->server_stamp++;
+   xdpy->event_handler->invalid_surface(&xdpy->base,
+         &xsurf->base, xsurf->server_stamp);
 }
 
 static boolean
@@ -277,11 +143,10 @@ ximage_surface_flush_frontbuffer(struct native_surface *nsurf)
    struct ximage_surface *xsurf = ximage_surface(nsurf);
    boolean ret;
 
-   ret = ximage_surface_draw_buffer(&xsurf->base,
-         NATIVE_ATTACHMENT_FRONT_LEFT);
+   ret = resource_surface_present(xsurf->rsurf,
+         NATIVE_ATTACHMENT_FRONT_LEFT, (void *) &xsurf->xdraw);
    /* force buffers to be updated in next validation call */
-   xsurf->server_stamp++;
-   ximage_surface_notify_invalid(&xsurf->base);
+   ximage_surface_invalidate(&xsurf->base);
 
    return ret;
 }
@@ -290,24 +155,40 @@ static boolean
 ximage_surface_swap_buffers(struct native_surface *nsurf)
 {
    struct ximage_surface *xsurf = ximage_surface(nsurf);
-   struct ximage_buffer *xfront, *xback, xtmp;
    boolean ret;
 
-   /* display the back buffer first */
-   ret = ximage_surface_draw_buffer(&xsurf->base,
-         NATIVE_ATTACHMENT_BACK_LEFT);
-   /* force buffers to be updated in next validation call */
-   xsurf->server_stamp++;
-   ximage_surface_notify_invalid(&xsurf->base);
+   ret = resource_surface_present(xsurf->rsurf,
+         NATIVE_ATTACHMENT_BACK_LEFT, (void *) &xsurf->xdraw);
 
-   xfront = &xsurf->buffers[NATIVE_ATTACHMENT_FRONT_LEFT];
-   xback = &xsurf->buffers[NATIVE_ATTACHMENT_BACK_LEFT];
+   resource_surface_swap_buffers(xsurf->rsurf,
+         NATIVE_ATTACHMENT_FRONT_LEFT, NATIVE_ATTACHMENT_BACK_LEFT, TRUE);
+   /* the front/back buffers have been swapped */
+   ximage_surface_invalidate(&xsurf->base);
 
-   /* skip swapping unless there is a front buffer */
-   if (xfront->texture) {
-      xtmp = *xfront;
-      *xfront = *xback;
-      *xback = xtmp;
+   return ret;
+}
+
+static boolean
+ximage_surface_present(struct native_surface *nsurf,
+                       enum native_attachment natt,
+                       boolean preserve,
+                       uint swap_interval)
+{
+   boolean ret;
+
+   if (preserve || swap_interval)
+      return FALSE;
+
+   switch (natt) {
+   case NATIVE_ATTACHMENT_FRONT_LEFT:
+      ret = ximage_surface_flush_frontbuffer(nsurf);
+      break;
+   case NATIVE_ATTACHMENT_BACK_LEFT:
+      ret = ximage_surface_swap_buffers(nsurf);
+      break;
+   default:
+      ret = FALSE;
+      break;
    }
 
    return ret;
@@ -319,32 +200,22 @@ ximage_surface_validate(struct native_surface *nsurf, uint attachment_mask,
                         int *width, int *height)
 {
    struct ximage_surface *xsurf = ximage_surface(nsurf);
+   uint w, h;
 
-   if (xsurf->client_stamp != xsurf->server_stamp ||
-       (xsurf->valid_mask & attachment_mask) != attachment_mask) {
-      if (!ximage_surface_update_buffers(&xsurf->base, attachment_mask))
-         return FALSE;
-   }
+   if (!ximage_surface_update_buffers(&xsurf->base, attachment_mask))
+      return FALSE;
 
    if (seq_num)
       *seq_num = xsurf->client_stamp;
 
-   if (textures) {
-      int att;
-      for (att = 0; att < NUM_NATIVE_ATTACHMENTS; att++) {
-         if (native_attachment_mask_test(attachment_mask, att)) {
-            struct ximage_buffer *xbuf = &xsurf->buffers[att];
+   if (textures)
+      resource_surface_get_resources(xsurf->rsurf, textures, attachment_mask);
 
-            textures[att] = NULL;
-            pipe_resource_reference(&textures[att], xbuf->texture);
-         }
-      }
-   }
-
+   resource_surface_get_size(xsurf->rsurf, &w, &h);
    if (width)
-      *width = xsurf->width;
+      *width = w;
    if (height)
-      *height = xsurf->height;
+      *height = h;
 
    return TRUE;
 }
@@ -361,19 +232,13 @@ static void
 ximage_surface_destroy(struct native_surface *nsurf)
 {
    struct ximage_surface *xsurf = ximage_surface(nsurf);
-   int i;
 
-   pipe_surface_reference(&xsurf->draw_surface, NULL);
-
-   for (i = 0; i < NUM_NATIVE_ATTACHMENTS; i++)
-      ximage_surface_free_buffer(&xsurf->base, i);
-
+   resource_surface_destroy(xsurf->rsurf);
    FREE(xsurf);
 }
 
 static struct ximage_surface *
 ximage_display_create_surface(struct native_display *ndpy,
-                              enum ximage_surface_type type,
                               Drawable drawable,
                               const struct native_config *nconf)
 {
@@ -386,18 +251,31 @@ ximage_display_create_surface(struct native_display *ndpy,
       return NULL;
 
    xsurf->xdpy = xdpy;
-   xsurf->type = type;
    xsurf->color_format = xconf->base.color_format;
    xsurf->drawable = drawable;
+
+   xsurf->rsurf = resource_surface_create(xdpy->base.screen,
+         xsurf->color_format,
+         PIPE_BIND_RENDER_TARGET |
+         PIPE_BIND_SAMPLER_VIEW |
+         PIPE_BIND_DISPLAY_TARGET |
+         PIPE_BIND_SCANOUT);
+   if (!xsurf->rsurf) {
+      FREE(xsurf);
+      return NULL;
+   }
 
    xsurf->drawable = drawable;
    xsurf->visual = *xconf->visual;
    /* initialize the geometry */
-   ximage_surface_update_buffers(&xsurf->base, 0x0);
+   ximage_surface_update_geometry(&xsurf->base);
+
+   xsurf->xdraw.visual = xsurf->visual.visual;
+   xsurf->xdraw.depth = xsurf->visual.depth;
+   xsurf->xdraw.drawable = xsurf->drawable;
 
    xsurf->base.destroy = ximage_surface_destroy;
-   xsurf->base.swap_buffers = ximage_surface_swap_buffers;
-   xsurf->base.flush_frontbuffer = ximage_surface_flush_frontbuffer;
+   xsurf->base.present = ximage_surface_present;
    xsurf->base.validate = ximage_surface_validate;
    xsurf->base.wait = ximage_surface_wait;
 
@@ -411,9 +289,35 @@ ximage_display_create_window_surface(struct native_display *ndpy,
 {
    struct ximage_surface *xsurf;
 
-   xsurf = ximage_display_create_surface(ndpy, XIMAGE_SURFACE_TYPE_WINDOW,
-         (Drawable) win, nconf);
+   xsurf = ximage_display_create_surface(ndpy, (Drawable) win, nconf);
    return (xsurf) ? &xsurf->base : NULL;
+}
+
+static enum pipe_format
+get_pixmap_format(struct native_display *ndpy, EGLNativePixmapType pix)
+{
+   struct ximage_display *xdpy = ximage_display(ndpy);
+   enum pipe_format fmt;
+   uint depth;
+
+   depth = x11_drawable_get_depth(xdpy->xscr, (Drawable) pix);
+
+   switch (depth) {
+   case 32:
+      fmt = PIPE_FORMAT_B8G8R8A8_UNORM;
+      break;
+   case 24:
+      fmt = PIPE_FORMAT_B8G8R8X8_UNORM;
+      break;
+   case 16:
+      fmt = PIPE_FORMAT_B5G6R5_UNORM;
+      break;
+   default:
+      fmt = PIPE_FORMAT_NONE;
+      break;
+   }
+
+   return fmt;
 }
 
 static struct native_surface *
@@ -423,8 +327,26 @@ ximage_display_create_pixmap_surface(struct native_display *ndpy,
 {
    struct ximage_surface *xsurf;
 
-   xsurf = ximage_display_create_surface(ndpy, XIMAGE_SURFACE_TYPE_PIXMAP,
-         (Drawable) pix, nconf);
+   /* find the config */
+   if (!nconf) {
+      struct ximage_display *xdpy = ximage_display(ndpy);
+      enum pipe_format fmt = get_pixmap_format(&xdpy->base, pix);
+      int i;
+
+      if (fmt != PIPE_FORMAT_NONE) {
+         for (i = 0; i < xdpy->num_configs; i++) {
+            if (xdpy->configs[i].base.color_format == fmt) {
+               nconf = &xdpy->configs[i].base;
+               break;
+            }
+         }
+      }
+
+      if (!nconf)
+         return NULL;
+   }
+
+   xsurf = ximage_display_create_surface(ndpy, (Drawable) pix, nconf);
    return (xsurf) ? &xsurf->base : NULL;
 }
 
@@ -498,8 +420,6 @@ ximage_display_get_configs(struct native_display *ndpy, int *num_configs)
          xconf->base.native_visual_type = xconf->visual->class;
 #endif
 
-         xconf->base.slow_config = TRUE;
-
          count++;
       }
 
@@ -522,24 +442,7 @@ ximage_display_is_pixmap_supported(struct native_display *ndpy,
                                    const struct native_config *nconf)
 {
    struct ximage_display *xdpy = ximage_display(ndpy);
-   enum pipe_format fmt;
-   uint depth;
-
-   depth = x11_drawable_get_depth(xdpy->xscr, (Drawable) pix);
-   switch (depth) {
-   case 32:
-      fmt = PIPE_FORMAT_B8G8R8A8_UNORM;
-      break;
-   case 24:
-      fmt = PIPE_FORMAT_B8G8R8X8_UNORM;
-      break;
-   case 16:
-      fmt = PIPE_FORMAT_B5G6R5_UNORM;
-      break;
-   default:
-      fmt = PIPE_FORMAT_NONE;
-      break;
-   }
+   enum pipe_format fmt = get_pixmap_format(&xdpy->base, pix);
 
    return (fmt == nconf->color_format);
 }
@@ -555,6 +458,8 @@ ximage_display_get_param(struct native_display *ndpy,
       /* private buffers are allocated */
       val = FALSE;
       break;
+   case NATIVE_PARAM_PRESERVE_BUFFER:
+   case NATIVE_PARAM_MAX_SWAP_INTERVAL:
    default:
       val = 0;
       break;
@@ -579,65 +484,13 @@ ximage_display_destroy(struct native_display *ndpy)
    FREE(xdpy);
 }
 
-
-/* Helper function to build a subset of a driver stack consisting of
- * one of the software rasterizers (cell, llvmpipe, softpipe) and the
- * xlib winsys.
- *
- * This function could be shared, but currently causes headaches for
- * the build systems, particularly scons if we try.
- *
- * Long term, want to avoid having global #defines for things like
- * GALLIUM_LLVMPIPE, GALLIUM_CELL, etc.  Scons already eliminates
- * those #defines, so things that are painful for it now are likely to
- * be painful for other build systems in the future.
- */
-static struct pipe_screen *
-swrast_xlib_create_screen( Display *display )
-{
-   struct sw_winsys *winsys;
-   struct pipe_screen *screen = NULL;
-
-   /* Create the underlying winsys, which performs presents to Xlib
-    * drawables:
-    */
-   winsys = xlib_create_sw_winsys( display );
-   if (winsys == NULL)
-      return NULL;
-
-   /* Create a software rasterizer on top of that winsys.  Use
-    * llvmpipe if it is available.
-    */
-#if defined(GALLIUM_LLVMPIPE)
-   if (screen == NULL &&
-       !debug_get_bool_option("GALLIUM_NO_LLVM", FALSE))
-      screen = llvmpipe_create_screen( winsys );
-#endif
-
-   if (screen == NULL)
-      screen = softpipe_create_screen( winsys );
-
-   if (screen == NULL)
-      goto fail;
-
-   /* Inject any wrapping layers we want to here:
-    */
-   return gallium_wrap_screen( screen );
-
-fail:
-   if (winsys)
-      winsys->destroy( winsys );
-
-   return NULL;
-}
-
-
-
 struct native_display *
-x11_create_ximage_display(EGLNativeDisplayType dpy,
-                          struct native_event_handler *event_handler)
+x11_create_ximage_display(Display *dpy,
+                          struct native_event_handler *event_handler,
+                          void *user_data)
 {
    struct ximage_display *xdpy;
+   struct sw_winsys *winsys = NULL;
 
    xdpy = CALLOC_STRUCT(ximage_display);
    if (!xdpy)
@@ -654,15 +507,21 @@ x11_create_ximage_display(EGLNativeDisplayType dpy,
    }
 
    xdpy->event_handler = event_handler;
+   xdpy->base.user_data = user_data;
 
    xdpy->xscr_number = DefaultScreen(xdpy->dpy);
    xdpy->xscr = x11_screen_create(xdpy->dpy, xdpy->xscr_number);
-   if (!xdpy->xscr) {
-      FREE(xdpy);
-      return NULL;
-   }
+   if (!xdpy->xscr)
+      goto fail;
 
-   xdpy->base.screen = swrast_xlib_create_screen(xdpy->dpy);
+   winsys = xlib_create_sw_winsys(xdpy->dpy);
+   if (!winsys)
+      goto fail;
+
+   xdpy->base.screen =
+      xdpy->event_handler->new_sw_screen(&xdpy->base, winsys);
+   if (!xdpy->base.screen)
+      goto fail;
 
    xdpy->base.destroy = ximage_display_destroy;
    xdpy->base.get_param = ximage_display_get_param;
@@ -673,4 +532,14 @@ x11_create_ximage_display(EGLNativeDisplayType dpy,
    xdpy->base.create_pixmap_surface = ximage_display_create_pixmap_surface;
 
    return &xdpy->base;
+
+fail:
+   if (winsys && winsys->destroy)
+      winsys->destroy(winsys);
+   if (xdpy->xscr)
+      x11_screen_destroy(xdpy->xscr);
+   if (xdpy->dpy && xdpy->own_dpy)
+      XCloseDisplay(xdpy->dpy);
+   FREE(xdpy);
+   return NULL;
 }

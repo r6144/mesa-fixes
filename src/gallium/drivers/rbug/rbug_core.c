@@ -266,9 +266,9 @@ rbug_texture_read(struct rbug_rbug *tr_rbug, struct rbug_header *header, uint32_
 
    tex = tr_tex->resource;
    t = pipe_get_transfer(context, tex,
-				 gptr->face, gptr->level, gptr->zslice,
-				 PIPE_TRANSFER_READ,
-				 gptr->x, gptr->y, gptr->w, gptr->h);
+                         gptr->level, gptr->face + gptr->zslice,
+                         PIPE_TRANSFER_READ,
+                         gptr->x, gptr->y, gptr->w, gptr->h);
 
    map = context->transfer_map(context, t);
 
@@ -279,7 +279,7 @@ rbug_texture_read(struct rbug_rbug *tr_rbug, struct rbug_header *header, uint32_
                                 util_format_get_blocksize(t->resource->format),
                                 (uint8_t*)map,
                                 t->stride * util_format_get_nblocksy(t->resource->format,
-								     t->box.height),
+                                                                     t->box.height),
                                 t->stride,
                                 NULL);
 
@@ -407,9 +407,7 @@ rbug_context_draw_step(struct rbug_rbug *tr_rbug, struct rbug_header *header, ui
    }
    pipe_mutex_unlock(rb_context->draw_mutex);
 
-#ifdef PIPE_THREAD_HAVE_CONDVAR
    pipe_condvar_broadcast(rb_context->draw_cond);
-#endif
 
    pipe_mutex_unlock(rb_screen->list_mutex);
 
@@ -442,9 +440,7 @@ rbug_context_draw_unblock(struct rbug_rbug *tr_rbug, struct rbug_header *header,
    rb_context->draw_blocker &= ~unblock->unblock;
    pipe_mutex_unlock(rb_context->draw_mutex);
 
-#ifdef PIPE_THREAD_HAVE_CONDVAR
    pipe_condvar_broadcast(rb_context->draw_cond);
-#endif
 
    pipe_mutex_unlock(rb_screen->list_mutex);
 
@@ -476,9 +472,7 @@ rbug_context_draw_rule(struct rbug_rbug *tr_rbug, struct rbug_header *header, ui
    rb_context->draw_blocker |= RBUG_BLOCK_RULE;
    pipe_mutex_unlock(rb_context->draw_mutex);
 
-#ifdef PIPE_THREAD_HAVE_CONDVAR
    pipe_condvar_broadcast(rb_context->draw_cond);
-#endif
 
    pipe_mutex_unlock(rb_screen->list_mutex);
 

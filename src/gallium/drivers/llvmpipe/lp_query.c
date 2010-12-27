@@ -34,11 +34,10 @@
 #include "pipe/p_defines.h"
 #include "util/u_memory.h"
 #include "lp_context.h"
+#include "lp_flush.h"
+#include "lp_fence.h"
 #include "lp_query.h"
-#include "lp_rast.h"
-#include "lp_rast_priv.h"
 #include "lp_state.h"
-#include "lp_setup_context.h"
 
 
 static struct llvmpipe_query *llvmpipe_query( struct pipe_query *p )
@@ -48,16 +47,13 @@ static struct llvmpipe_query *llvmpipe_query( struct pipe_query *p )
 
 static struct pipe_query *
 llvmpipe_create_query(struct pipe_context *pipe, 
-		      unsigned type)
+                      unsigned type)
 {
    struct llvmpipe_query *pq;
 
    assert(type == PIPE_QUERY_OCCLUSION_COUNTER);
 
    pq = CALLOC_STRUCT( llvmpipe_query );
-   if (pq) {
-      pipe_mutex_init(pq->mutex);
-   }
 
    return (struct pipe_query *) pq;
 }
@@ -67,29 +63,58 @@ static void
 llvmpipe_destroy_query(struct pipe_context *pipe, struct pipe_query *q)
 {
    struct llvmpipe_query *pq = llvmpipe_query(q);
-   pipe_mutex_destroy(pq->mutex);
+
+   /* Ideally we would refcount queries & not get destroyed until the
+    * last scene had finished with us.
+    */
+   if (pq->fence) {
+      if (!lp_fence_issued(pq->fence))
+         llvmpipe_flush(pipe, 0, NULL, __FUNCTION__);
+
+      if (!lp_fence_signalled(pq->fence))
+         lp_fence_wait(pq->fence);
+
+      lp_fence_reference(&pq->fence, NULL);
+   }
+
    FREE(pq);
 }
 
 
 static boolean
 llvmpipe_get_query_result(struct pipe_context *pipe, 
-			  struct pipe_query *q,
-			  boolean wait,
-			  uint64_t *result )
+                          struct pipe_query *q,
+                          boolean wait,
+                          void *vresult)
 {
-   struct llvmpipe_context *llvmpipe = llvmpipe_context( pipe );
    struct llvmpipe_query *pq = llvmpipe_query(q);
+   uint64_t *result = (uint64_t *)vresult;
+   int i;
 
-   if (!pq->done) {
-      lp_setup_flush(llvmpipe->setup, TRUE);
+   if (!pq->fence) {
+      /* no fence because there was no scene, so results is zero */
+      *result = 0;
+      return TRUE;
    }
 
-   if (pq->done) {
-      *result = pq->result;
+   if (!lp_fence_signalled(pq->fence)) {
+      if (!lp_fence_issued(pq->fence))
+         llvmpipe_flush(pipe, 0, NULL, __FUNCTION__);
+         
+      if (!wait)
+         return FALSE;
+
+      lp_fence_wait(pq->fence);
    }
 
-   return pq->done;
+   /* Sum the results from each of the threads:
+    */
+   *result = 0;
+   for (i = 0; i < LP_MAX_THREADS; i++) {
+      *result += pq->count[i];
+   }
+
+   return TRUE;
 }
 
 
@@ -103,15 +128,12 @@ llvmpipe_begin_query(struct pipe_context *pipe, struct pipe_query *q)
     * flush the scene now.  Real apps shouldn't re-use a query in a
     * frame of rendering.
     */
-   if (pq->binned) {
-      struct pipe_fence_handle *fence;
-      pipe->flush(pipe, PIPE_FLUSH_RENDER_CACHE, &fence);
-      if (fence) {
-         pipe->screen->fence_finish(pipe->screen, fence, 0);
-         pipe->screen->fence_reference(pipe->screen, &fence, NULL);
-      }
+   if (pq->fence && !lp_fence_issued(pq->fence)) {
+      llvmpipe_finish(pipe, __FUNCTION__);
    }
 
+
+   memset(pq->count, 0, sizeof(pq->count));
    lp_setup_begin_query(llvmpipe->setup, pq);
 
    llvmpipe->active_query_count++;

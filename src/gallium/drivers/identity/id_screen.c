@@ -76,6 +76,17 @@ identity_screen_get_param(struct pipe_screen *_screen,
                             param);
 }
 
+static int
+identity_screen_get_shader_param(struct pipe_screen *_screen,
+                          unsigned shader, enum pipe_shader_cap param)
+{
+   struct identity_screen *id_screen = identity_screen(_screen);
+   struct pipe_screen *screen = id_screen->screen;
+
+   return screen->get_shader_param(screen, shader,
+                            param);
+}
+
 static float
 identity_screen_get_paramf(struct pipe_screen *_screen,
                            enum pipe_cap param)
@@ -91,6 +102,7 @@ static boolean
 identity_screen_is_format_supported(struct pipe_screen *_screen,
                                     enum pipe_format format,
                                     enum pipe_texture_target target,
+                                    unsigned sample_count,
                                     unsigned tex_usage,
                                     unsigned geom_flags)
 {
@@ -100,6 +112,7 @@ identity_screen_is_format_supported(struct pipe_screen *_screen,
    return screen->is_format_supported(screen,
                                       format,
                                       target,
+                                      sample_count,
                                       tex_usage,
                                       geom_flags);
 }
@@ -176,39 +189,6 @@ identity_screen_resource_destroy(struct pipe_screen *screen,
    identity_resource_destroy(identity_resource(_resource));
 }
 
-static struct pipe_surface *
-identity_screen_get_tex_surface(struct pipe_screen *_screen,
-                                struct pipe_resource *_resource,
-                                unsigned face,
-                                unsigned level,
-                                unsigned zslice,
-                                unsigned usage)
-{
-   struct identity_screen *id_screen = identity_screen(_screen);
-   struct identity_resource *id_resource = identity_resource(_resource);
-   struct pipe_screen *screen = id_screen->screen;
-   struct pipe_resource *resource = id_resource->resource;
-   struct pipe_surface *result;
-
-   result = screen->get_tex_surface(screen,
-                                    resource,
-                                    face,
-                                    level,
-                                    zslice,
-                                    usage);
-
-   if (result)
-      return identity_surface_create(id_resource, result);
-   return NULL;
-}
-
-static void
-identity_screen_tex_surface_destroy(struct pipe_surface *_surface)
-{
-   identity_surface_destroy(identity_surface(_surface));
-}
-
-
 
 static struct pipe_resource *
 identity_screen_user_buffer_create(struct pipe_screen *_screen,
@@ -234,16 +214,18 @@ identity_screen_user_buffer_create(struct pipe_screen *_screen,
 
 static void
 identity_screen_flush_frontbuffer(struct pipe_screen *_screen,
-                                  struct pipe_surface *_surface,
+                                  struct pipe_resource *_resource,
+                                  unsigned level, unsigned layer,
                                   void *context_private)
 {
    struct identity_screen *id_screen = identity_screen(_screen);
-   struct identity_surface *id_surface = identity_surface(_surface);
+   struct identity_resource *id_resource = identity_resource(_resource);
    struct pipe_screen *screen = id_screen->screen;
-   struct pipe_surface *surface = id_surface->surface;
+   struct pipe_resource *resource = id_resource->resource;
 
    screen->flush_frontbuffer(screen,
-                             surface,
+                             resource,
+                             level, layer,
                              context_private);
 }
 
@@ -302,6 +284,7 @@ identity_screen_create(struct pipe_screen *screen)
    id_screen->base.get_name = identity_screen_get_name;
    id_screen->base.get_vendor = identity_screen_get_vendor;
    id_screen->base.get_param = identity_screen_get_param;
+   id_screen->base.get_shader_param = identity_screen_get_shader_param;
    id_screen->base.get_paramf = identity_screen_get_paramf;
    id_screen->base.is_format_supported = identity_screen_is_format_supported;
    id_screen->base.context_create = identity_screen_context_create;
@@ -309,8 +292,6 @@ identity_screen_create(struct pipe_screen *screen)
    id_screen->base.resource_from_handle = identity_screen_resource_from_handle;
    id_screen->base.resource_get_handle = identity_screen_resource_get_handle;
    id_screen->base.resource_destroy = identity_screen_resource_destroy;
-   id_screen->base.get_tex_surface = identity_screen_get_tex_surface;
-   id_screen->base.tex_surface_destroy = identity_screen_tex_surface_destroy;
    id_screen->base.user_buffer_create = identity_screen_user_buffer_create;
    id_screen->base.flush_frontbuffer = identity_screen_flush_frontbuffer;
    id_screen->base.fence_reference = identity_screen_fence_reference;

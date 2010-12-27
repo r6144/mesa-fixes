@@ -279,6 +279,10 @@ util_dump_template(struct os_stream *stream, const struct pipe_resource *templat
    util_dump_uint(stream, templat->depth0);
    util_dump_member_end(stream);
 
+   util_dump_member_begin(stream, "array_size");
+   util_dump_uint(stream, templat->array_size);
+   util_dump_member_end(stream);
+
    util_dump_member(stream, uint, templat, last_level);
    util_dump_member(stream, uint, templat, usage);
    util_dump_member(stream, uint, templat, bind);
@@ -300,12 +304,13 @@ util_dump_rasterizer_state(struct os_stream *stream, const struct pipe_rasterize
 
    util_dump_member(stream, bool, state, flatshade);
    util_dump_member(stream, bool, state, light_twoside);
-   util_dump_member(stream, uint, state, front_winding);
-   util_dump_member(stream, uint, state, cull_mode);
-   util_dump_member(stream, uint, state, fill_cw);
-   util_dump_member(stream, uint, state, fill_ccw);
-   util_dump_member(stream, bool, state, offset_cw);
-   util_dump_member(stream, bool, state, offset_ccw);
+   util_dump_member(stream, uint, state, front_ccw);
+   util_dump_member(stream, uint, state, cull_face);
+   util_dump_member(stream, uint, state, fill_front);
+   util_dump_member(stream, uint, state, fill_back);
+   util_dump_member(stream, bool, state, offset_point);
+   util_dump_member(stream, bool, state, offset_line);
+   util_dump_member(stream, bool, state, offset_tri);
    util_dump_member(stream, bool, state, scissor);
    util_dump_member(stream, bool, state, poly_smooth);
    util_dump_member(stream, bool, state, poly_stipple_enable);
@@ -632,14 +637,12 @@ util_dump_surface(struct os_stream *stream, const struct pipe_surface *state)
    util_dump_member(stream, uint, state, width);
    util_dump_member(stream, uint, state, height);
 
-   util_dump_member(stream, uint, state, layout);
-   util_dump_member(stream, uint, state, offset);
    util_dump_member(stream, uint, state, usage);
 
    util_dump_member(stream, ptr, state, texture);
-   util_dump_member(stream, uint, state, face);
-   util_dump_member(stream, uint, state, level);
-   util_dump_member(stream, uint, state, zslice);
+   util_dump_member(stream, uint, state, u.tex.level);
+   util_dump_member(stream, uint, state, u.tex.first_layer);
+   util_dump_member(stream, uint, state, u.tex.last_layer);
 
    util_dump_struct_end(stream);
 }
@@ -659,7 +662,7 @@ util_dump_transfer(struct os_stream *stream, const struct pipe_transfer *state)
    /*util_dump_member(stream, uint, state, box);*/
 
    util_dump_member(stream, uint, state, stride);
-   util_dump_member(stream, uint, state, slice_stride);
+   util_dump_member(stream, uint, state, layer_stride);
 
    /*util_dump_member(stream, ptr, state, data);*/
 

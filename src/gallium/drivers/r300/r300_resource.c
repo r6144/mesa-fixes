@@ -23,19 +23,9 @@
  * Authors: Dave Airlie
  */
 
-#include <stdio.h>
-
-#include "util/u_inlines.h"
-#include "util/u_format.h"
-#include "util/u_memory.h"
-#include "util/u_upload_mgr.h"
-#include "util/u_math.h"
-
 #include "r300_context.h"
 #include "r300_texture.h"
-#include "r300_screen.h"
 #include "r300_screen_buffer.h"
-#include "r300_winsys.h"
 
 static struct pipe_resource *
 r300_resource_create(struct pipe_screen *screen,
@@ -68,6 +58,8 @@ void r300_init_resource_functions(struct r300_context *r300)
    r300->context.transfer_destroy = u_transfer_destroy_vtbl;
    r300->context.transfer_inline_write = u_transfer_inline_write_vtbl;
    r300->context.is_resource_referenced = u_is_resource_referenced_vtbl;
+   r300->context.create_surface = r300_create_surface;
+   r300->context.surface_destroy = r300_surface_destroy;
 }
 
 void r300_init_screen_resource_functions(struct r300_screen *r300screen)
@@ -77,7 +69,4 @@ void r300_init_screen_resource_functions(struct r300_screen *r300screen)
    r300screen->screen.resource_get_handle = u_resource_get_handle_vtbl;
    r300screen->screen.resource_destroy = u_resource_destroy_vtbl;
    r300screen->screen.user_buffer_create = r300_user_buffer_create;
-
-   r300screen->screen.get_tex_surface = r300_get_tex_surface;
-   r300screen->screen.tex_surface_destroy = r300_tex_surface_destroy;
 }

@@ -160,11 +160,16 @@ static void set_vertex_inputs_outputs(struct r300_vertex_program_compiler * c)
     c->code->outputs[outputs->wpos] = reg++;
 }
 
+void r300_init_vs_outputs(struct r300_vertex_shader *vs)
+{
+    tgsi_scan_shader(vs->state.tokens, &vs->info);
+    r300_shader_read_vs_outputs(&vs->info, &vs->outputs);
+}
+
 static void r300_dummy_vertex_shader(
     struct r300_context* r300,
     struct r300_vertex_shader* shader)
 {
-    struct pipe_shader_state state;
     struct ureg_program *ureg;
     struct ureg_dst dst;
     struct ureg_src imm;
@@ -178,18 +183,12 @@ static void r300_dummy_vertex_shader(
     ureg_MOV(ureg, dst, imm);
     ureg_END(ureg);
 
-    state.tokens = ureg_finalize(ureg);
+    shader->state.tokens = tgsi_dup_tokens(ureg_finalize(ureg));
+    ureg_destroy(ureg);
 
     shader->dummy = TRUE;
+    r300_init_vs_outputs(shader);
     r300_translate_vertex_shader(r300, shader);
-
-    ureg_destroy(ureg);
-}
-
-void r300_init_vs_outputs(struct r300_vertex_shader *vs)
-{
-    tgsi_scan_shader(vs->state.tokens, &vs->info);
-    r300_shader_read_vs_outputs(&vs->info, &vs->outputs);
 }
 
 void r300_translate_vertex_shader(struct r300_context *r300,
@@ -197,16 +196,26 @@ void r300_translate_vertex_shader(struct r300_context *r300,
 {
     struct r300_vertex_program_compiler compiler;
     struct tgsi_to_rc ttr;
+    unsigned i;
 
     /* Setup the compiler */
+    memset(&compiler, 0, sizeof(compiler));
     rc_init(&compiler.Base);
 
-    compiler.Base.Debug = DBG_ON(r300, DBG_VP);
+    DBG_ON(r300, DBG_VP) ? compiler.Base.Debug |= RC_DBG_LOG : 0;
+    DBG_ON(r300, DBG_P_STAT) ? compiler.Base.Debug |= RC_DBG_STATS : 0;
     compiler.code = &vs->code;
     compiler.UserData = vs;
+    compiler.Base.is_r500 = r300->screen->caps.is_r500;
+    compiler.Base.disable_optimizations = DBG_ON(r300, DBG_NO_OPT);
+    compiler.Base.has_half_swizzles = FALSE;
+    compiler.Base.has_presub = FALSE;
+    compiler.Base.max_temp_regs = 32;
+    compiler.Base.max_constants = 256;
+    compiler.Base.max_alu_insts = r300->screen->caps.is_r500 ? 1024 : 256;
 
-    if (compiler.Base.Debug) {
-        debug_printf("r300: Initial vertex program\n");
+    if (compiler.Base.Debug & RC_DBG_LOG) {
+        DBG(r300, DBG_VP, "r300: Initial vertex program\n");
         tgsi_dump(vs->state.tokens, 0);
     }
 
@@ -217,6 +226,10 @@ void r300_translate_vertex_shader(struct r300_context *r300,
 
     r300_tgsi_to_rc(&ttr, vs->state.tokens);
 
+    if (compiler.Base.Program.Constants.Count > 200) {
+        compiler.Base.remove_unused_constants = TRUE;
+    }
+
     compiler.RequiredOutputs = ~(~0 << (vs->info.num_outputs + 1));
     compiler.SetHwInputOutput = &set_vertex_inputs_outputs;
 
@@ -226,7 +239,6 @@ void r300_translate_vertex_shader(struct r300_context *r300,
     /* Invoke the compiler */
     r3xx_compile_vertex_program(&compiler);
     if (compiler.Base.Error) {
-        /* XXX We should fallback using Draw. */
         fprintf(stderr, "r300 VP: Compiler error:\n%sUsing a dummy shader"
                 " instead.\n", compiler.Base.ErrorMsg);
 
@@ -242,7 +254,15 @@ void r300_translate_vertex_shader(struct r300_context *r300,
     }
 
     /* Initialize numbers of constants for each type. */
-    vs->externals_count = ttr.immediate_offset;
+    vs->externals_count = 0;
+    for (i = 0;
+         i < vs->code.constants.Count &&
+         vs->code.constants.Constants[i].Type == RC_CONSTANT_EXTERNAL; i++) {
+        vs->externals_count = i+1;
+    }
+    for (; i < vs->code.constants.Count; i++) {
+        assert(vs->code.constants.Constants[i].Type == RC_CONSTANT_IMMEDIATE);
+    }
     vs->immediates_count = vs->code.constants.Count - vs->externals_count;
 
     /* And, finally... */

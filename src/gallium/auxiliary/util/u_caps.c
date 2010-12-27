@@ -68,9 +68,18 @@ util_check_caps_out(struct pipe_screen *screen, const unsigned *list, int *out)
          if (!screen->is_format_supported(screen,
                                           list[i++],
                                           PIPE_TEXTURE_2D,
+                                          0,
                                           PIPE_BIND_SAMPLER_VIEW,
                                           0)) {
             *out = i - 2;
+            return FALSE;
+         }
+         break;
+      case UTIL_CAPS_CHECK_SHADER:
+         tmpi = screen->get_shader_param(screen, list[i] >> 24, list[i] & ((1 << 24) - 1));
+         ++i;
+         if (tmpi < (int)list[i++]) {
+            *out = i - 3;
             return FALSE;
          }
          break;
@@ -185,6 +194,22 @@ static unsigned caps_opengl_2_1[] = {
 /* OpenGL 3.0 */
 /* UTIL_CHECK_INT(MAX_RENDER_TARGETS, 8), */
 
+/* Shader Model 3 */
+static unsigned caps_sm3[] = {
+    UTIL_CHECK_SHADER(FRAGMENT, MAX_INSTRUCTIONS, 512),
+    UTIL_CHECK_SHADER(FRAGMENT, MAX_INPUTS, 10),
+    UTIL_CHECK_SHADER(FRAGMENT, MAX_TEMPS, 32),
+    UTIL_CHECK_SHADER(FRAGMENT, MAX_ADDRS, 1),
+    UTIL_CHECK_SHADER(FRAGMENT, MAX_CONSTS, 224),
+
+    UTIL_CHECK_SHADER(VERTEX, MAX_INSTRUCTIONS, 512),
+    UTIL_CHECK_SHADER(VERTEX, MAX_INPUTS, 16),
+    UTIL_CHECK_SHADER(VERTEX, MAX_TEMPS, 32),
+    UTIL_CHECK_SHADER(VERTEX, MAX_ADDRS, 2),
+    UTIL_CHECK_SHADER(VERTEX, MAX_CONSTS, 256),
+
+    UTIL_CHECK_TERMINATE
+};
 
 /**
  * Demo function which checks against theoretical caps needed for different APIs.
@@ -202,6 +227,7 @@ void util_caps_demo_print(struct pipe_screen *screen)
       {"DX 11", caps_dx_11},
       {"OpenGL 2.1", caps_opengl_2_1},
 /*    {"OpenGL 3.0", caps_opengl_3_0},*/
+      {"SM3", caps_sm3},
       {NULL, NULL}
    };
    int i, out = 0;

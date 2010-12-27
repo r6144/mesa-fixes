@@ -71,7 +71,8 @@ identity_resource_destroy(struct identity_resource *id_resource)
 
 
 struct pipe_surface *
-identity_surface_create(struct identity_resource *id_resource,
+identity_surface_create(struct identity_context *id_context,
+                        struct identity_resource *id_resource,
                         struct pipe_surface *surface)
 {
    struct identity_surface *id_surface;
@@ -100,10 +101,12 @@ error:
 }
 
 void
-identity_surface_destroy(struct identity_surface *id_surface)
+identity_surface_destroy(struct identity_context *id_context,
+                         struct identity_surface *id_surface)
 {
    pipe_resource_reference(&id_surface->base.texture, NULL);
-   pipe_surface_reference(&id_surface->surface, NULL);
+   id_context->pipe->surface_destroy(id_context->pipe,
+                                     id_surface->surface);
    FREE(id_surface);
 }
 
@@ -120,13 +123,14 @@ identity_sampler_view_create(struct identity_context *id_context,
 
    assert(view->texture == id_resource->resource);
 
-   id_view = MALLOC(sizeof(struct identity_sampler_view));
+   id_view = CALLOC_STRUCT(identity_sampler_view);
 
    id_view->base = *view;
    id_view->base.reference.count = 1;
    id_view->base.texture = NULL;
    pipe_resource_reference(&id_view->base.texture, id_resource->resource);
    id_view->base.context = id_context->pipe;
+   id_view->sampler_view = view;
 
    return &id_view->base;
 error:
@@ -180,8 +184,8 @@ identity_transfer_destroy(struct identity_context *id_context,
                           struct identity_transfer *id_transfer)
 {
    pipe_resource_reference(&id_transfer->base.resource, NULL);
-   id_transfer->pipe->transfer_destroy(id_context->pipe,
-                                       id_transfer->transfer);
+   id_context->pipe->transfer_destroy(id_context->pipe,
+                                      id_transfer->transfer);
    FREE(id_transfer);
 }
 

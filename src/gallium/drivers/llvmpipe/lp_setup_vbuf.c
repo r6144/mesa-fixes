@@ -61,8 +61,10 @@ lp_setup_get_vertex_info(struct vbuf_render *vbr)
 {
    struct lp_setup_context *setup = lp_setup_context(vbr);
 
-   /* vertex size/info depends on the latest state */
-   lp_setup_update_state(setup);
+   /* Vertex size/info depends on the latest state.
+    * The draw module may have issued additional state-change commands.
+    */
+   lp_setup_update_state(setup, FALSE);
 
    return setup->vertex_info;
 }
@@ -139,7 +141,10 @@ lp_setup_draw_elements(struct vbuf_render *vbr, const ushort *indices, uint nr)
    const boolean flatshade_first = setup->flatshade_first;
    unsigned i;
 
-   lp_setup_update_state(setup);
+   assert(setup->setup.variant);
+
+   if (!lp_setup_update_state(setup, TRUE))
+      return;
 
    switch (setup->prim) {
    case PIPE_PRIM_POINTS:
@@ -336,7 +341,8 @@ lp_setup_draw_arrays(struct vbuf_render *vbr, uint start, uint nr)
    const boolean flatshade_first = setup->flatshade_first;
    unsigned i;
 
-   lp_setup_update_state(setup);
+   if (!lp_setup_update_state(setup, TRUE))
+      return;
 
    switch (setup->prim) {
    case PIPE_PRIM_POINTS:

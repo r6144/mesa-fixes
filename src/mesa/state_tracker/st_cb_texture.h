@@ -30,8 +30,16 @@
 #define ST_CB_TEXTURE_H
 
 
+#include "main/glheader.h"
+
+struct dd_function_table;
+struct gl_context;
+struct gl_texture_object;
+struct pipe_context;
+struct st_context;
+
 extern GLboolean
-st_finalize_texture(GLcontext *ctx,
+st_finalize_texture(struct gl_context *ctx,
 		    struct pipe_context *pipe, 
 		    struct gl_texture_object *tObj);
 

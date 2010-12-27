@@ -27,8 +27,9 @@
 
 #include "main/imports.h"
 #include "main/context.h"
+#include "main/shaderobj.h"
+#include "program/prog_cache.h"
 #include "vbo/vbo.h"
-#include "shader/shader_api.h"
 #include "glapi/glapi.h"
 #include "st_context.h"
 #include "st_debug.h"
@@ -51,6 +52,7 @@
 #include "st_cb_xformfb.h"
 #include "st_cb_flush.h"
 #include "st_cb_strings.h"
+#include "st_cb_viewport.h"
 #include "st_atom.h"
 #include "st_draw.h"
 #include "st_extensions.h"
@@ -58,15 +60,16 @@
 #include "st_program.h"
 #include "pipe/p_context.h"
 #include "util/u_inlines.h"
-#include "util/u_rect.h"
-#include "util/u_surface.h"
 #include "cso_cache/cso_context.h"
+
+
+DEBUG_GET_ONCE_BOOL_OPTION(mesa_mvp_dp4, "MESA_MVP_DP4", FALSE)
 
 
 /**
  * Called via ctx->Driver.UpdateState()
  */
-void st_invalidate_state(GLcontext * ctx, GLuint new_state)
+void st_invalidate_state(struct gl_context * ctx, GLuint new_state)
 {
    struct st_context *st = st_context(ctx);
 
@@ -93,21 +96,8 @@ st_get_msaa(void)
 }
 
 
-/** Default method for pipe_context::surface_copy() */
-static void
-st_surface_copy(struct pipe_context *pipe,
-                struct pipe_surface *dst,
-                unsigned dst_x, unsigned dst_y,
-                struct pipe_surface *src,
-                unsigned src_x, unsigned src_y, 
-                unsigned w, unsigned h)
-{
-   util_surface_copy(pipe, FALSE, dst, dst_x, dst_y, src, src_x, src_y, w, h);
-}
-
-
 static struct st_context *
-st_create_context_priv( GLcontext *ctx, struct pipe_context *pipe )
+st_create_context_priv( struct gl_context *ctx, struct pipe_context *pipe )
 {
    uint i;
    struct st_context *st = ST_CALLOC_STRUCT( st_context );
@@ -134,6 +124,11 @@ st_create_context_priv( GLcontext *ctx, struct pipe_context *pipe )
    st_init_draw( st );
    st_init_generate_mipmap(st);
    st_init_blit(st);
+
+   if(pipe->screen->get_param(pipe->screen, PIPE_CAP_NPOT_TEXTURES))
+      st->internal_target = PIPE_TEXTURE_2D;
+   else
+      st->internal_target = PIPE_TEXTURE_RECT;
 
    for (i = 0; i < PIPE_MAX_SAMPLERS; i++)
       st->state.sampler_list[i] = &st->state.samplers[i];
@@ -163,40 +158,32 @@ st_create_context_priv( GLcontext *ctx, struct pipe_context *pipe )
    st_init_limits(st);
    st_init_extensions(st);
 
-   /* plug in helper driver functions if needed */
-   if (!pipe->surface_copy)
-      pipe->surface_copy = st_surface_copy;
-
    return st;
 }
 
 
-struct st_context *st_create_context(struct pipe_context *pipe,
-                                     const __GLcontextModes *visual,
+struct st_context *st_create_context(gl_api api, struct pipe_context *pipe,
+                                     const struct gl_config *visual,
                                      struct st_context *share)
 {
-   GLcontext *ctx;
-   GLcontext *shareCtx = share ? share->ctx : NULL;
+   struct gl_context *ctx;
+   struct gl_context *shareCtx = share ? share->ctx : NULL;
    struct dd_function_table funcs;
+
+   /* Sanity checks */
+   assert(MESA_SHADER_VERTEX == PIPE_SHADER_VERTEX);
+   assert(MESA_SHADER_FRAGMENT == PIPE_SHADER_FRAGMENT);
+   assert(MESA_SHADER_GEOMETRY == PIPE_SHADER_GEOMETRY);
 
    memset(&funcs, 0, sizeof(funcs));
    st_init_driver_functions(&funcs);
 
-#if FEATURE_GL
-   ctx = _mesa_create_context_for_api(API_OPENGL,
-				      visual, shareCtx, &funcs, NULL);
-#elif FEATURE_ES1
-   ctx = _mesa_create_context_for_api(API_OPENGLES,
-				      visual, shareCtx, &funcs, NULL);
-#elif FEATURE_ES2
-   ctx = _mesa_create_context_for_api(API_OPENGLES2,
-				      visual, shareCtx, &funcs, NULL);
-#endif
+   ctx = _mesa_create_context_for_api(api, visual, shareCtx, &funcs, NULL);
 
    /* XXX: need a capability bit in gallium to query if the pipe
     * driver prefers DP4 or MUL/MAD for vertex transformation.
     */
-   if (debug_get_bool_option("MESA_MVP_DP4", FALSE))
+   if (debug_get_option_mesa_mvp_dp4())
       _mesa_set_mvp_with_dp4( ctx, GL_TRUE );
 
    return st_create_context_priv(ctx, pipe);
@@ -239,7 +226,7 @@ void st_destroy_context( struct st_context *st )
 {
    struct pipe_context *pipe = st->pipe;
    struct cso_context *cso = st->cso_context;
-   GLcontext *ctx = st->ctx;
+   struct gl_context *ctx = st->ctx;
    GLuint i;
 
    /* need to unbind and destroy CSO objects before anything else */
@@ -254,9 +241,18 @@ void st_destroy_context( struct st_context *st )
    }
    pipe_surface_reference(&st->state.framebuffer.zsbuf, NULL);
 
+   pipe->set_index_buffer(pipe, NULL);
+
+   for (i = 0; i < PIPE_SHADER_TYPES; i++) {
+      pipe->set_constant_buffer(pipe, i, 0, NULL);
+      pipe_resource_reference(&st->state.constants[i], NULL);
+   }
+
    _mesa_delete_program_cache(st->ctx, st->pixel_xfer.cache);
 
    _vbo_DestroyContext(st->ctx);
+
+   st_destroy_program_variants(st);
 
    _mesa_free_context_data(ctx);
 
@@ -272,7 +268,7 @@ void st_destroy_context( struct st_context *st )
 
 void st_init_driver_functions(struct dd_function_table *functions)
 {
-   _mesa_init_glsl_driver_functions(functions);
+   _mesa_init_shader_object_functions(functions);
 
    st_init_accum_functions(functions);
    st_init_blit_functions(functions);
@@ -295,6 +291,7 @@ void st_init_driver_functions(struct dd_function_table *functions)
    st_init_texture_functions(functions);
    st_init_flush_functions(functions);
    st_init_string_functions(functions);
+   st_init_viewport_functions(functions);
 
    st_init_xformfb_functions(functions);
 

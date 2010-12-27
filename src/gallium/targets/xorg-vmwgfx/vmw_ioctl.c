@@ -165,7 +165,7 @@ vmw_ioctl_buffer_create(struct vmw_customizer *vmw, uint32_t size, unsigned *han
     struct drm_vmw_dmabuf_rep *rep = &arg.rep;
     int ret;
 
-    buf = xcalloc(1, sizeof(*buf));
+    buf = calloc(1, sizeof(*buf));
     if (!buf)
 	goto err;
 
@@ -192,7 +192,7 @@ vmw_ioctl_buffer_create(struct vmw_customizer *vmw, uint32_t size, unsigned *han
     return buf;
 
 err_free:
-    xfree(buf);
+    free(buf);
 err:
     return NULL;
 }
@@ -211,7 +211,7 @@ vmw_ioctl_buffer_destroy(struct vmw_customizer *vmw, struct vmw_dma_buffer *buf)
     arg.handle = buf->handle; 
     drmCommandWrite(vmw->fd, DRM_VMW_UNREF_DMABUF, &arg, sizeof(arg)); 
 
-    xfree(buf); 
+    free(buf);
 } 
 
 void *
@@ -239,4 +239,22 @@ void
 vmw_ioctl_buffer_unmap(struct vmw_customizer *vmw, struct vmw_dma_buffer *buf)
 {
     --buf->map_count;
+}
+
+int
+vmw_ioctl_update_layout(struct vmw_customizer *vmw, uint32_t num, struct vmw_rect *rects)
+{
+    struct drm_vmw_update_layout_arg ul_arg;
+    int ret;
+
+    assert(sizeof(struct vmw_rect) == sizeof(struct drm_vmw_rect));
+
+    memset(&ul_arg, 0, sizeof(ul_arg));
+    ul_arg.num_outputs = num;
+    ul_arg.rects = (uint64_t)(uintptr_t)rects;
+
+    ret = drmCommandWriteRead(vmw->fd, DRM_VMW_UPDATE_LAYOUT,
+			      &ul_arg, sizeof(ul_arg));
+
+    return ret;
 }

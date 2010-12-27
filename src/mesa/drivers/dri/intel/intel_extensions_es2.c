@@ -28,7 +28,6 @@
 #include "main/extensions.h"
 
 #include "intel_extensions.h"
-#include "utils.h"
 
 static const char *es2_extensions[] = {
    /* Used by mesa internally (cf all_mesa_extensions in ../common/utils.c) */
@@ -40,6 +39,7 @@ static const char *es2_extensions[] = {
    "GL_ARB_window_pos",
    "GL_EXT_blend_func_separate",
    "GL_EXT_compiled_vertex_array",
+   "GL_EXT_framebuffer_blit",
    "GL_EXT_multi_draw_arrays",
    "GL_EXT_polygon_offset",
    "GL_EXT_texture_object",
@@ -69,6 +69,7 @@ static const char *es2_extensions[] = {
    "GL_ARB_depth_texture",
    "GL_EXT_packed_depth_stencil",
    "GL_EXT_framebuffer_object",
+   "GL_EXT_texture_format_BGRA8888",
 
 #if FEATURE_OES_EGL_image
    "GL_OES_EGL_image",
@@ -82,7 +83,7 @@ static const char *es2_extensions[] = {
  * extensions for a context.
  */
 void
-intelInitExtensionsES2(GLcontext *ctx)
+intelInitExtensionsES2(struct gl_context *ctx)
 {
    int i;
 

@@ -99,6 +99,7 @@ struct cso_context {
    struct pipe_framebuffer_state fb, fb_saved;
    struct pipe_viewport_state vp, vp_saved;
    struct pipe_blend_color blend_color;
+   unsigned sample_mask;
    struct pipe_stencil_ref stencil_ref, stencil_ref_saved;
 };
 
@@ -288,6 +289,9 @@ void cso_release_all( struct cso_context *ctx )
       ctx->pipe->bind_fs_state( ctx->pipe, NULL );
       ctx->pipe->bind_vs_state( ctx->pipe, NULL );
       ctx->pipe->bind_vertex_elements_state( ctx->pipe, NULL );
+      ctx->pipe->set_fragment_sampler_views(ctx->pipe, 0, NULL);
+      if (ctx->pipe->set_vertex_sampler_views)
+         ctx->pipe->set_vertex_sampler_views(ctx->pipe, 0, NULL);
    }
 
    for (i = 0; i < PIPE_MAX_SAMPLERS; i++) {
@@ -953,6 +957,16 @@ enum pipe_error cso_set_blend_color(struct cso_context *ctx,
    return PIPE_OK;
 }
 
+enum pipe_error cso_set_sample_mask(struct cso_context *ctx,
+                                    unsigned sample_mask)
+{
+   if (ctx->sample_mask != sample_mask) {
+      ctx->sample_mask = sample_mask;
+      ctx->pipe->set_sample_mask(ctx->pipe, sample_mask);
+   }
+   return PIPE_OK;
+}
+
 enum pipe_error cso_set_stencil_ref(struct cso_context *ctx,
                                     const struct pipe_stencil_ref *sr)
 {
@@ -1018,6 +1032,7 @@ static INLINE void
 clip_state_cpy(struct pipe_clip_state *dst,
                const struct pipe_clip_state *src)
 {
+   dst->depth_clamp = src->depth_clamp;
    dst->nr = src->nr;
    if (src->nr) {
       memcpy(dst->ucp, src->ucp, src->nr * sizeof(src->ucp[0]));
@@ -1028,6 +1043,9 @@ static INLINE int
 clip_state_cmp(const struct pipe_clip_state *a,
                const struct pipe_clip_state *b)
 {
+   if (a->depth_clamp != b->depth_clamp) {
+      return 1;
+   }
    if (a->nr != b->nr) {
       return 1;
    }

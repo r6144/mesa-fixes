@@ -29,17 +29,29 @@
 #define INTELCONTEXT_INC
 
 
-
+#include <stdbool.h>
 #include "main/mtypes.h"
 #include "main/mm.h"
-#include "texmem.h"
 #include "dri_metaops.h"
+
+#ifdef __cplusplus
+extern "C" {
+	/* Evil hack for using libdrm in a c++ compiler. */
+	#define virtual virt
+#endif
+
 #include "drm.h"
 #include "intel_bufmgr.h"
 
 #include "intel_screen.h"
 #include "intel_tex_obj.h"
 #include "i915_drm.h"
+
+#ifdef __cplusplus
+	#undef virtual
+}
+#endif
+
 #include "tnl/t_vertex.h"
 
 #define TAG(x) intel##x
@@ -86,6 +98,16 @@ extern void intelFallback(struct intel_context *intel, GLbitfield bit,
 
 #define INTEL_MAX_FIXUP 64
 
+#ifndef likely
+#ifdef __GNUC__
+#define likely(expr) (__builtin_expect(expr, 1))
+#define unlikely(expr) (__builtin_expect(expr, 0))
+#else
+#define likely(expr) (expr)
+#define unlikely(expr) (expr)
+#endif
+#endif
+
 struct intel_sync_object {
    struct gl_sync_object Base;
 
@@ -94,11 +116,11 @@ struct intel_sync_object {
 };
 
 /**
- * intel_context is derived from Mesa's context class: GLcontext.
+ * intel_context is derived from Mesa's context class: struct gl_context.
  */
 struct intel_context
 {
-   GLcontext ctx;  /**< base class, must be first field */
+   struct gl_context ctx;  /**< base class, must be first field */
 
    struct
    {
@@ -145,13 +167,14 @@ struct intel_context
    GLboolean is_g4x;
    GLboolean is_945;
    GLboolean has_luminance_srgb;
+   GLboolean has_xrgb_textures;
 
    int urb_size;
 
    struct intel_batchbuffer *batch;
    drm_intel_bo *first_post_swapbuffers_batch;
+   GLboolean need_throttle;
    GLboolean no_batch_wrap;
-   GLboolean using_dri2_swapbuffers;
 
    struct
    {
@@ -159,7 +182,7 @@ struct intel_context
       uint32_t primitive;	/**< Current hardware primitive type */
       void (*flush) (struct intel_context *);
       GLubyte *start_ptr; /**< for i8xx */
-      dri_bo *vb_bo;
+      drm_intel_bo *vb_bo;
       uint8_t *vb;
       unsigned int start_offset; /**< Byte offset of primitive sequence */
       unsigned int current_offset; /**< Byte offset of next vertex */
@@ -167,9 +190,6 @@ struct intel_context
    } prim;
 
    GLuint stats_wm;
-   GLboolean locked;
-   char *prevLockFile;
-   int prevLockLine;
 
    /* Offsets of fields within the current vertex:
     */
@@ -187,7 +207,6 @@ struct intel_context
    GLboolean hw_stipple;
    GLboolean depth_buffer_is_float;
    GLboolean no_rast;
-   GLboolean no_hw;
    GLboolean always_flush_batch;
    GLboolean always_flush_cache;
 
@@ -243,7 +262,7 @@ struct intel_context
 
    __DRIcontext *driContext;
    struct intel_screen *intelScreen;
-   void (*saved_viewport)(GLcontext * ctx,
+   void (*saved_viewport)(struct gl_context * ctx,
 			  GLint x, GLint y, GLsizei width, GLsizei height);
 
    /**
@@ -260,6 +279,8 @@ extern char *__progname;
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
 #define ALIGN(value, alignment)  ((value + alignment - 1) & ~(alignment - 1))
+#define ROUND_DOWN_TO(value, alignment) (ALIGN(value - alignment - 1, \
+					       alignment))
 #define IS_POWER_OF_TWO(val) (((val) & (val - 1)) == 0)
 
 static INLINE uint32_t
@@ -340,12 +361,16 @@ extern int INTEL_DEBUG;
 #define DEBUG_WM        0x800000
 #define DEBUG_URB       0x1000000
 #define DEBUG_VS        0x2000000
-#define DEBUG_GLSL_FORCE 0x4000000
 #define DEBUG_CLIP      0x8000000
 
 #define DBG(...) do {						\
-	if (INTEL_DEBUG & FILE_DEBUG_FLAG)			\
+	if (unlikely(INTEL_DEBUG & FILE_DEBUG_FLAG))		\
 		printf(__VA_ARGS__);			\
+} while(0)
+
+#define fallback_debug(...) do {				\
+	if (unlikely(INTEL_DEBUG & DEBUG_FALLBACKS))		\
+		printf(__VA_ARGS__);				\
 } while(0)
 
 #define PCI_CHIP_845_G			0x2562
@@ -368,13 +393,13 @@ extern int INTEL_DEBUG;
 
 extern GLboolean intelInitContext(struct intel_context *intel,
 				  int api,
-                                  const __GLcontextModes * mesaVis,
+                                  const struct gl_config * mesaVis,
                                   __DRIcontext * driContextPriv,
                                   void *sharedContextPrivate,
                                   struct dd_function_table *functions);
 
-extern void intelFinish(GLcontext * ctx);
-extern void intel_flush(GLcontext * ctx);
+extern void intelFinish(struct gl_context * ctx);
+extern void intel_flush(struct gl_context * ctx);
 
 extern void intelInitDriverFunctions(struct dd_function_table *functions);
 
@@ -461,7 +486,7 @@ void i915_set_buf_info_for_region(uint32_t *state, struct intel_region *region,
  * These are better-typed than the macros used previously:
  */
 static INLINE struct intel_context *
-intel_context(GLcontext * ctx)
+intel_context(struct gl_context * ctx)
 {
    return (struct intel_context *) ctx;
 }

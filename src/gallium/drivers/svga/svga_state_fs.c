@@ -131,13 +131,12 @@ static int make_fs_key( const struct svga_context *svga,
       /* SVGA_NEW_RAST
        */
       key->light_twoside = svga->curr.rast->templ.light_twoside;
-      key->front_cw = (svga->curr.rast->templ.front_winding == 
-                       PIPE_WINDING_CW);
+      key->front_ccw = svga->curr.rast->templ.front_ccw;
    }
 
    /* The blend workaround for simulating logicop xor behaviour
     * requires that the incoming fragment color be white.  This change
-    * achieves that by creating a varient of the current fragment
+    * achieves that by creating a variant of the current fragment
     * shader that overrides all output colors with 1,1,1,1
     *   
     * This will work for most shaders, including those containing

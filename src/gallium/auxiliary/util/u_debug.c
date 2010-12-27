@@ -40,8 +40,10 @@
 #include "util/u_string.h" 
 #include "util/u_math.h" 
 #include "util/u_tile.h" 
-#include "util/u_prim.h" 
+#include "util/u_prim.h"
+#include "util/u_surface.h"
 
+#include <limits.h> /* CHAR_BIT */
 
 void _debug_vprintf(const char *format, va_list ap)
 {
@@ -87,7 +89,7 @@ debug_get_option_should_print(void)
     * but its cool since we set first to false
     */
    first = FALSE;
-   value = debug_get_bool_option("GALLIUM_PRINT_OPTIONS", TRUE);
+   value = debug_get_bool_option("GALLIUM_PRINT_OPTIONS", FALSE);
    /* XXX should we print this option? Currently it wont */
    return value;
 }
@@ -181,16 +183,21 @@ debug_get_flags_option(const char *name,
 {
    unsigned long result;
    const char *str;
+   const struct debug_named_value *orig = flags;
+   int namealign = 0;
    
    str = os_get_option(name);
    if(!str)
       result = dfault;
    else if (!util_strcmp(str, "help")) {
       result = dfault;
-      while (flags->name) {
-         debug_printf("%s: help for %s: %s [0x%lx]\n", __FUNCTION__, name, flags->name, flags->value);
-         flags++;
-      }
+      _debug_printf("%s: help for %s:\n", __FUNCTION__, name);
+      for (; flags->name; ++flags)
+         namealign = MAX2(namealign, strlen(flags->name));
+      for (flags = orig; flags->name; ++flags)
+         _debug_printf("| %*s [0x%0*lx]%s%s\n", namealign, flags->name,
+                      (int)sizeof(unsigned long)*CHAR_BIT/4, flags->value,
+                      flags->desc ? " " : "", flags->desc ? flags->desc : "");
    }
    else {
       result = 0;
@@ -447,9 +454,10 @@ void debug_dump_image(const char *prefix,
 #endif
 }
 
+/* FIXME: dump resources, not surfaces... */
 void debug_dump_surface(struct pipe_context *pipe,
-			const char *prefix,
-                        struct pipe_surface *surface)     
+                        const char *prefix,
+                        struct pipe_surface *surface)
 {
    struct pipe_resource *texture;
    struct pipe_transfer *transfer;
@@ -466,23 +474,23 @@ void debug_dump_surface(struct pipe_context *pipe,
     */
    texture = surface->texture;
 
-   transfer = pipe_get_transfer(pipe, texture, surface->face,
-				     surface->level, surface->zslice,
-				     PIPE_TRANSFER_READ, 0, 0, surface->width,
-				     surface->height);
-   
+   transfer = pipe_get_transfer(pipe, texture, surface->u.tex.level,
+                                surface->u.tex.first_layer,
+                                PIPE_TRANSFER_READ,
+                                0, 0, surface->width, surface->height);
+
    data = pipe->transfer_map(pipe, transfer);
    if(!data)
       goto error;
-   
-   debug_dump_image(prefix, 
+
+   debug_dump_image(prefix,
                     texture->format,
-                    util_format_get_blocksize(texture->format), 
+                    util_format_get_blocksize(texture->format),
                     util_format_get_nblocksx(texture->format, surface->width),
                     util_format_get_nblocksy(texture->format, surface->height),
                     transfer->stride,
                     data);
-   
+
    pipe->transfer_unmap(pipe, transfer);
 error:
    pipe->transfer_destroy(pipe, transfer);
@@ -493,20 +501,18 @@ void debug_dump_texture(struct pipe_context *pipe,
                         const char *prefix,
                         struct pipe_resource *texture)
 {
-   struct pipe_surface *surface;
-   struct pipe_screen *screen;
+   struct pipe_surface *surface, surf_tmpl;
 
    if (!texture)
       return;
 
-   screen = texture->screen;
-
-   /* XXX for now, just dump image for face=0, level=0 */
-   surface = screen->get_tex_surface(screen, texture, 0, 0, 0,
-                                     PIPE_BIND_SAMPLER_VIEW);
+   /* XXX for now, just dump image for layer=0, level=0 */
+   memset(&surf_tmpl, 0, sizeof(surf_tmpl));
+   u_surface_default_template(&surf_tmpl, texture, 0 /* no bind flag - not a surface */);
+   surface = pipe->create_surface(pipe, texture, &surf_tmpl);
    if (surface) {
       debug_dump_surface(pipe, prefix, surface);
-      screen->tex_surface_destroy(surface);
+      pipe->surface_destroy(pipe, surface);
    }
 }
 
@@ -544,17 +550,16 @@ struct bmp_rgb_quad {
 
 void
 debug_dump_surface_bmp(struct pipe_context *pipe,
-		       const char *filename,
+                       const char *filename,
                        struct pipe_surface *surface)
 {
 #ifndef PIPE_SUBSYSTEM_WINDOWS_MINIPORT
    struct pipe_transfer *transfer;
    struct pipe_resource *texture = surface->texture;
 
-   transfer = pipe_get_transfer(pipe, texture, surface->face,
-				surface->level, surface->zslice,
-				PIPE_TRANSFER_READ, 0, 0, surface->width,
-				surface->height);
+   transfer = pipe_get_transfer(pipe, texture, surface->u.tex.level,
+                                surface->u.tex.first_layer, PIPE_TRANSFER_READ,
+                                0, 0, surface->width, surface->height);
 
    debug_dump_transfer_bmp(pipe, filename, transfer);
 

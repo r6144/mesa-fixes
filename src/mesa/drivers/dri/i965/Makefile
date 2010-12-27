@@ -61,6 +61,7 @@ DRIVER_SOURCES = \
 	brw_sf.c \
 	brw_sf_emit.c \
 	brw_sf_state.c \
+	brw_state.c \
 	brw_state_batch.c \
 	brw_state_cache.c \
 	brw_state_dump.c \
@@ -80,7 +81,6 @@ DRIVER_SOURCES = \
 	brw_wm_emit.c \
 	brw_wm_fp.c \
 	brw_wm_iz.c \
-	brw_wm_glsl.c \
 	brw_wm_pass0.c \
 	brw_wm_pass1.c \
 	brw_wm_pass2.c \
@@ -103,9 +103,16 @@ C_SOURCES = \
 	$(COMMON_SOURCES) \
 	$(DRIVER_SOURCES)
 
+CXX_SOURCES = \
+	brw_cubemap_normalize.cpp \
+	brw_fs.cpp \
+	brw_fs_channel_expressions.cpp \
+	brw_fs_reg_allocate.cpp \
+	brw_fs_vector_splitting.cpp
+
 ASM_SOURCES = 
 
-DRIVER_DEFINES = -I../intel -I../intel/server
+DRIVER_DEFINES = -I../intel
 
 INCLUDES += $(INTEL_CFLAGS)
 DRI_LIB_DEPS += $(INTEL_LIBS)

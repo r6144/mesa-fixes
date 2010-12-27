@@ -29,21 +29,17 @@
 #define ST_CONTEXT_H
 
 #include "main/mtypes.h"
-#include "shader/prog_cache.h"
 #include "pipe/p_state.h"
 #include "state_tracker/st_api.h"
 
-
-struct st_context;
-struct st_texture_object;
-struct st_fragment_program;
+struct bitmap_cache;
+struct blit_state;
+struct dd_function_table;
 struct draw_context;
 struct draw_stage;
-struct cso_cache;
-struct cso_blend;
 struct gen_mipmap_state;
-struct blit_state;
-struct bitmap_cache;
+struct st_context;
+struct st_fragment_program;
 
 
 #define ST_NEW_MESA                    0x1 /* Mesa state has changed */
@@ -51,6 +47,7 @@ struct bitmap_cache;
 #define ST_NEW_VERTEX_PROGRAM          0x4
 #define ST_NEW_FRAMEBUFFER             0x8
 #define ST_NEW_EDGEFLAGS_DATA          0x10
+#define ST_NEW_GEOMETRY_PROGRAM        0x20
 
 
 struct st_state_flags {
@@ -70,7 +67,7 @@ struct st_context
 {
    struct st_context_iface iface;
 
-   GLcontext *ctx;
+   struct gl_context *ctx;
 
    struct pipe_context *pipe;
 
@@ -78,6 +75,12 @@ struct st_context
    struct draw_stage *feedback_stage;  /**< For GL_FEEDBACK rendermode */
    struct draw_stage *selection_stage;  /**< For GL_SELECT rendermode */
    struct draw_stage *rastpos_stage;  /**< For glRasterPos */
+
+
+   /* On old libGL's for linux we need to invalidate the drawables
+    * on glViewpport calls, this is set via a option.
+    */
+   boolean invalidate_on_gl_viewport;
 
    /* Some state is contained in constant objects.
     * Other state is just parameter values.
@@ -89,11 +92,12 @@ struct st_context
       struct pipe_sampler_state             samplers[PIPE_MAX_SAMPLERS];
       struct pipe_sampler_state             *sampler_list[PIPE_MAX_SAMPLERS];
       struct pipe_clip_state clip;
-      struct pipe_resource *constants[2];
+      struct pipe_resource *constants[PIPE_SHADER_TYPES];
       struct pipe_framebuffer_state framebuffer;
       struct pipe_sampler_view *sampler_views[PIPE_MAX_SAMPLERS];
       struct pipe_scissor_state scissor;
       struct pipe_viewport_state viewport;
+      unsigned sample_mask;
 
       GLuint num_samplers;
       GLuint num_textures;
@@ -123,8 +127,11 @@ struct st_context
 
    struct st_vertex_program *vp;    /**< Currently bound vertex program */
    struct st_fragment_program *fp;  /**< Currently bound fragment program */
+   struct st_geometry_program *gp;  /**< Currently bound geometry program */
 
-   struct st_vp_varient *vp_varient;
+   struct st_vp_variant *vp_variant;
+   struct st_fp_variant *fp_variant;
+   struct st_gp_variant *gp_variant;
 
    struct gl_texture_object *default_texture;
 
@@ -143,7 +150,7 @@ struct st_context
    /** for glBitmap */
    struct {
       struct pipe_rasterizer_state rasterizer;
-      struct pipe_sampler_state sampler;
+      struct pipe_sampler_state samplers[2];
       enum pipe_format tex_format;
       void *vs;
       float vertices[4][3][4];  /**< vertex pos + color + texcoord */
@@ -154,7 +161,7 @@ struct st_context
 
    /** for glDraw/CopyPixels */
    struct {
-      struct st_fragment_program *z_shader;
+      struct gl_fragment_program *shaders[4];
       void *vert_shaders[2];   /**< ureg shaders */
    } drawpix;
 
@@ -168,6 +175,7 @@ struct st_context
       float vertices[4][2][4];  /**< vertex pos + color */
       struct pipe_resource *vbuf;
       unsigned vbuf_slot;
+      boolean enable_ds_separate;
    } clear;
 
    /** used for anything using util_draw_vertex_buffer */
@@ -175,6 +183,7 @@ struct st_context
 
    void *passthrough_fs;  /**< simple pass-through frag shader */
 
+   enum pipe_texture_target internal_target;
    struct gen_mipmap_state *gen_mipmap;
    struct blit_state *blit;
 
@@ -187,19 +196,19 @@ struct st_context
 
 /* Need this so that we can implement Mesa callbacks in this module.
  */
-static INLINE struct st_context *st_context(GLcontext *ctx)
+static INLINE struct st_context *st_context(struct gl_context *ctx)
 {
    return ctx->st;
 }
 
 
 /**
- * Wrapper for GLframebuffer.
+ * Wrapper for struct gl_framebuffer.
  * This is an opaque type to the outside world.
  */
 struct st_framebuffer
 {
-   GLframebuffer Base;
+   struct gl_framebuffer Base;
    void *Private;
 
    struct st_framebuffer_iface *iface;
@@ -211,7 +220,7 @@ struct st_framebuffer
 
 extern void st_init_driver_functions(struct dd_function_table *functions);
 
-void st_invalidate_state(GLcontext * ctx, GLuint new_state);
+void st_invalidate_state(struct gl_context * ctx, GLuint new_state);
 
 
 
@@ -251,7 +260,8 @@ extern int
 st_get_msaa(void);
 
 extern struct st_context *
-st_create_context(struct pipe_context *pipe, const __GLcontextModes *visual,
+st_create_context(gl_api api, struct pipe_context *pipe,
+                  const struct gl_config *visual,
                   struct st_context *share);
 
 extern void

@@ -37,7 +37,7 @@
 #include "radeon_mipmap_tree.h"
 
 static GLboolean
-do_copy_texsubimage(GLcontext *ctx,
+do_copy_texsubimage(struct gl_context *ctx,
                     GLenum target, GLint level,
                     struct radeon_tex_obj *tobj,
                     radeon_texture_image *timg,
@@ -141,7 +141,7 @@ do_copy_texsubimage(GLcontext *ctx,
 }
 
 void
-radeonCopyTexImage2D(GLcontext *ctx, GLenum target, GLint level,
+radeonCopyTexImage2D(struct gl_context *ctx, GLenum target, GLint level,
                      GLenum internalFormat,
                      GLint x, GLint y, GLsizei width, GLsizei height,
                      GLint border)
@@ -152,6 +152,9 @@ radeonCopyTexImage2D(GLcontext *ctx, GLenum target, GLint level,
     struct gl_texture_image *texImage =
         _mesa_select_tex_image(ctx, texObj, target, level);
     int srcx, srcy, dstx, dsty;
+
+    radeonContextPtr radeon = RADEON_CONTEXT(ctx);
+    radeon_prepare_render(radeon);
 
     if (border)
         goto fail;
@@ -193,7 +196,7 @@ fail:
 }
 
 void
-radeonCopyTexSubImage2D(GLcontext *ctx, GLenum target, GLint level,
+radeonCopyTexSubImage2D(struct gl_context *ctx, GLenum target, GLint level,
                         GLint xoffset, GLint yoffset,
                         GLint x, GLint y,
                         GLsizei width, GLsizei height)
@@ -201,6 +204,9 @@ radeonCopyTexSubImage2D(GLcontext *ctx, GLenum target, GLint level,
     struct gl_texture_unit *texUnit = _mesa_get_current_tex_unit(ctx);
     struct gl_texture_object *texObj = _mesa_select_tex_object(ctx, texUnit, target);
     struct gl_texture_image *texImage = _mesa_select_tex_image(ctx, texObj, target, level);
+
+    radeonContextPtr radeon = RADEON_CONTEXT(ctx);
+    radeon_prepare_render(radeon);
 
     if (!do_copy_texsubimage(ctx, target, level,
                              radeon_tex_obj(texObj), (radeon_texture_image *)texImage,

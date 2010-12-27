@@ -43,6 +43,7 @@ rbug_destroy(struct pipe_context *_pipe)
    struct rbug_context *rb_pipe = rbug_context(_pipe);
    struct pipe_context *pipe = rb_pipe->pipe;
 
+   remove_from_list(&rb_pipe->list);
    pipe->destroy(pipe);
 
    FREE(rb_pipe);
@@ -97,24 +98,13 @@ rbug_draw_block_locked(struct rbug_context *rb_pipe, int flag)
    /* wait for rbug to clear the blocked flag */
    while (rb_pipe->draw_blocked & flag) {
       rb_pipe->draw_blocked |= flag;
-#ifdef PIPE_THREAD_HAVE_CONDVAR
       pipe_condvar_wait(rb_pipe->draw_cond, rb_pipe->draw_mutex);
-#else
-      pipe_mutex_unlock(rb_pipe->draw_mutex);
-#ifdef PIPE_SUBSYSTEM_WINDOWS_USER
-      Sleep(1);
-#endif
-      pipe_mutex_lock(rb_pipe->draw_mutex);
-#endif
    }
 
 }
 
 static void
-rbug_draw_arrays(struct pipe_context *_pipe,
-                 unsigned prim,
-                 unsigned start,
-                 unsigned count)
+rbug_draw_vbo(struct pipe_context *_pipe, const struct pipe_draw_info *info)
 {
    struct rbug_context *rb_pipe = rbug_context(_pipe);
    struct pipe_context *pipe = rb_pipe->pipe;
@@ -122,72 +112,7 @@ rbug_draw_arrays(struct pipe_context *_pipe,
    pipe_mutex_lock(rb_pipe->draw_mutex);
    rbug_draw_block_locked(rb_pipe, RBUG_BLOCK_BEFORE);
 
-   pipe->draw_arrays(pipe,
-                     prim,
-                     start,
-                     count);
-
-   rbug_draw_block_locked(rb_pipe, RBUG_BLOCK_AFTER);
-   pipe_mutex_unlock(rb_pipe->draw_mutex);
-}
-
-static void
-rbug_draw_elements(struct pipe_context *_pipe,
-                   struct pipe_resource *_indexResource,
-                   unsigned indexSize,
-                   int indexBias,
-                   unsigned prim,
-                   unsigned start,
-                   unsigned count)
-{
-   struct rbug_context *rb_pipe = rbug_context(_pipe);
-   struct rbug_resource *rb_resource = rbug_resource(_indexResource);
-   struct pipe_context *pipe = rb_pipe->pipe;
-   struct pipe_resource *indexResource = rb_resource->resource;
-
-   pipe_mutex_lock(rb_pipe->draw_mutex);
-   rbug_draw_block_locked(rb_pipe, RBUG_BLOCK_BEFORE);
-
-   pipe->draw_elements(pipe,
-                       indexResource,
-                       indexSize,
-                       indexBias,
-                       prim,
-                       start,
-                       count);
-
-   rbug_draw_block_locked(rb_pipe, RBUG_BLOCK_AFTER);
-   pipe_mutex_unlock(rb_pipe->draw_mutex);
-}
-
-static void
-rbug_draw_range_elements(struct pipe_context *_pipe,
-                         struct pipe_resource *_indexResource,
-                         unsigned indexSize,
-                         int indexBias,
-                         unsigned minIndex,
-                         unsigned maxIndex,
-                         unsigned mode,
-                         unsigned start,
-                         unsigned count)
-{
-   struct rbug_context *rb_pipe = rbug_context(_pipe);
-   struct rbug_resource *rb_resource = rbug_resource(_indexResource);
-   struct pipe_context *pipe = rb_pipe->pipe;
-   struct pipe_resource *indexResource = rb_resource->resource;
-
-   pipe_mutex_lock(rb_pipe->draw_mutex);
-   rbug_draw_block_locked(rb_pipe, RBUG_BLOCK_BEFORE);
-
-   pipe->draw_range_elements(pipe,
-                             indexResource,
-                             indexSize,
-                             indexBias,
-                             minIndex,
-                             maxIndex,
-                             mode,
-                             start,
-                             count);
+   pipe->draw_vbo(pipe, info);
 
    rbug_draw_block_locked(rb_pipe, RBUG_BLOCK_AFTER);
    pipe_mutex_unlock(rb_pipe->draw_mutex);
@@ -241,7 +166,7 @@ static boolean
 rbug_get_query_result(struct pipe_context *_pipe,
                       struct pipe_query *query,
                       boolean wait,
-                      uint64_t *result)
+                      void *result)
 {
    struct rbug_context *rb_pipe = rbug_context(_pipe);
    struct pipe_context *pipe = rb_pipe->pipe;
@@ -751,56 +676,61 @@ rbug_set_vertex_buffers(struct pipe_context *_pipe,
                             num_buffers,
                             buffers);
 }
+
 static void
-rbug_surface_copy(struct pipe_context *_pipe,
-                  struct pipe_surface *_dst,
-                  unsigned dstx,
-                  unsigned dsty,
-                  struct pipe_surface *_src,
-                  unsigned srcx,
-                  unsigned srcy,
-                  unsigned width,
-                  unsigned height)
+rbug_set_index_buffer(struct pipe_context *_pipe,
+                      const struct pipe_index_buffer *_ib)
 {
    struct rbug_context *rb_pipe = rbug_context(_pipe);
-   struct rbug_surface *rb_surface_dst = rbug_surface(_dst);
-   struct rbug_surface *rb_surface_src = rbug_surface(_src);
    struct pipe_context *pipe = rb_pipe->pipe;
-   struct pipe_surface *dst = rb_surface_dst->surface;
-   struct pipe_surface *src = rb_surface_src->surface;
+   struct pipe_index_buffer unwrapped_ib, *ib = NULL;
 
-   pipe->surface_copy(pipe,
-                      dst,
-                      dstx,
-                      dsty,
-                      src,
-                      srcx,
-                      srcy,
-                      width,
-                      height);
+   if (_ib) {
+      unwrapped_ib = *_ib;
+      unwrapped_ib.buffer = rbug_resource_unwrap(_ib->buffer);
+      ib = &unwrapped_ib;
+   }
+
+   pipe->set_index_buffer(pipe, ib);
 }
 
 static void
-rbug_surface_fill(struct pipe_context *_pipe,
-                  struct pipe_surface *_dst,
-                  unsigned dstx,
-                  unsigned dsty,
-                  unsigned width,
-                  unsigned height,
-                  unsigned value)
+rbug_set_sample_mask(struct pipe_context *_pipe,
+                     unsigned sample_mask)
 {
    struct rbug_context *rb_pipe = rbug_context(_pipe);
-   struct rbug_surface *rb_surface_dst = rbug_surface(_dst);
    struct pipe_context *pipe = rb_pipe->pipe;
-   struct pipe_surface *dst = rb_surface_dst->surface;
 
-   pipe->surface_fill(pipe,
-                      dst,
-                      dstx,
-                      dsty,
-                      width,
-                      height,
-                      value);
+   pipe->set_sample_mask(pipe, sample_mask);
+}
+
+static void
+rbug_resource_copy_region(struct pipe_context *_pipe,
+                          struct pipe_resource *_dst,
+                          unsigned dst_level,
+                          unsigned dstx,
+                          unsigned dsty,
+                          unsigned dstz,
+                          struct pipe_resource *_src,
+                          unsigned src_level,
+                          const struct pipe_box *src_box)
+{
+   struct rbug_context *rb_pipe = rbug_context(_pipe);
+   struct rbug_resource *rb_resource_dst = rbug_resource(_dst);
+   struct rbug_resource *rb_resource_src = rbug_resource(_src);
+   struct pipe_context *pipe = rb_pipe->pipe;
+   struct pipe_resource *dst = rb_resource_dst->resource;
+   struct pipe_resource *src = rb_resource_src->resource;
+
+   pipe->resource_copy_region(pipe,
+                              dst,
+                              dst_level,
+                              dstx,
+                              dsty,
+                              dstz,
+                              src,
+                              src_level,
+                              src_box);
 }
 
 static void
@@ -821,6 +751,52 @@ rbug_clear(struct pipe_context *_pipe,
 }
 
 static void
+rbug_clear_render_target(struct pipe_context *_pipe,
+                         struct pipe_surface *_dst,
+                         const float *rgba,
+                         unsigned dstx, unsigned dsty,
+                         unsigned width, unsigned height)
+{
+   struct rbug_context *rb_pipe = rbug_context(_pipe);
+   struct rbug_surface *rb_surface_dst = rbug_surface(_dst);
+   struct pipe_context *pipe = rb_pipe->pipe;
+   struct pipe_surface *dst = rb_surface_dst->surface;
+
+   pipe->clear_render_target(pipe,
+                             dst,
+                             rgba,
+                             dstx,
+                             dsty,
+                             width,
+                             height);
+}
+
+static void
+rbug_clear_depth_stencil(struct pipe_context *_pipe,
+                         struct pipe_surface *_dst,
+                         unsigned clear_flags,
+                         double depth,
+                         unsigned stencil,
+                         unsigned dstx, unsigned dsty,
+                         unsigned width, unsigned height)
+{
+   struct rbug_context *rb_pipe = rbug_context(_pipe);
+   struct rbug_surface *rb_surface_dst = rbug_surface(_dst);
+   struct pipe_context *pipe = rb_pipe->pipe;
+   struct pipe_surface *dst = rb_surface_dst->surface;
+
+   pipe->clear_depth_stencil(pipe,
+                             dst,
+                             clear_flags,
+                             depth,
+                             stencil,
+                             dstx,
+                             dsty,
+                             width,
+                             height);
+}
+
+static void
 rbug_flush(struct pipe_context *_pipe,
            unsigned flags,
            struct pipe_fence_handle **fence)
@@ -836,8 +812,8 @@ rbug_flush(struct pipe_context *_pipe,
 static unsigned int
 rbug_is_resource_referenced(struct pipe_context *_pipe,
                             struct pipe_resource *_resource,
-                            unsigned face,
-                            unsigned level)
+                            unsigned level,
+                            int layer)
 {
    struct rbug_context *rb_pipe = rbug_context(_pipe);
    struct rbug_resource *rb_resource = rbug_resource(_resource);
@@ -846,8 +822,8 @@ rbug_is_resource_referenced(struct pipe_context *_pipe,
 
    return pipe->is_resource_referenced(pipe,
                                        resource,
-                                       face,
-                                       level);
+                                       level,
+                                       layer);
 }
 
 static struct pipe_sampler_view *
@@ -878,10 +854,40 @@ rbug_context_sampler_view_destroy(struct pipe_context *_pipe,
                              rbug_sampler_view(_view));
 }
 
+static struct pipe_surface *
+rbug_context_create_surface(struct pipe_context *_pipe,
+                            struct pipe_resource *_resource,
+                            const struct pipe_surface *surf_tmpl)
+{
+   struct rbug_context *rb_pipe = rbug_context(_pipe);
+   struct rbug_resource *rb_resource = rbug_resource(_resource);
+   struct pipe_context *pipe = rb_pipe->pipe;
+   struct pipe_resource *resource = rb_resource->resource;
+   struct pipe_surface *result;
+
+   result = pipe->create_surface(pipe,
+                                 resource,
+                                 surf_tmpl);
+
+   if (result)
+      return rbug_surface_create(rb_pipe, rb_resource, result);
+   return NULL;
+}
+
+static void
+rbug_context_surface_destroy(struct pipe_context *_pipe,
+                             struct pipe_surface *_surface)
+{
+   rbug_surface_destroy(rbug_context(_pipe),
+                        rbug_surface(_surface));
+}
+
+
+
 static struct pipe_transfer *
 rbug_context_get_transfer(struct pipe_context *_context,
                           struct pipe_resource *_resource,
-                          struct pipe_subresource sr,
+                          unsigned level,
                           unsigned usage,
                           const struct pipe_box *box)
 {
@@ -893,7 +899,7 @@ rbug_context_get_transfer(struct pipe_context *_context,
 
    result = context->get_transfer(context,
                                   resource,
-                                  sr,
+                                  level,
                                   usage,
                                   box);
 
@@ -958,12 +964,12 @@ rbug_context_transfer_unmap(struct pipe_context *_context,
 static void
 rbug_context_transfer_inline_write(struct pipe_context *_context,
                                    struct pipe_resource *_resource,
-                                   struct pipe_subresource sr,
+                                   unsigned level,
                                    unsigned usage,
                                    const struct pipe_box *box,
                                    const void *data,
                                    unsigned stride,
-                                   unsigned slice_stride)
+                                   unsigned layer_stride)
 {
    struct rbug_context *rb_pipe = rbug_context(_context);
    struct rbug_resource *rb_resource = rbug_resource(_resource);
@@ -972,12 +978,12 @@ rbug_context_transfer_inline_write(struct pipe_context *_context,
 
    context->transfer_inline_write(context,
                                   resource,
-                                  sr,
+                                  level,
                                   usage,
                                   box,
                                   data,
                                   stride,
-                                  slice_stride);
+                                  layer_stride);
 }
 
 
@@ -1006,9 +1012,7 @@ rbug_context_create(struct pipe_screen *_screen, struct pipe_context *pipe)
    rb_pipe->base.draw = NULL;
 
    rb_pipe->base.destroy = rbug_destroy;
-   rb_pipe->base.draw_arrays = rbug_draw_arrays;
-   rb_pipe->base.draw_elements = rbug_draw_elements;
-   rb_pipe->base.draw_range_elements = rbug_draw_range_elements;
+   rb_pipe->base.draw_vbo = rbug_draw_vbo;
    rb_pipe->base.create_query = rbug_create_query;
    rb_pipe->base.destroy_query = rbug_destroy_query;
    rb_pipe->base.begin_query = rbug_begin_query;
@@ -1050,13 +1054,18 @@ rbug_context_create(struct pipe_screen *_screen, struct pipe_context *pipe)
    rb_pipe->base.set_fragment_sampler_views = rbug_set_fragment_sampler_views;
    rb_pipe->base.set_vertex_sampler_views = rbug_set_vertex_sampler_views;
    rb_pipe->base.set_vertex_buffers = rbug_set_vertex_buffers;
-   rb_pipe->base.surface_copy = rbug_surface_copy;
-   rb_pipe->base.surface_fill = rbug_surface_fill;
+   rb_pipe->base.set_index_buffer = rbug_set_index_buffer;
+   rb_pipe->base.set_sample_mask = rbug_set_sample_mask;
+   rb_pipe->base.resource_copy_region = rbug_resource_copy_region;
    rb_pipe->base.clear = rbug_clear;
+   rb_pipe->base.clear_render_target = rbug_clear_render_target;
+   rb_pipe->base.clear_depth_stencil = rbug_clear_depth_stencil;
    rb_pipe->base.flush = rbug_flush;
    rb_pipe->base.is_resource_referenced = rbug_is_resource_referenced;
    rb_pipe->base.create_sampler_view = rbug_context_create_sampler_view;
    rb_pipe->base.sampler_view_destroy = rbug_context_sampler_view_destroy;
+   rb_pipe->base.create_surface = rbug_context_create_surface;
+   rb_pipe->base.surface_destroy = rbug_context_surface_destroy;
    rb_pipe->base.get_transfer = rbug_context_get_transfer;
    rb_pipe->base.transfer_destroy = rbug_context_transfer_destroy;
    rb_pipe->base.transfer_map = rbug_context_transfer_map;

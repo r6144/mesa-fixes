@@ -1,53 +1,6 @@
 LLVMPIPE -- a fork of softpipe that employs LLVM for code generation.
 
 
-Status
-======
-
-Done so far is:
-
- - the whole fragment pipeline is code generated in a single function
- 
-   - input interpolation
-   
-   - depth testing
- 
-   - texture sampling
-     - 1D/2D/3D/cube maps supported
-     - all texture wrap modes supported
-     - all texture filtering modes supported
-     - perhaps not all texture formats yet supported
-   
-   - fragment shader TGSI translation
-     - same level of support as the TGSI SSE2 exec machine, with the exception
-       we don't fallback to TGSI interpretation when an unsupported opcode is
-       found, but just ignore it
-     - done in SoA layout
-     - input interpolation also code generated
- 
-   - alpha testing
- 
-   - blend (including logic ops)
-     - both in SoA and AoS layouts, but only the former used for now
- 
- - code is generic
-   - intermediates can be vectors of floats, ubytes, fixed point, etc, and of
-     any width and length
-   - not all operations are implemented for these types yet though
-
-Most mesa/progs/demos/* work. 
-
-To do (probably by this order):
-
- - code generate stipple and stencil testing
-
- - translate TGSI control flow instructions, and all other remaining opcodes
- 
- - integrate with the draw module for VS code generation
-
- - code generate the triangle setup and rasterization
-
-
 Requirements
 ============
 
@@ -82,9 +35,10 @@ Requirements
 
  - scons (optional)
 
- - udis86, http://udis86.sourceforge.net/ (optional):
+ - udis86, http://udis86.sourceforge.net/ (optional). My personal repository
+   supports more opcodes which haven't been merged upstream yet:
  
-     git clone git://udis86.git.sourceforge.net/gitroot/udis86/udis86
+     git clone git://anongit.freedesktop.org/~jrfonseca/udis86
      cd udis86
      ./autogen.sh
      ./configure --with-pic
@@ -97,7 +51,7 @@ Building
 
 To build everything on Linux invoke scons as:
 
-  scons debug=yes statetrackers=mesa drivers=llvmpipe winsys=xlib dri=false
+  scons build=debug libgl-xlib
 
 Alternatively, you can build it with GNU make, if you prefer, by invoking it as
 
@@ -107,19 +61,16 @@ but the rest of these instructions assume that scons is used.
 
 For windows is everything the except except the winsys:
 
-  scons debug=yes statetrackers=mesa drivers=llvmpipe winsys=gdi dri=false
+  scons build=debug libgl-gdi
 
 Using
 =====
 
-On Linux, building will create a drop-in alternative for libGL.so. To use it
-set the environment variables:
+On Linux, building will create a drop-in alternative for libGL.so into
 
-  export LD_LIBRARY_PATH=$PWD/build/linux-x86_64-debug/lib:$LD_LIBRARY_PATH
+  build/foo/gallium/targets/libgl-xlib/libGL.so
 
-or
-
-  export LD_LIBRARY_PATH=$PWD/build/linux-x86-debug/lib:$LD_LIBRARY_PATH
+To use it set the LD_LIBRARY_PATH environment variable accordingly.
 
 For performance evaluation pass debug=no to scons, and use the corresponding
 lib directory without the "-debug" suffix.
@@ -128,6 +79,44 @@ On Windows, building will create a drop-in alternative for opengl32.dll. To use
 it put it in the same directory as the application. It can also be used by
 replacing the native ICD driver, but it's quite an advanced usage, so if you
 need to ask, don't even try it.
+
+
+Profiling
+=========
+
+To profile llvmpipe you should pass the options
+
+  scons build=profile <same-as-before>
+
+This will ensure that frame pointers are used both in C and JIT functions, and
+that no tail call optimizations are done by gcc.
+
+
+To better profile JIT code you'll need to build LLVM with oprofile integration.
+
+  source_dir=$PWD/llvm-2.6
+  build_dir=$source_dir/build/profile
+  install_dir=$source_dir-profile
+
+  mkdir -p "$build_dir"
+  cd "$build_dir" && \
+  $source_dir/configure \
+      --prefix=$install_dir \
+      --enable-optimized \
+      --disable-profiling \
+      --enable-targets=host-only \
+      --with-oprofile
+
+  make -C "$build_dir"
+  make -C "$build_dir" install
+
+  find "$install_dir/lib" -iname '*.a' -print0 | xargs -0 strip --strip-debug
+
+The you should define
+
+  export LLVM=/path/to/llvm-2.6-profile
+
+and rebuild.
 
 
 Unit testing
@@ -161,5 +150,4 @@ Development Notes
   interfaces very closely, and appear to be complete enough for code
   generation. See 
   http://npcontemplation.blogspot.com/2008/06/secret-of-llvm-c-bindings.html
-  for a stand-alone example.
-  See the llvm-c/Core.h file for reference.
+  for a stand-alone example.  See the llvm-c/Core.h file for reference.

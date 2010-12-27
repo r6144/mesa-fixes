@@ -22,81 +22,40 @@
 
 #include "r300_context.h"
 
+#include "util/u_debug.h"
+
 #include <stdio.h>
 
-struct debug_option {
-    const char * name;
-    unsigned flag;
-    const char * description;
-};
-
-static struct debug_option debug_options[] = {
-    { "help", DBG_HELP, "Helpful meta-information about the driver" },
-    { "fp", DBG_FP, "Fragment program handling (for debugging)" },
-    { "vp", DBG_VP, "Vertex program handling (for debugging)" },
-    { "cs", DBG_CS, "Command submissions (for debugging)" },
-    { "draw", DBG_DRAW, "Draw and emit (for debugging)" },
-    { "tex", DBG_TEX, "Textures (for debugging)" },
-    { "texalloc", DBG_TEXALLOC, "Texture allocation (for debugging)" },
-    { "fall", DBG_FALL, "Fallbacks (for debugging)" },
-    { "rs", DBG_RS, "Rasterizer (for debugging)" },
-    { "fb", DBG_FB, "Framebuffer (for debugging)" },
-    { "anisohq", DBG_ANISOHQ, "High quality anisotropic filtering (for benchmarking)" },
-    { "notiling", DBG_NO_TILING, "Disable tiling (for benchmarking)" },
-    { "noimmd", DBG_NO_IMMD, "Disable immediate mode (for benchmarking)" },
-    { "stats", DBG_STATS, "Gather statistics (for lulz)" },
-
-    { "all", ~0, "Convenience option that enables all debug flags" },
+static const struct debug_named_value debug_options[] = {
+    { "fp", DBG_FP, "Log fragment program compilation" },
+    { "vp", DBG_VP, "Log vertex program compilation" },
+    { "pstat", DBG_P_STAT, "Log vertex/fragment program stats" },
+    { "draw", DBG_DRAW, "Log draw calls" },
+    { "swtcl", DBG_SWTCL, "Log SWTCL-specific info" },
+    { "rsblock", DBG_RS_BLOCK, "Log rasterizer registers" },
+    { "psc", DBG_PSC, "Log vertex stream registers" },
+    { "tex", DBG_TEX, "Log basic info about textures" },
+    { "texalloc", DBG_TEXALLOC, "Log texture mipmap tree info" },
+    { "fall", DBG_FALL, "Log fallbacks" },
+    { "rs", DBG_RS, "Log rasterizer" },
+    { "fb", DBG_FB, "Log framebuffer" },
+    { "cbzb", DBG_CBZB, "Log fast color clear info" },
+    { "hyperz", DBG_HYPERZ, "Log HyperZ info" },
+    { "scissor", DBG_SCISSOR, "Log scissor info" },
+    { "fakeocc", DBG_FAKE_OCC, "Use fake occlusion queries" },
+    { "anisohq", DBG_ANISOHQ, "Use high quality anisotropic filtering" },
+    { "notiling", DBG_NO_TILING, "Disable tiling" },
+    { "noimmd", DBG_NO_IMMD, "Disable immediate mode" },
+    { "noopt", DBG_NO_OPT, "Disable shader optimizations" },
+    { "nocbzb", DBG_NO_CBZB, "Disable fast color clear" },
 
     /* must be last */
-    { 0, 0, 0 }
+    DEBUG_NAMED_VALUE_END
 };
 
 void r300_init_debug(struct r300_screen * screen)
 {
-    const char * options = debug_get_option("RADEON_DEBUG", 0);
-    boolean printhint = FALSE;
-    size_t length;
-    struct debug_option * opt;
-
-    if (options) {
-        while(*options) {
-            if (*options == ' ' || *options == ',') {
-                options++;
-                continue;
-            }
-
-            length = strcspn(options, " ,");
-
-            for(opt = debug_options; opt->name; ++opt) {
-                if (!strncmp(options, opt->name, length)) {
-                    screen->debug |= opt->flag;
-                    break;
-                }
-            }
-
-            if (!opt->name) {
-                fprintf(stderr, "Unknown debug option: %s\n", options);
-                printhint = TRUE;
-            }
-
-            options += length;
-        }
-
-        if (!screen->debug)
-            printhint = TRUE;
-    }
-
-    if (printhint || screen->debug & DBG_HELP) {
-        fprintf(stderr, "You can enable debug output by setting "
-                        "the RADEON_DEBUG environment variable\n"
-                        "to a comma-separated list of debug options. "
-                        "Available options are:\n");
-
-        for(opt = debug_options; opt->name; ++opt) {
-            fprintf(stderr, "    %s: %s\n", opt->name, opt->description);
-        }
-    }
+    screen->debug = debug_get_flags_option("RADEON_DEBUG", debug_options, 0);
 }
 
 void r500_dump_rs_block(struct r300_rs_block *rs)
@@ -126,9 +85,9 @@ void r500_dump_rs_block(struct r300_rs_block *rs)
 
             j = 3;
             do {
-                if (tex_ptr & 0x3f == 63) {
+                if ((tex_ptr & 0x3f) == 63) {
                     fprintf(stderr, "1.0");
-                } else if (tex_ptr & 0x3f == 62) {
+                } else if ((tex_ptr & 0x3f) == 62) {
                     fprintf(stderr, "0.0");
                 } else {
                     fprintf(stderr, "[%d]", tex_ptr & 0x3f);

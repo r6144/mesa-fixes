@@ -132,6 +132,8 @@ struct st_context {
                        enum pipe_format format = PIPE_FORMAT_NONE,
                        unsigned first_level = 0,
                        unsigned last_level = ~0,
+                       unsigned first_layer = 0,
+                       unsigned last_layer = ~0,
                        unsigned swizzle_r = 0,
                        unsigned swizzle_g = 1,
                        unsigned swizzle_b = 2,
@@ -146,9 +148,10 @@ struct st_context {
       } else {
          templat.format = format;
       }
-      templat.last_level = MIN2(last_level, texture->last_level);
-      templat.first_level = first_level;
-      templat.last_level = last_level;
+      templat.u.tex.last_level = MIN2(last_level, texture->last_level);
+      templat.u.tex.first_level = first_level;
+      templat.u.tex.first_layer = first_layer;
+      templat.u.tex.last_layer = last_layer;
       templat.swizzle_r = swizzle_r;
       templat.swizzle_g = swizzle_g;
       templat.swizzle_b = swizzle_b;
@@ -289,6 +292,20 @@ struct st_context {
                                       $self->vertex_buffers);
    }
 
+   void set_index_buffer(unsigned index_size,
+                         unsigned offset,
+                         struct pipe_resource *buffer)
+   {
+      struct pipe_index_buffer ib;
+
+      memset(&ib, 0, sizeof(ib));
+      ib.index_size = index_size;
+      ib.offset = offset;
+      ib.buffer = buffer;
+
+      $self->pipe->set_index_buffer($self->pipe, &ib);
+   }
+
    void set_vertex_element(unsigned index,
                            const struct pipe_vertex_element *element) 
    {
@@ -308,29 +325,12 @@ struct st_context {
     */
    
    void draw_arrays(unsigned mode, unsigned start, unsigned count) {
-      $self->pipe->draw_arrays($self->pipe, mode, start, count);
+      util_draw_arrays($self->pipe, mode, start, count);
    }
 
-   void draw_elements( struct pipe_resource *indexBuffer,
-                       unsigned indexSize, int indexBias,
-                       unsigned mode, unsigned start, unsigned count) 
+   void draw_vbo(const struct pipe_draw_info *info)
    {
-      $self->pipe->draw_elements($self->pipe, 
-                                 indexBuffer, 
-                                 indexSize, 
-                                 indexBias,
-                                 mode, start, count);
-   }
-
-   void draw_range_elements( struct pipe_resource *indexBuffer,
-                             unsigned indexSize, int indexBias,
-                             unsigned minIndex, unsigned maxIndex,
-                             unsigned mode, unsigned start, unsigned count)
-   {
-      $self->pipe->draw_range_elements($self->pipe, 
-                                       indexBuffer, indexSize, indexBias,
-                                       minIndex, maxIndex,
-                                       mode, start, count);
+      $self->pipe->draw_vbo($self->pipe, info);
    }
 
    void draw_vertices(unsigned prim,
@@ -360,7 +360,7 @@ struct st_context {
       if (!map)
          goto error2;
       memcpy(map, vertices, size);
-      pipe_buffer_unmap(pipe, vbuf, transfer);
+      pipe_buffer_unmap(pipe, transfer);
 
       cso_save_vertex_elements($self->cso);
 
@@ -382,7 +382,7 @@ struct st_context {
       pipe->set_vertex_buffers(pipe, 1, &vbuffer);
 
       /* draw */
-      pipe->draw_arrays(pipe, prim, 0, num_verts);
+      util_draw_arrays(pipe, prim, 0, num_verts);
 
       cso_restore_vertex_elements($self->cso);
 
@@ -413,44 +413,53 @@ error1:
    /*
     * Surface functions
     */
-   
-   void surface_copy(struct st_surface *dst,
-                     unsigned destx, unsigned desty,
-                     struct st_surface *src,
-                     unsigned srcx, unsigned srcy,
-                     unsigned width, unsigned height) 
+
+   void resource_copy_region(struct pipe_resource *dst,
+                             unsigned dst_level,
+                             unsigned dstx, unsigned dsty, unsigned dstz,
+                             struct pipe_resource *src,
+                             unsigned src_level,
+                             const struct pipe_box *src_box)
+   {
+      $self->pipe->resource_copy_region($self->pipe,
+                                        dst, dst_level, dstx, dsty, dstz,
+                                        src, src_level, src_box);
+   }
+
+
+   void clear_render_target(struct st_surface *dst,
+                            float *rgba,
+                            unsigned x, unsigned y,
+                            unsigned width, unsigned height)
    {
       struct pipe_surface *_dst = NULL;
-      struct pipe_surface *_src = NULL;
-      
-      _dst = st_pipe_surface(dst, PIPE_BIND_BLIT_DESTINATION);
+
+     _dst = st_pipe_surface($self->pipe, dst, PIPE_BIND_RENDER_TARGET);
       if(!_dst)
          SWIG_exception(SWIG_ValueError, "couldn't acquire destination surface for writing");
 
-      _src = st_pipe_surface(src, PIPE_BIND_BLIT_SOURCE);
-      if(!_src)
-         SWIG_exception(SWIG_ValueError, "couldn't acquire source surface for reading");
-      
-      $self->pipe->surface_copy($self->pipe, _dst, destx, desty, _src, srcx, srcy, width, height);
-      
+      $self->pipe->clear_render_target($self->pipe, _dst, rgba, x, y, width, height);
+
    fail:
-      pipe_surface_reference(&_src, NULL);
       pipe_surface_reference(&_dst, NULL);
    }
 
-   void surface_fill(struct st_surface *dst,
-                     unsigned x, unsigned y,
-                     unsigned width, unsigned height,
-                     unsigned value) 
+   void clear_depth_stencil(struct st_surface *dst,
+                            unsigned clear_flags,
+                            double depth,
+                            unsigned stencil,
+                            unsigned x, unsigned y,
+                            unsigned width, unsigned height)
    {
       struct pipe_surface *_dst = NULL;
-      
-      _dst = st_pipe_surface(dst, PIPE_BIND_BLIT_DESTINATION);
+
+     _dst = st_pipe_surface($self->pipe, dst, PIPE_BIND_DEPTH_STENCIL);
       if(!_dst)
          SWIG_exception(SWIG_ValueError, "couldn't acquire destination surface for writing");
 
-      $self->pipe->surface_fill($self->pipe, _dst, x, y, width, height, value);
-      
+      $self->pipe->clear_depth_stencil($self->pipe, _dst, clear_flags, depth, stencil,
+                                       x, y, width, height);
+
    fail:
       pipe_surface_reference(&_dst, NULL);
    }
@@ -474,9 +483,8 @@ error1:
 
       transfer = pipe_get_transfer(pipe,
                                    surface->texture,
-                                   surface->face,
                                    surface->level,
-                                   surface->zslice,
+                                   surface->layer,
                                    PIPE_TRANSFER_READ,
                                    x, y, w, h);
       if(transfer) {
@@ -503,9 +511,8 @@ error1:
 
       transfer = pipe_get_transfer(pipe,
                                    surface->texture,
-                                   surface->face,
                                    surface->level,
-                                   surface->zslice,
+                                   surface->layer,
                                    PIPE_TRANSFER_WRITE,
                                    x, y, w, h);
       if(!transfer)
@@ -527,9 +534,8 @@ error1:
       struct pipe_transfer *transfer;
       transfer = pipe_get_transfer(pipe,
                                    surface->texture,
-                                   surface->face,
                                    surface->level,
-                                   surface->zslice,
+                                   surface->layer,
                                    PIPE_TRANSFER_READ,
                                    x, y, w, h);
       if(transfer) {
@@ -547,9 +553,8 @@ error1:
       struct pipe_transfer *transfer;
       transfer = pipe_get_transfer(pipe,
                                    surface->texture,
-                                   surface->face,
                                    surface->level,
-                                   surface->zslice,
+                                   surface->layer,
                                    PIPE_TRANSFER_WRITE,
                                    x, y, w, h);
       if(transfer) {
@@ -589,9 +594,8 @@ error1:
 
       transfer = pipe_get_transfer(pipe,
                                    surface->texture,
-                                   surface->face,
                                    surface->level,
-                                   surface->zslice,
+                                   surface->layer,
                                    PIPE_TRANSFER_READ,
                                    x, y, w, h);
       if(transfer) {
@@ -616,9 +620,8 @@ error1:
       struct pipe_transfer *transfer;
       transfer = pipe_get_transfer(pipe,
                                    surface->texture,
-                                   surface->face,
                                    surface->level,
-                                   surface->zslice,
+                                   surface->layer,
                                    PIPE_TRANSFER_READ,
                                    x, y, w, h);
       if(transfer) {
@@ -636,9 +639,8 @@ error1:
       struct pipe_transfer *transfer;
       transfer = pipe_get_transfer(pipe,
                                    surface->texture,
-                                   surface->face,
                                    surface->level,
-                                   surface->zslice,
+                                   surface->layer,
                                    PIPE_TRANSFER_WRITE,
                                    x, y, w, h);
       if(transfer) {
@@ -673,9 +675,8 @@ error1:
 
       transfer = pipe_get_transfer(pipe,
                                    surface->texture,
-                                   surface->face,
                                    surface->level,
-                                   surface->zslice,
+                                   surface->layer,
                                    PIPE_TRANSFER_READ,
                                    x, y, w, h);
       if(!transfer) {
@@ -707,16 +708,16 @@ error1:
    %cstring_input_binary(const char *STRING, unsigned LENGTH);
    void
    transfer_inline_write(struct pipe_resource *resource,
-                         struct pipe_subresource *sr,
+                         unsigned level,
                          unsigned usage,
                          const struct pipe_box *box,
                          const char *STRING, unsigned LENGTH,
                          unsigned stride,
-                         unsigned slice_stride)
+                         unsigned layer_stride)
    {
       struct pipe_context *pipe = $self->pipe;
 
-      pipe->transfer_inline_write(pipe, resource, *sr, usage, box, STRING, stride, slice_stride);
+      pipe->transfer_inline_write(pipe, resource, level, usage, box, STRING, stride, layer_stride);
    }
 
    %cstring_output_allocate_size(char **STRING, int *LENGTH, free(*$1));

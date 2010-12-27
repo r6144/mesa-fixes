@@ -120,13 +120,25 @@ struct lp_type {
  */
 struct lp_build_context
 {
-   LLVMBuilderRef builder;
+   struct gallivm_state *gallivm;
 
    /**
     * This not only describes the input/output LLVM types, but also whether
     * to normalize/clamp the results.
     */
    struct lp_type type;
+
+   /** Same as lp_build_elem_type(type) */
+   LLVMTypeRef elem_type;
+
+   /** Same as lp_build_vec_type(type) */
+   LLVMTypeRef vec_type;
+
+   /** Same as lp_build_int_elem_type(type) */
+   LLVMTypeRef int_elem_type;
+
+   /** Same as lp_build_int_vec_type(type) */
+   LLVMTypeRef int_vec_type;
 
    /** Same as lp_build_undef(type) */
    LLVMValueRef undef;
@@ -273,11 +285,11 @@ lp_type_ufixed(unsigned width)
 
 
 LLVMTypeRef
-lp_build_elem_type(struct lp_type type);
+lp_build_elem_type(struct gallivm_state *gallivm, struct lp_type type);
 
 
 LLVMTypeRef
-lp_build_vec_type(struct lp_type type);
+lp_build_vec_type(struct gallivm_state *gallivm, struct lp_type type);
 
 
 boolean
@@ -293,15 +305,67 @@ lp_check_value(struct lp_type type, LLVMValueRef val);
 
 
 LLVMTypeRef
-lp_build_int_elem_type(struct lp_type type);
+lp_build_int_elem_type(struct gallivm_state *gallivm, struct lp_type type);
 
 
 LLVMTypeRef
-lp_build_int_vec_type(struct lp_type type);
+lp_build_int_vec_type(struct gallivm_state *gallivm, struct lp_type type);
 
 
 LLVMTypeRef
-lp_build_int32_vec4_type(void);
+lp_build_int32_vec4_type(struct gallivm_state *gallivm);
+
+
+static INLINE struct lp_type
+lp_float32_vec4_type(void)
+{
+   struct lp_type type;
+
+   memset(&type, 0, sizeof(type));
+   type.floating = TRUE;
+   type.sign = TRUE;
+   type.norm = FALSE;
+   type.width = 32;
+   type.length = 4;
+
+   return type;
+}
+
+
+static INLINE struct lp_type
+lp_int32_vec4_type(void)
+{
+   struct lp_type type;
+
+   memset(&type, 0, sizeof(type));
+   type.floating = FALSE;
+   type.sign = TRUE;
+   type.norm = FALSE;
+   type.width = 32;
+   type.length = 4;
+
+   return type;
+}
+
+
+static INLINE struct lp_type
+lp_unorm8_vec4_type(void)
+{
+   struct lp_type type;
+
+   memset(&type, 0, sizeof(type));
+   type.floating = FALSE;
+   type.sign = FALSE;
+   type.norm = TRUE;
+   type.width = 8;
+   type.length = 4;
+
+   return type;
+}
+
+
+struct lp_type
+lp_elem_type(struct lp_type type);
 
 
 struct lp_type
@@ -330,7 +394,7 @@ lp_dump_llvmtype(LLVMTypeRef t);
 
 void
 lp_build_context_init(struct lp_build_context *bld,
-                      LLVMBuilderRef builder,
+                      struct gallivm_state *gallivm,
                       struct lp_type type);
 
 

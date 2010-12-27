@@ -363,8 +363,12 @@ generate_pstip_fs(struct pstip_stage *pstip)
    assert(pstip->fs->sampler_unit < PIPE_MAX_SAMPLERS);
 
    pstip->fs->pstip_fs = pstip->driver_create_fs_state(pstip->pipe, &pstip_fs);
-
+   
    FREE((void *)pstip_fs.tokens);
+
+   if (!pstip->fs->pstip_fs)
+      return FALSE;
+
    return TRUE;
 }
 
@@ -389,8 +393,8 @@ pstip_update_texture(struct pstip_stage *pstip)
     */
    pipe->flush( pipe, PIPE_FLUSH_TEXTURE_CACHE, NULL );
 
-   transfer = pipe_get_transfer(pipe, pstip->texture, 0, 0, 0,
-				    PIPE_TRANSFER_WRITE, 0, 0, 32, 32);
+   transfer = pipe_get_transfer(pipe, pstip->texture, 0, 0,
+                                PIPE_TRANSFER_WRITE, 0, 0, 32, 32);
    data = pipe->transfer_map(pipe, transfer);
 
    /*
@@ -436,6 +440,7 @@ pstip_create_texture(struct pstip_stage *pstip)
    texTemp.width0 = 32;
    texTemp.height0 = 32;
    texTemp.depth0 = 1;
+   texTemp.array_size = 1;
    texTemp.bind = PIPE_BIND_SAMPLER_VIEW;
 
    pstip->texture = screen->resource_create(screen, &texTemp);
@@ -603,12 +608,15 @@ pstip_destroy(struct draw_stage *stage)
 }
 
 
+/** Create a new polygon stipple drawing stage object */
 static struct pstip_stage *
-draw_pstip_stage(struct draw_context *draw)
+draw_pstip_stage(struct draw_context *draw, struct pipe_context *pipe)
 {
    struct pstip_stage *pstip = CALLOC_STRUCT(pstip_stage);
+   if (pstip == NULL)
+      goto fail;
 
-   draw_alloc_temp_verts( &pstip->stage, 8 );
+   pstip->pipe = pipe;
 
    pstip->stage.draw = draw;
    pstip->stage.name = "pstip";
@@ -620,7 +628,16 @@ draw_pstip_stage(struct draw_context *draw)
    pstip->stage.reset_stipple_counter = pstip_reset_stipple_counter;
    pstip->stage.destroy = pstip_destroy;
 
+   if (!draw_alloc_temp_verts( &pstip->stage, 8 ))
+      goto fail;
+
    return pstip;
+
+fail:
+   if (pstip)
+      pstip->stage.destroy( &pstip->stage );
+
+   return NULL;
 }
 
 
@@ -756,13 +773,11 @@ draw_install_pstipple_stage(struct draw_context *draw,
    /*
     * Create / install pgon stipple drawing / prim stage
     */
-   pstip = draw_pstip_stage( draw );
+   pstip = draw_pstip_stage( draw, pipe );
    if (pstip == NULL)
       goto fail;
 
    draw->pipeline.pstipple = &pstip->stage;
-
-   pstip->pipe = pipe;
 
    /* create special texture, sampler state */
    if (!pstip_create_texture(pstip))

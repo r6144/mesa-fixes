@@ -31,7 +31,6 @@
 #include "pipe/p_shader_tokens.h"
 #include "util/u_inlines.h"
 #include "cso_cache/cso_context.h"
-#include "util/u_inlines.h"
 #include "util/u_math.h"
 #include "util/u_memory.h"
 #include "util/u_sampler.h"
@@ -184,8 +183,7 @@ st_context_create(struct st_device *st_dev)
    {
       struct pipe_rasterizer_state rasterizer;
       memset(&rasterizer, 0, sizeof(rasterizer));
-      rasterizer.front_winding = PIPE_WINDING_CW;
-      rasterizer.cull_mode = PIPE_WINDING_NONE;
+      rasterizer.cull_face = PIPE_FACE_NONE;
       cso_set_rasterizer(st_ctx->cso, &rasterizer);
    }
 
@@ -242,6 +240,7 @@ st_context_create(struct st_device *st_dev)
       templat.width0 = 1;
       templat.height0 = 1;
       templat.depth0 = 1;
+      templat.array_size = 1;
       templat.last_level = 0;
       templat.bind = PIPE_BIND_SAMPLER_VIEW;
    
@@ -254,7 +253,7 @@ st_context_create(struct st_device *st_dev)
 
 	 pipe->transfer_inline_write(pipe,
 				     st_ctx->default_texture,
-				     u_subresource(0,0),
+				     0,
 				     PIPE_TRANSFER_WRITE,
 				     &box,
 				     &zero,

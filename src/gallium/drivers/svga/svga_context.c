@@ -109,6 +109,7 @@ struct pipe_context *svga_context_create( struct pipe_screen *screen,
    svga_init_vertex_functions(svga);
    svga_init_constbuffer_functions(svga);
    svga_init_query_functions(svga);
+   svga_init_surface_functions(svga);
 
 
    /* debug */
@@ -214,6 +215,11 @@ void svga_context_flush( struct svga_context *svga,
 
    svga_screen_cache_flush(svgascreen, fence);
 
+   /* To force the reemission of rendertargets and texture bindings at
+    * the beginning of every command buffer.
+    */
+   svga->dirty |= SVGA_NEW_COMMAND_BUFFER;
+
    if (SVGA_DEBUG & DEBUG_SYNC) {
       if (fence)
          svga->pipe.screen->fence_finish( svga->pipe.screen, fence, 0);
@@ -239,3 +245,8 @@ void svga_hwtnl_flush_retry( struct svga_context *svga )
    assert(ret == 0);
 }
 
+struct svga_winsys_context *
+svga_winsys_context( struct pipe_context *pipe )
+{
+   return svga_context( pipe )->swc;
+}

@@ -1,3 +1,6 @@
+from sys import executable as python_cmd
+import distutils.version
+
 Import('*')
 
 if not env['llvm']:
@@ -6,15 +9,13 @@ if not env['llvm']:
 
 env = env.Clone()
 
-env.Tool('udis86')
-
 env.Append(CPPPATH = ['.'])
 
 env.CodeGenerate(
 	target = 'lp_tile_soa.c',
 	script = 'lp_tile_soa.py',
 	source = ['#src/gallium/auxiliary/util/u_format.csv'],
-	command = 'python $SCRIPT $SOURCE > $TARGET'
+	command = python_cmd + ' $SCRIPT $SOURCE > $TARGET'
 )
 
 # XXX: Our dependency scanner only finds depended modules in relative dirs.
@@ -22,6 +23,10 @@ env.Depends('lp_tile_soa.c', [
     '#src/gallium/auxiliary/util/u_format_parse.py', 
     '#src/gallium/auxiliary/util/u_format_pack.py', 
 ])
+
+
+lp_tile_soa_os = env.SharedObject('lp_tile_soa.c')
+
 
 llvmpipe = env.ConvenienceLibrary(
 	target = 'llvmpipe',
@@ -38,9 +43,11 @@ llvmpipe = env.ConvenienceLibrary(
 		'lp_fence.c',
 		'lp_flush.c',
 		'lp_jit.c',
+		'lp_memory.c',
 		'lp_perf.c',
 		'lp_query.c',
 		'lp_rast.c',
+		'lp_rast_debug.c',
 		'lp_rast_tri.c',
 		'lp_scene.c',
 		'lp_scene_queue.c',
@@ -54,8 +61,11 @@ llvmpipe = env.ConvenienceLibrary(
 		'lp_state_clip.c',
 		'lp_state_derived.c',
 		'lp_state_fs.c',
+		'lp_state_setup.c',
+		'lp_state_gs.c',
 		'lp_state_rasterizer.c',
 		'lp_state_sampler.c',
+                'lp_state_so.c',
 		'lp_state_surface.c',
 		'lp_state_vertex.c',
 		'lp_state_vs.c',
@@ -63,8 +73,10 @@ llvmpipe = env.ConvenienceLibrary(
 		'lp_tex_sample.c',
 		'lp_texture.c',
 		'lp_tile_image.c',
-		'lp_tile_soa.c',
+        lp_tile_soa_os,
 	])
+
+env.Alias('llvmpipe', llvmpipe)
 
 
 if env['platform'] != 'embedded':
@@ -76,7 +88,12 @@ if env['platform'] != 'embedded':
         'format',
         'blend',
         'conv',
+	'printf',
+	'sincos',
     ]
+
+    if not env['msvc']:
+        tests.append('round')
 
     for test in tests:
         target = env.Program(

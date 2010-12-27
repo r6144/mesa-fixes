@@ -37,18 +37,8 @@
  * \author Brian Paul <brian@precisioninsight.com>
  */
 
-#ifdef HAVE_DIX_CONFIG_H
-#include <dix-config.h>
-#include "glapi/mesa.h"
-#else
-#include "main/glheader.h"
-#include "main/compiler.h"
-#endif
-
-#include "glapi/glapi.h"
+#include "glapi/glapi_priv.h"
 #include "glapi/glapitable.h"
-#include "glapi/glapidispatch.h"
-#include "glapi/glthread.h"
 
 
 #if !(defined(USE_X86_ASM) || defined(USE_X86_64_ASM) || defined(USE_SPARC_ASM))
@@ -72,19 +62,19 @@
 #define F stdout
 #define DISPATCH(FUNC, ARGS, MESSAGE)		\
    fprintf MESSAGE;				\
-   CALL_ ## FUNC(GET_DISPATCH(), ARGS);
+   GET_DISPATCH()->FUNC ARGS
 
 #define RETURN_DISPATCH(FUNC, ARGS, MESSAGE) 	\
    fprintf MESSAGE;				\
-   return CALL_ ## FUNC(GET_DISPATCH(), ARGS);
+   return GET_DISPATCH()->FUNC ARGS
 
 #else
 
 #define DISPATCH(FUNC, ARGS, MESSAGE)		\
-   CALL_ ## FUNC(GET_DISPATCH(), ARGS);
+   GET_DISPATCH()->FUNC ARGS
 
 #define RETURN_DISPATCH(FUNC, ARGS, MESSAGE) 	\
-   return CALL_ ## FUNC(GET_DISPATCH(), ARGS);
+   return GET_DISPATCH()->FUNC ARGS
 
 #endif /* logging */
 

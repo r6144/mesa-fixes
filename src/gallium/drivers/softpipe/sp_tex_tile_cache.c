@@ -48,6 +48,9 @@ sp_create_tex_tile_cache( struct pipe_context *pipe )
    struct softpipe_tex_tile_cache *tc;
    uint pos;
 
+   /* make sure max texture size works */
+   assert((TILE_SIZE << TEX_ADDR_BITS) >= (1 << (SP_MAX_TEXTURE_2D_LEVELS-1)));
+
    tc = CALLOC_STRUCT( softpipe_tex_tile_cache );
    if (tc) {
       tc->pipe = pipe;
@@ -63,19 +66,21 @@ sp_create_tex_tile_cache( struct pipe_context *pipe )
 void
 sp_destroy_tex_tile_cache(struct softpipe_tex_tile_cache *tc)
 {
-   uint pos;
+   if (tc) {
+      uint pos;
 
-   for (pos = 0; pos < NUM_ENTRIES; pos++) {
-      /*assert(tc->entries[pos].x < 0);*/
-   }
-   if (tc->transfer) {
-      tc->pipe->transfer_destroy(tc->pipe, tc->transfer);
-   }
-   if (tc->tex_trans) {
-      tc->pipe->transfer_destroy(tc->pipe, tc->tex_trans);
-   }
+      for (pos = 0; pos < NUM_ENTRIES; pos++) {
+         /*assert(tc->entries[pos].x < 0);*/
+      }
+      if (tc->transfer) {
+         tc->pipe->transfer_destroy(tc->pipe, tc->transfer);
+      }
+      if (tc->tex_trans) {
+         tc->pipe->transfer_destroy(tc->pipe, tc->tex_trans);
+      }
 
-   FREE( tc );
+      FREE( tc );
+   }
 }
 
 
@@ -258,15 +263,14 @@ sp_find_cached_tile_tex(struct softpipe_tex_tile_cache *tc,
          }
 
          tc->tex_trans = 
-            pipe_get_transfer(tc->pipe, tc->texture, 
-			      addr.bits.face, 
-			      addr.bits.level, 
-			      addr.bits.z, 
-			      PIPE_TRANSFER_READ | PIPE_TRANSFER_UNSYNCHRONIZED,
-			      0, 0,
-			      u_minify(tc->texture->width0, addr.bits.level),
-			      u_minify(tc->texture->height0, addr.bits.level));
-         
+            pipe_get_transfer(tc->pipe, tc->texture,
+                              addr.bits.level,
+                              addr.bits.face + addr.bits.z,
+                              PIPE_TRANSFER_READ | PIPE_TRANSFER_UNSYNCHRONIZED,
+                              0, 0,
+                              u_minify(tc->texture->width0, addr.bits.level),
+                              u_minify(tc->texture->height0, addr.bits.level));
+
          tc->tex_trans_map = tc->pipe->transfer_map(tc->pipe, tc->tex_trans);
 
          tc->tex_face = addr.bits.face;
@@ -274,25 +278,26 @@ sp_find_cached_tile_tex(struct softpipe_tex_tile_cache *tc,
          tc->tex_z = addr.bits.z;
       }
 
-      /* get tile from the transfer (view into texture) */
+      /* get tile from the transfer (view into texture)
+       * Note we're using the swizzle version of this fuction only because
+       * we need to pass the texture cache's format explicitly.
+       */
       pipe_get_tile_swizzle(tc->pipe,
 			    tc->tex_trans,
                             addr.bits.x * TILE_SIZE, 
                             addr.bits.y * TILE_SIZE,
                             TILE_SIZE,
                             TILE_SIZE,
-                            tc->swizzle_r,
-                            tc->swizzle_g,
-                            tc->swizzle_b,
-                            tc->swizzle_a,
+                            PIPE_SWIZZLE_RED,
+                            PIPE_SWIZZLE_GREEN,
+                            PIPE_SWIZZLE_BLUE,
+                            PIPE_SWIZZLE_ALPHA,
                             tc->format,
                             (float *) tile->data.color);
+
       tile->addr = addr;
    }
 
    tc->last_tile = tile;
    return tile;
 }
-
-
-

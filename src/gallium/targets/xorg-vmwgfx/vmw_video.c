@@ -300,7 +300,7 @@ vmw_video_init(struct vmw_customizer *vmw)
         numAdaptors = 1;
         overlayAdaptors = &newAdaptor;
     } else {
-         newAdaptors = xalloc((numAdaptors + 1) *
+         newAdaptors = malloc((numAdaptors + 1) *
                               sizeof(XF86VideoAdaptorPtr*));
          if (!newAdaptors) {
             xf86XVFreeVideoAdaptorRec(newAdaptor);
@@ -320,7 +320,7 @@ vmw_video_init(struct vmw_customizer *vmw)
     }
 
     if (newAdaptors) {
-        xfree(newAdaptors);
+        free(newAdaptors);
     }
 
     debug_printf("Initialized VMware Xv extension successfully\n");
@@ -362,7 +362,9 @@ vmw_video_close(struct vmw_customizer *vmw)
 	/* make sure the port is stoped as well */
 	vmw_xv_stop_video(pScrn, &video->port[i], TRUE);
 	vmw_ioctl_unref_stream(vmw, video->port[i].streamId);
+	REGION_UNINIT(pScreen, &video->port[i].clipBoxes);
     }
+
 
     /* XXX: I'm sure this function is missing code for turning off Xv */
 
@@ -438,7 +440,7 @@ vmw_video_init_adaptor(ScrnInfoPtr pScrn, struct vmw_customizer *vmw)
         return NULL;
     }
 
-    video = xcalloc(1, sizeof(*video));
+    video = calloc(1, sizeof(*video));
     if (!video) {
         debug_printf("Not enough memory.\n");
         xf86XVFreeVideoAdaptorRec(adaptor);
@@ -448,7 +450,16 @@ vmw_video_init_adaptor(ScrnInfoPtr pScrn, struct vmw_customizer *vmw)
     vmw->video_priv = video;
 
     adaptor->type = XvInputMask | XvImageMask | XvWindowMask;
-    adaptor->flags = VIDEO_OVERLAID_IMAGES | VIDEO_CLIP_TO_VIEWPORT;
+
+    /**
+     * Note: CLIP_TO_VIEWPORT was removed from the flags, since with the
+     * crtc/output based modesetting, the viewport is not updated on
+     * RandR modeswitches. Hence the video may incorrectly be clipped away.
+     * The correct approach, (if needed) would be to clip against the
+     * scanout area union of all active crtcs. Revisit if needed.
+     */
+
+    adaptor->flags = VIDEO_OVERLAID_IMAGES;
     adaptor->name = "VMware Video Engine";
     adaptor->nEncodings = VMWARE_VID_NUM_ENCODINGS;
     adaptor->pEncodings = vmwareVideoEncodings;
@@ -463,6 +474,7 @@ vmw_video_init_adaptor(ScrnInfoPtr pScrn, struct vmw_customizer *vmw)
         video->port[i].flags = SVGA_VIDEO_FLAG_COLORKEY;
         video->port[i].colorKey = VMWARE_VIDEO_COLORKEY;
         video->port[i].isAutoPaintColorkey = TRUE;
+        REGION_NULL(pScrn->pScreen, &video->port[i].clipBoxes);
         adaptor->pPortPrivates[i].ptr = &video->port[i];
     }
 
@@ -554,7 +566,9 @@ vmw_video_port_init(ScrnInfoPtr pScrn, struct vmw_video_port *port,
     REGION_COPY(pScrn->pScreen, &port->clipBoxes, clipBoxes);
 
     if (port->isAutoPaintColorkey)
-        xf86XVFillKeyHelper(pScrn->pScreen, port->colorKey, clipBoxes);
+	xf86XVFillKeyHelper(pScrn->pScreen, port->colorKey, clipBoxes);
+
+    xorg_flush(pScrn->pScreen);
 
     return port->play(pScrn, port, src_x, src_y, drw_x, drw_y, src_w, src_h,
                       drw_w, drw_h, format, buf, width, height, clipBoxes);
@@ -641,10 +655,11 @@ vmw_video_port_play(ScrnInfoPtr pScrn, struct vmw_video_port *port,
      */
     if (!REGION_EQUAL(pScrn->pScreen, &port->clipBoxes, clipBoxes)) {
         REGION_COPY(pScrn->pScreen, &port->clipBoxes, clipBoxes);
-        if (port->isAutoPaintColorkey) {
+        if (port->isAutoPaintColorkey)
             xf86XVFillKeyHelper(pScrn->pScreen, port->colorKey, clipBoxes);
-        }
     }
+
+    xorg_flush(pScrn->pScreen);
 
     ret = drmCommandWrite(vmw->fd, DRM_VMW_CONTROL_STREAM, &arg, sizeof(arg));
     if (ret) {
@@ -742,7 +757,7 @@ vmw_video_buffer_alloc(struct vmw_customizer *vmw, int size,
     }
 
     out->size = size;
-    out->extra_data = xcalloc(1, size);
+    out->extra_data = calloc(1, size);
 
     debug_printf("\t\t%s: allocated buffer %p of size %i\n", __func__, out, size);
 
@@ -773,7 +788,7 @@ vmw_video_buffer_free(struct vmw_customizer *vmw,
     if (out->size == 0)
 	return Success;
 
-    xfree(out->extra_data);
+    free(out->extra_data);
     vmw_ioctl_buffer_unmap(vmw, out->buf);
     vmw_ioctl_buffer_destroy(vmw, out->buf);
 
@@ -864,6 +879,8 @@ vmw_xv_stop_video(ScrnInfoPtr pScrn, pointer data, Bool cleanup)
 
     if (!vmw->video_priv)
         return;
+
+    REGION_EMPTY(pScrn->pScreen, &port->clipBoxes);
 
     if (!cleanup)
         return;

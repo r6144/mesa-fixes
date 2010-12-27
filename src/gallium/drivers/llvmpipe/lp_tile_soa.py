@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-'''
+CopyRight = '''
 /**************************************************************************
  *
  * Copyright 2009 VMware, Inc.
@@ -75,13 +75,13 @@ def generate_format_read(format, dst_channel, dst_native_type, dst_suffix):
     src_native_type = native_type(format)
 
     print 'static void'
-    print 'lp_tile_%s_swizzle_%s(%s *dst, const uint8_t *src, unsigned src_stride, unsigned x0, unsigned y0, unsigned w, unsigned h)' % (name, dst_suffix, dst_native_type)
+    print 'lp_tile_%s_swizzle_%s(%s *dst, const uint8_t *src, unsigned src_stride, unsigned x0, unsigned y0)' % (name, dst_suffix, dst_native_type)
     print '{'
     print '   unsigned x, y;'
     print '   const uint8_t *src_row = src + y0*src_stride;'
-    print '   for (y = 0; y < h; ++y) {'
+    print '   for (y = 0; y < TILE_SIZE; ++y) {'
     print '      const %s *src_pixel = (const %s *)(src_row + x0*%u);' % (src_native_type, src_native_type, format.stride())
-    print '      for (x = 0; x < w; ++x) {'
+    print '      for (x = 0; x < TILE_SIZE; ++x) {'
 
     names = ['']*4
     if format.colorspace in ('rgb', 'srgb'):
@@ -202,9 +202,9 @@ def emit_unrolled_unswizzle_code(format, src_channel):
     print '   %s *dstpix = (%s *) dst;' % (dst_native_type, dst_native_type)
     print '   unsigned int qx, qy, i;'
     print
-    print '   for (qy = 0; qy < h; qy += TILE_VECTOR_HEIGHT) {'
+    print '   for (qy = 0; qy < TILE_SIZE; qy += TILE_VECTOR_HEIGHT) {'
     print '      const unsigned py = y0 + qy;'
-    print '      for (qx = 0; qx < w; qx += TILE_VECTOR_WIDTH) {'
+    print '      for (qx = 0; qx < TILE_SIZE; qx += TILE_VECTOR_WIDTH) {'
     print '         const unsigned px = x0 + qx;'
     print '         const uint8_t *r = src + 0 * TILE_C_STRIDE;'
     print '         const uint8_t *g = src + 1 * TILE_C_STRIDE;'
@@ -231,9 +231,9 @@ def emit_tile_pixel_unswizzle_code(format, src_channel):
 
     print '   unsigned x, y;'
     print '   uint8_t *dst_row = dst + y0*dst_stride;'
-    print '   for (y = 0; y < h; ++y) {'
+    print '   for (y = 0; y < TILE_SIZE; ++y) {'
     print '      %s *dst_pixel = (%s *)(dst_row + x0*%u);' % (dst_native_type, dst_native_type, format.stride())
-    print '      for (x = 0; x < w; ++x) {'
+    print '      for (x = 0; x < TILE_SIZE; ++x) {'
 
     if format.layout == PLAIN:
         if not format.is_array():
@@ -273,7 +273,7 @@ def generate_format_write(format, src_channel, src_native_type, src_suffix):
     name = format.short_name()
 
     print 'static void'
-    print 'lp_tile_%s_unswizzle_%s(const %s *src, uint8_t *dst, unsigned dst_stride, unsigned x0, unsigned y0, unsigned w, unsigned h)' % (name, src_suffix, src_native_type)
+    print 'lp_tile_%s_unswizzle_%s(const %s *src, uint8_t *dst, unsigned dst_stride, unsigned x0, unsigned y0)' % (name, src_suffix, src_native_type)
     print '{'
     if format.layout == PLAIN \
         and format.colorspace == 'rgb' \
@@ -289,6 +289,144 @@ def generate_format_write(format, src_channel, src_native_type, src_suffix):
     print
     
 
+def generate_sse2():
+    print '''
+#if defined(PIPE_ARCH_SSE)
+
+#include "util/u_sse.h"
+
+static ALWAYS_INLINE void 
+swz4( const __m128i * restrict x, 
+      const __m128i * restrict y, 
+      const __m128i * restrict z, 
+      const __m128i * restrict w, 
+      __m128i * restrict a, 
+      __m128i * restrict b, 
+      __m128i * restrict c, 
+      __m128i * restrict d)
+{
+   __m128i i, j, k, l;
+   __m128i m, n, o, p;
+   __m128i e, f, g, h;
+
+   m = _mm_unpacklo_epi8(*x,*y);
+   n = _mm_unpackhi_epi8(*x,*y);
+   o = _mm_unpacklo_epi8(*z,*w);
+   p = _mm_unpackhi_epi8(*z,*w);
+
+   i = _mm_unpacklo_epi16(m,n);
+   j = _mm_unpackhi_epi16(m,n);
+   k = _mm_unpacklo_epi16(o,p);
+   l = _mm_unpackhi_epi16(o,p);
+
+   e = _mm_unpacklo_epi8(i,j);
+   f = _mm_unpackhi_epi8(i,j);
+   g = _mm_unpacklo_epi8(k,l);
+   h = _mm_unpackhi_epi8(k,l);
+
+   *a = _mm_unpacklo_epi64(e,g);
+   *b = _mm_unpackhi_epi64(e,g);
+   *c = _mm_unpacklo_epi64(f,h);
+   *d = _mm_unpackhi_epi64(f,h);
+}
+
+static ALWAYS_INLINE void
+unswz4( const __m128i * restrict a, 
+        const __m128i * restrict b, 
+        const __m128i * restrict c, 
+        const __m128i * restrict d, 
+        __m128i * restrict x, 
+        __m128i * restrict y, 
+        __m128i * restrict z, 
+        __m128i * restrict w)
+{
+   __m128i i, j, k, l;
+   __m128i m, n, o, p;
+
+   i = _mm_unpacklo_epi8(*a,*b);
+   j = _mm_unpackhi_epi8(*a,*b);
+   k = _mm_unpacklo_epi8(*c,*d);
+   l = _mm_unpackhi_epi8(*c,*d);
+
+   m = _mm_unpacklo_epi16(i,k);
+   n = _mm_unpackhi_epi16(i,k);
+   o = _mm_unpacklo_epi16(j,l);
+   p = _mm_unpackhi_epi16(j,l);
+
+   *x = _mm_unpacklo_epi64(m,n);
+   *y = _mm_unpackhi_epi64(m,n);
+   *z = _mm_unpacklo_epi64(o,p);
+   *w = _mm_unpackhi_epi64(o,p);
+}
+
+static void
+lp_tile_b8g8r8a8_unorm_swizzle_4ub_sse2(uint8_t * restrict dst,
+                                        const uint8_t * restrict src, unsigned src_stride,
+                                        unsigned x0, unsigned y0)
+{
+   __m128i *dst128 = (__m128i *) dst;
+   unsigned x, y;
+   
+   src += y0 * src_stride;
+   src += x0 * sizeof(uint32_t);
+
+   for (y = 0; y < TILE_SIZE; y += 4) {
+      const uint8_t *src_row = src;
+
+      for (x = 0; x < TILE_SIZE; x += 4) {
+         swz4((const __m128i *) (src_row + 0 * src_stride),
+              (const __m128i *) (src_row + 1 * src_stride),
+              (const __m128i *) (src_row + 2 * src_stride),
+              (const __m128i *) (src_row + 3 * src_stride),
+              dst128 + 2,     /* b */
+              dst128 + 1,     /* g */
+              dst128 + 0,     /* r */
+              dst128 + 3);    /* a */
+
+         dst128 += 4;
+         src_row += sizeof(__m128i);
+      }
+
+      src += 4 * src_stride;
+   }
+}
+
+static void
+lp_tile_b8g8r8a8_unorm_unswizzle_4ub_sse2(const uint8_t * restrict src,
+                                          uint8_t * restrict dst, unsigned dst_stride,
+                                          unsigned x0, unsigned y0)
+{
+   unsigned int x, y;
+   const __m128i *src128 = (const __m128i *) src;
+   
+   dst += y0 * dst_stride;
+   dst += x0 * sizeof(uint32_t);
+   
+   for (y = 0; y < TILE_SIZE; y += 4) {
+      const uint8_t *dst_row = dst;
+
+      for (x = 0; x < TILE_SIZE; x += 4) {
+         unswz4( &src128[2],     /* b */
+                 &src128[1],     /* g */
+                 &src128[0],     /* r */
+                 &src128[3],     /* a */
+                 (__m128i *) (dst_row + 0 * dst_stride),
+                 (__m128i *) (dst_row + 1 * dst_stride),
+                 (__m128i *) (dst_row + 2 * dst_stride),
+                 (__m128i *) (dst_row + 3 * dst_stride));
+
+         src128 += 4;
+         dst_row += sizeof(__m128i);;
+      }
+
+      dst += 4 * dst_stride;
+   }
+}
+
+#endif /* PIPE_ARCH_SSE */
+'''
+
+
 def generate_swizzle(formats, dst_channel, dst_native_type, dst_suffix):
     '''Generate the dispatch function to read pixels from any format'''
 
@@ -297,9 +435,9 @@ def generate_swizzle(formats, dst_channel, dst_native_type, dst_suffix):
             generate_format_read(format, dst_channel, dst_native_type, dst_suffix)
 
     print 'void'
-    print 'lp_tile_swizzle_%s(enum pipe_format format, %s *dst, const void *src, unsigned src_stride, unsigned x, unsigned y, unsigned w, unsigned h)' % (dst_suffix, dst_native_type)
+    print 'lp_tile_swizzle_%s(enum pipe_format format, %s *dst, const void *src, unsigned src_stride, unsigned x, unsigned y)' % (dst_suffix, dst_native_type)
     print '{'
-    print '   void (*func)(%s *dst, const uint8_t *src, unsigned src_stride, unsigned x0, unsigned y0, unsigned w, unsigned h);' % dst_native_type
+    print '   void (*func)(%s *dst, const uint8_t *src, unsigned src_stride, unsigned x0, unsigned y0);' % dst_native_type
     print '#ifdef DEBUG'
     print '   lp_tile_swizzle_count += 1;'
     print '#endif'
@@ -307,13 +445,21 @@ def generate_swizzle(formats, dst_channel, dst_native_type, dst_suffix):
     for format in formats:
         if is_format_supported(format):
             print '   case %s:' % format.name
-            print '      func = &lp_tile_%s_swizzle_%s;' % (format.short_name(), dst_suffix)
+            func_name = 'lp_tile_%s_swizzle_%s' % (format.short_name(), dst_suffix)
+            if format.name == 'PIPE_FORMAT_B8G8R8A8_UNORM':
+                print '#ifdef PIPE_ARCH_SSE'
+                print '      func = util_cpu_caps.has_sse2 ? %s_sse2 : %s;' % (func_name, func_name)
+                print '#else'
+                print '      func = %s;' % (func_name,)
+                print '#endif'
+            else:
+                print '      func = %s;' % (func_name,)
             print '      break;'
     print '   default:'
     print '      debug_printf("%s: unsupported format %s\\n", __FUNCTION__, util_format_name(format));'
     print '      return;'
     print '   }'
-    print '   func(dst, (const uint8_t *)src, src_stride, x, y, w, h);'
+    print '   func(dst, (const uint8_t *)src, src_stride, x, y);'
     print '}'
     print
 
@@ -326,10 +472,10 @@ def generate_unswizzle(formats, src_channel, src_native_type, src_suffix):
             generate_format_write(format, src_channel, src_native_type, src_suffix)
 
     print 'void'
-    print 'lp_tile_unswizzle_%s(enum pipe_format format, const %s *src, void *dst, unsigned dst_stride, unsigned x, unsigned y, unsigned w, unsigned h)' % (src_suffix, src_native_type)
+    print 'lp_tile_unswizzle_%s(enum pipe_format format, const %s *src, void *dst, unsigned dst_stride, unsigned x, unsigned y)' % (src_suffix, src_native_type)
     
     print '{'
-    print '   void (*func)(const %s *src, uint8_t *dst, unsigned dst_stride, unsigned x0, unsigned y0, unsigned w, unsigned h);' % src_native_type
+    print '   void (*func)(const %s *src, uint8_t *dst, unsigned dst_stride, unsigned x0, unsigned y0);' % src_native_type
     print '#ifdef DEBUG'
     print '   lp_tile_unswizzle_count += 1;'
     print '#endif'
@@ -337,13 +483,21 @@ def generate_unswizzle(formats, src_channel, src_native_type, src_suffix):
     for format in formats:
         if is_format_supported(format):
             print '   case %s:' % format.name
-            print '      func = &lp_tile_%s_unswizzle_%s;' % (format.short_name(), src_suffix)
+            func_name = 'lp_tile_%s_unswizzle_%s' % (format.short_name(), src_suffix)
+            if format.name == 'PIPE_FORMAT_B8G8R8A8_UNORM':
+                print '#ifdef PIPE_ARCH_SSE'
+                print '      func = util_cpu_caps.has_sse2 ? %s_sse2 : %s;' % (func_name, func_name)
+                print '#else'
+                print '      func = %s;' % (func_name,)
+                print '#endif'
+            else:
+                print '      func = %s;' % (func_name,)
             print '      break;'
     print '   default:'
     print '      debug_printf("%s: unsupported format %s\\n", __FUNCTION__, util_format_name(format));'
     print '      return;'
     print '   }'
-    print '   func(src, (uint8_t *)dst, dst_stride, x, y, w, h);'
+    print '   func(src, (uint8_t *)dst, dst_stride, x, y);'
     print '}'
     print
 
@@ -356,12 +510,13 @@ def main():
     print '/* This file is autogenerated by lp_tile_soa.py from u_format.csv. Do not edit directly. */'
     print
     # This will print the copyright message on the top of this file
-    print __doc__.strip()
+    print CopyRight.strip()
     print
     print '#include "pipe/p_compiler.h"'
     print '#include "util/u_format.h"'
     print '#include "util/u_math.h"'
     print '#include "util/u_half.h"'
+    print '#include "util/u_cpu_detect.h"'
     print '#include "lp_tile_soa.h"'
     print
     print '#ifdef DEBUG'
@@ -390,6 +545,8 @@ def main():
     print '   2, 2, 3, 3, 2, 2, 3, 3'
     print '};'
     print
+
+    generate_sse2()
 
     channel = Channel(UNSIGNED, True, 8)
     native_type = 'uint8_t'

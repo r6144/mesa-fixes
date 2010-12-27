@@ -35,10 +35,12 @@
 #include "context.h"
 #include "hash.h"
 #include "transformfeedback.h"
+#include "shaderapi.h"
+#include "shaderobj.h"
 #include "main/dispatch.h"
 
-#include "shader/prog_parameter.h"
-#include "shader/shader_api.h"
+#include "program/prog_parameter.h"
+//#include "program/shader_api.h"
 
 
 #if FEATURE_EXT_transform_feedback
@@ -93,7 +95,7 @@ reference_transform_feedback_object(struct gl_transform_feedback_object **ptr,
  * \return GL_TRUE if the mode is OK, GL_FALSE otherwise.
  */
 GLboolean
-_mesa_validate_primitive_mode(GLcontext *ctx, GLenum mode)
+_mesa_validate_primitive_mode(struct gl_context *ctx, GLenum mode)
 {
    if (ctx->TransformFeedback.CurrentObject->Active) {
       switch (mode) {
@@ -118,7 +120,7 @@ _mesa_validate_primitive_mode(GLcontext *ctx, GLenum mode)
  * \return GL_TRUE for success, GL_FALSE if error
  */
 GLboolean
-_mesa_validate_transform_feedback_buffers(GLcontext *ctx)
+_mesa_validate_transform_feedback_buffers(struct gl_context *ctx)
 {
    /* XXX to do */
    return GL_TRUE;
@@ -130,12 +132,10 @@ _mesa_validate_transform_feedback_buffers(GLcontext *ctx)
  * Per-context init for transform feedback.
  */
 void
-_mesa_init_transform_feedback(GLcontext *ctx)
+_mesa_init_transform_feedback(struct gl_context *ctx)
 {
-   if (!ctx->Driver.NewTransformFeedback) {
-      /* this feature/extension may not be supported by the driver */
-      return;
-   }
+   /* core mesa expects this, even a dummy one, to be available */
+   ASSERT(ctx->Driver.NewTransformFeedback);
 
    ctx->TransformFeedback.DefaultObject =
       ctx->Driver.NewTransformFeedback(ctx, 0);
@@ -162,7 +162,7 @@ _mesa_init_transform_feedback(GLcontext *ctx)
 static void
 delete_cb(GLuint key, void *data, void *userData)
 {
-   GLcontext *ctx = (GLcontext *) userData;
+   struct gl_context *ctx = (struct gl_context *) userData;
    struct gl_transform_feedback_object *obj =
       (struct gl_transform_feedback_object *) data;
 
@@ -174,12 +174,10 @@ delete_cb(GLuint key, void *data, void *userData)
  * Per-context free/clean-up for transform feedback.
  */
 void
-_mesa_free_transform_feedback(GLcontext *ctx)
+_mesa_free_transform_feedback(struct gl_context *ctx)
 {
-   if (!ctx->Driver.NewTransformFeedback) {
-      /* this feature/extension may not be supported by the driver */
-      return;
-   }
+   /* core mesa expects this, even a dummy one, to be available */
+   ASSERT(ctx->Driver.NewTransformFeedback);
 
    _mesa_reference_buffer_object(ctx,
                                  &ctx->TransformFeedback.CurrentBuffer,
@@ -187,6 +185,7 @@ _mesa_free_transform_feedback(GLcontext *ctx)
 
    /* Delete all feedback objects */
    _mesa_HashDeleteAll(ctx->TransformFeedback.Objects, delete_cb, ctx);
+   _mesa_DeleteHashTable(ctx->TransformFeedback.Objects);
 
    /* Delete the default feedback object */
    assert(ctx->Driver.DeleteTransformFeedback);
@@ -197,9 +196,43 @@ _mesa_free_transform_feedback(GLcontext *ctx)
 }
 
 
+#else /* FEATURE_EXT_transform_feedback */
+
+/* forward declarations */
+static struct gl_transform_feedback_object *
+new_transform_feedback(struct gl_context *ctx, GLuint name);
+
+static void
+delete_transform_feedback(struct gl_context *ctx,
+                          struct gl_transform_feedback_object *obj);
+
+/* dummy per-context init/clean-up for transform feedback */
+void
+_mesa_init_transform_feedback(struct gl_context *ctx)
+{
+   ctx->TransformFeedback.DefaultObject = new_transform_feedback(ctx, 0);
+   ctx->TransformFeedback.CurrentObject = ctx->TransformFeedback.DefaultObject;
+   _mesa_reference_buffer_object(ctx,
+                                 &ctx->TransformFeedback.CurrentBuffer,
+                                 ctx->Shared->NullBufferObj);
+}
+
+void
+_mesa_free_transform_feedback(struct gl_context *ctx)
+{
+   _mesa_reference_buffer_object(ctx,
+                                 &ctx->TransformFeedback.CurrentBuffer,
+                                 NULL);
+   ctx->TransformFeedback.CurrentObject = NULL;
+   delete_transform_feedback(ctx, ctx->TransformFeedback.DefaultObject);
+}
+
+#endif /* FEATURE_EXT_transform_feedback */
+
+
 /** Default fallback for ctx->Driver.NewTransformFeedback() */
 static struct gl_transform_feedback_object *
-new_transform_feedback(GLcontext *ctx, GLuint name)
+new_transform_feedback(struct gl_context *ctx, GLuint name)
 {
    struct gl_transform_feedback_object *obj;
    obj = CALLOC_STRUCT(gl_transform_feedback_object);
@@ -212,7 +245,7 @@ new_transform_feedback(GLcontext *ctx, GLuint name)
 
 /** Default fallback for ctx->Driver.DeleteTransformFeedback() */
 static void
-delete_transform_feedback(GLcontext *ctx,
+delete_transform_feedback(struct gl_context *ctx,
                           struct gl_transform_feedback_object *obj)
 {
    GLuint i;
@@ -224,9 +257,13 @@ delete_transform_feedback(GLcontext *ctx,
    free(obj);
 }
 
+
+#if FEATURE_EXT_transform_feedback
+
+
 /** Default fallback for ctx->Driver.BeginTransformFeedback() */
 static void
-begin_transform_feedback(GLcontext *ctx, GLenum mode,
+begin_transform_feedback(struct gl_context *ctx, GLenum mode,
                          struct gl_transform_feedback_object *obj)
 {
    /* nop */
@@ -234,7 +271,7 @@ begin_transform_feedback(GLcontext *ctx, GLenum mode,
 
 /** Default fallback for ctx->Driver.EndTransformFeedback() */
 static void
-end_transform_feedback(GLcontext *ctx,
+end_transform_feedback(struct gl_context *ctx,
                        struct gl_transform_feedback_object *obj)
 {
    /* nop */
@@ -242,7 +279,7 @@ end_transform_feedback(GLcontext *ctx,
 
 /** Default fallback for ctx->Driver.PauseTransformFeedback() */
 static void
-pause_transform_feedback(GLcontext *ctx,
+pause_transform_feedback(struct gl_context *ctx,
                          struct gl_transform_feedback_object *obj)
 {
    /* nop */
@@ -250,7 +287,7 @@ pause_transform_feedback(GLcontext *ctx,
 
 /** Default fallback for ctx->Driver.ResumeTransformFeedback() */
 static void
-resume_transform_feedback(GLcontext *ctx,
+resume_transform_feedback(struct gl_context *ctx,
                           struct gl_transform_feedback_object *obj)
 {
    /* nop */
@@ -258,7 +295,7 @@ resume_transform_feedback(GLcontext *ctx,
 
 /** Default fallback for ctx->Driver.DrawTransformFeedback() */
 static void
-draw_transform_feedback(GLcontext *ctx, GLenum mode,
+draw_transform_feedback(struct gl_context *ctx, GLenum mode,
                         struct gl_transform_feedback_object *obj)
 {
    /* XXX to do */
@@ -362,7 +399,7 @@ _mesa_EndTransformFeedback(void)
  * Helper used by BindBufferRange() and BindBufferBase().
  */
 static void
-bind_buffer_range(GLcontext *ctx, GLuint index,
+bind_buffer_range(struct gl_context *ctx, GLuint index,
                   struct gl_buffer_object *bufObj,
                   GLintptr offset, GLsizeiptr size)
 {
@@ -418,14 +455,14 @@ _mesa_BindBufferRange(GLenum target, GLuint index,
 
    if ((size <= 0) || (size & 0x3)) {
       /* must be positive and multiple of four */
-      _mesa_error(ctx, GL_INVALID_VALUE, "glBindBufferRange(size%d)", size);
+      _mesa_error(ctx, GL_INVALID_VALUE, "glBindBufferRange(size%d)", (int) size);
       return;
    }  
 
    if (offset & 0x3) {
       /* must be multiple of four */
       _mesa_error(ctx, GL_INVALID_VALUE,
-                  "glBindBufferRange(offset=%d)", offset);
+                  "glBindBufferRange(offset=%d)", (int) offset);
       return;
    }  
 
@@ -438,7 +475,8 @@ _mesa_BindBufferRange(GLenum target, GLuint index,
 
    if (offset + size >= bufObj->Size) {
       _mesa_error(ctx, GL_INVALID_VALUE,
-                  "glBindBufferRange(offset + size > buffer size)", size);
+                  "glBindBufferRange(offset + size %d > buffer size %d)",
+		  (int) (offset + size), (int) (bufObj->Size));
       return;
    }  
 
@@ -660,7 +698,7 @@ _mesa_GetTransformFeedbackVarying(GLuint program, GLuint index,
 
 
 static struct gl_transform_feedback_object *
-lookup_transform_feedback_object(GLcontext *ctx, GLuint name)
+lookup_transform_feedback_object(struct gl_context *ctx, GLuint name)
 {
    if (name == 0) {
       return ctx->TransformFeedback.DefaultObject;

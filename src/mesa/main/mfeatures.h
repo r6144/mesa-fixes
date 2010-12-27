@@ -42,9 +42,6 @@
 /**
  * A feature can be anything.  But most of them share certain characteristics.
  *
- * When a feature defines driver entries, they can be initialized by
- *   _MESA_INIT_<FEATURE>_FUNCTIONS
- *
  * When a feature defines vtxfmt entries, they can be initialized and
  * installed by
  *   _MESA_INIT_<FEATURE>_VTXFMT
@@ -81,7 +78,7 @@
 #define FEATURE_GL !FEATURE_ES
 #endif
 
-#ifdef IN_DRI_DRIVER
+#if defined(IN_DRI_DRIVER) || (FEATURE_GL + FEATURE_ES1 + FEATURE_ES2 > 1)
 #define FEATURE_remap_table               1
 #else
 #define FEATURE_remap_table               0
@@ -103,7 +100,6 @@
 #define FEATURE_drawpix                   FEATURE_GL
 #define FEATURE_evaluators                FEATURE_GL
 #define FEATURE_feedback                  FEATURE_GL
-#define FEATURE_histogram                 FEATURE_GL
 #define FEATURE_pixel_transfer            FEATURE_GL
 #define FEATURE_queryobj                  FEATURE_GL
 #define FEATURE_rastpos                   FEATURE_GL
@@ -111,9 +107,7 @@
 #define FEATURE_texture_s3tc              FEATURE_GL
 
 #define FEATURE_extra_context_init        FEATURE_ES
-#define FEATURE_fixedpt                   FEATURE_ES
 #define FEATURE_point_size_array          FEATURE_ES
-#define FEATURE_vertex_array_byte         FEATURE_ES
 
 #define FEATURE_es2_glsl                  FEATURE_ES2
 
@@ -123,7 +117,7 @@
 #define FEATURE_ARB_fragment_shader       1
 #define FEATURE_ARB_shader_objects        (FEATURE_ARB_vertex_shader || FEATURE_ARB_fragment_shader)
 #define FEATURE_ARB_shading_language_100  FEATURE_ARB_shader_objects
-#define FEATURE_ARB_shading_language_120  FEATURE_ARB_shader_objects
+#define FEATURE_ARB_geometry_shader4      FEATURE_ARB_shader_objects
 
 #define FEATURE_ARB_framebuffer_object    (FEATURE_GL && FEATURE_EXT_framebuffer_object)
 #define FEATURE_ARB_map_buffer_range      FEATURE_GL

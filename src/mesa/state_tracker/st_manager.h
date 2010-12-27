@@ -29,8 +29,11 @@
 #ifndef ST_MANAGER_H
 #define ST_MANAGER_H
 
-#include "state_tracker/st_api.h"
-#include "st_context.h"
+#include "main/mtypes.h"
+
+#include "pipe/p_compiler.h"
+
+struct st_context;
 
 struct pipe_surface *
 st_manager_get_egl_image_surface(struct st_context *st,
@@ -43,10 +46,7 @@ void
 st_manager_validate_framebuffers(struct st_context *st);
 
 boolean
-st_manager_add_color_renderbuffer(struct st_context *st, GLframebuffer *fb,
+st_manager_add_color_renderbuffer(struct st_context *st, struct gl_framebuffer *fb,
                                   gl_buffer_index idx);
-
-struct st_api *
-st_manager_create_api(void);
 
 #endif /* ST_MANAGER_H */

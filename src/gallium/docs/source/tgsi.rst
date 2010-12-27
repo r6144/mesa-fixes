@@ -26,9 +26,11 @@ each of the components of *dst*. When this happens, the result is said to be
 Instruction Set
 ---------------
 
-From GL_NV_vertex_program
+Core ISA
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
+These opcodes are guaranteed to be available regardless of the driver being
+used.
 
 .. opcode:: ARL - Address Register Load
 
@@ -287,7 +289,7 @@ This instruction replicates its result.
   dst.w = src0.x \times src1.x + src0.y \times src1.y + src2.x
 
 
-.. opcode:: FRAC - Fraction
+.. opcode:: FRC - Fraction
 
 .. math::
 
@@ -575,17 +577,45 @@ This instruction replicates its result.
 
 .. opcode:: TEX - Texture Lookup
 
-  TBD
+.. math::
+
+  coord = src0
+
+  bias = 0.0
+
+  dst = texture_sample(unit, coord, bias)
 
 
 .. opcode:: TXD - Texture Lookup with Derivatives
 
-  TBD
+.. math::
+
+  coord = src0
+
+  ddx = src1
+
+  ddy = src2
+
+  bias = 0.0
+
+  dst = texture_sample_deriv(unit, coord, bias, ddx, ddy)
 
 
 .. opcode:: TXP - Projective Texture Lookup
 
-  TBD
+.. math::
+
+  coord.x = src0.x / src.w
+
+  coord.y = src0.y / src.w
+
+  coord.z = src0.z / src.w
+
+  coord.w = src0.w
+
+  bias = 0.0
+
+  dst = texture_sample(unit, coord, bias)
 
 
 .. opcode:: UP2H - Unpack Two 16-Bit Floats
@@ -637,10 +667,6 @@ This instruction replicates its result.
    Considered for removal.
 
 
-From GL_NV_vertex_program2
-^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
 .. opcode:: ARA - Address Register Add
 
   TBD
@@ -680,8 +706,6 @@ From GL_NV_vertex_program2
 
   pc = pop()
 
-  Potential restrictions:  
-  * Only occurs at end of function.
 
 .. opcode:: SSG - Set Sign
 
@@ -728,12 +752,24 @@ From GL_NV_vertex_program2
 
   dst.z = 0
 
-  dst.y = 1
+  dst.w = 1
 
 
 .. opcode:: TXB - Texture Lookup With Bias
 
-  TBD
+.. math::
+
+  coord.x = src.x
+
+  coord.y = src.y
+
+  coord.z = src.z
+
+  coord.w = 1.0
+
+  bias = src.z
+
+  dst = texture_sample(unit, coord, bias)
 
 
 .. opcode:: NRM - 3-component Vector Normalise
@@ -771,9 +807,21 @@ This instruction replicates its result.
   dst = src0.x \times src1.x + src0.y \times src1.y
 
 
-.. opcode:: TXL - Texture Lookup With LOD
+.. opcode:: TXL - Texture Lookup With explicit LOD
 
-  TBD
+.. math::
+
+  coord.x = src0.x
+
+  coord.y = src0.y
+
+  coord.z = src0.z
+
+  coord.w = 1.0
+
+  lod = src0.w
+
+  dst = texture_sample(unit, coord, lod)
 
 
 .. opcode:: BRK - Break
@@ -827,10 +875,13 @@ This instruction replicates its result.
    Considered for removal.
 
 
-From GL_NV_gpu_program4
+Compute ISA
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
+These opcodes are primarily provided for special-use computational shaders.
 Support for these opcodes indicated by a special pipe capability bit (TBD).
+
+XXX so let's discuss it, yeah?
 
 .. opcode:: CEIL - Ceiling
 
@@ -989,10 +1040,17 @@ Support for these opcodes indicated by a special pipe capability bit (TBD).
 
   TBD
 
+.. note::
 
-From GL_NV_geometry_program4
+   Support for CONT is determined by a special capability bit,
+   ``TGSI_CONT_SUPPORTED``. See :ref:`Screen` for more information.
+
+
+Geometry ISA
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+These opcodes are only supported in geometry shaders; they have no meaning
+in any other type of shader.
 
 .. opcode:: EMIT - Emit
 
@@ -1004,9 +1062,11 @@ From GL_NV_geometry_program4
   TBD
 
 
-From GLSL
+GLSL ISA
 ^^^^^^^^^^
 
+These opcodes are part of :term:`GLSL`'s opcode set. Support for these
+opcodes is determined by a special capability bit, ``GLSL``.
 
 .. opcode:: BGNLOOP - Begin a Loop
 
@@ -1045,6 +1105,7 @@ This instruction replicates its result.
 ps_2_x
 ^^^^^^^^^^^^
 
+XXX wait what
 
 .. opcode:: CALLNZ - Subroutine Call If Not Zero
 
@@ -1062,10 +1123,15 @@ ps_2_x
 
 .. _doubleopcodes:
 
-Double Opcodes
+Double ISA
 ^^^^^^^^^^^^^^^
 
-.. opcode:: DADD - Add Double
+The double-precision opcodes reinterpret four-component vectors into
+two-component vectors with doubled precision in each component.
+
+Support for these opcodes is XXX undecided. :T
+
+.. opcode:: DADD - Add
 
 .. math::
 
@@ -1074,7 +1140,7 @@ Double Opcodes
   dst.zw = src0.zw + src1.zw
 
 
-.. opcode:: DDIV - Divide Double
+.. opcode:: DDIV - Divide
 
 .. math::
 
@@ -1082,7 +1148,7 @@ Double Opcodes
 
   dst.zw = src0.zw / src1.zw
 
-.. opcode:: DSEQ - Set Double on Equal
+.. opcode:: DSEQ - Set on Equal
 
 .. math::
 
@@ -1090,7 +1156,7 @@ Double Opcodes
 
   dst.zw = src0.zw == src1.zw ? 1.0F : 0.0F
 
-.. opcode:: DSLT - Set Double on Less than
+.. opcode:: DSLT - Set on Less than
 
 .. math::
 
@@ -1098,7 +1164,7 @@ Double Opcodes
 
   dst.zw = src0.zw < src1.zw ? 1.0F : 0.0F
 
-.. opcode:: DFRAC - Double Fraction
+.. opcode:: DFRAC - Fraction
 
 .. math::
 
@@ -1107,23 +1173,33 @@ Double Opcodes
   dst.zw = src.zw - \lfloor src.zw\rfloor
 
 
-.. opcode:: DFRACEXP - Convert Double Number to Fractional and Integral Components
+.. opcode:: DFRACEXP - Convert Number to Fractional and Integral Components
+
+Like the ``frexp()`` routine in many math libraries, this opcode stores the
+exponent of its source to ``dst0``, and the significand to ``dst1``, such that
+:math:`dst1 \times 2^{dst0} = src` .
 
 .. math::
 
-  dst0.xy = frexp(src.xy, dst1.xy)
+  dst0.xy = exp(src.xy)
 
-  dst0.zw = frexp(src.zw, dst1.zw)
+  dst1.xy = frac(src.xy)
 
-.. opcode:: DLDEXP - Multiple Double Number by Integral Power of 2
+  dst0.zw = exp(src.zw)
+
+  dst1.zw = frac(src.zw)
+
+.. opcode:: DLDEXP - Multiply Number by Integral Power of 2
+
+This opcode is the inverse of :opcode:`DFRACEXP`.
 
 .. math::
 
-  dst.xy = ldexp(src0.xy, src1.xy)
+  dst.xy = src0.xy \times 2^{src1.xy}
 
-  dst.zw = ldexp(src0.zw, src1.zw)
+  dst.zw = src0.zw \times 2^{src1.zw}
 
-.. opcode:: DMIN - Minimum Double
+.. opcode:: DMIN - Minimum
 
 .. math::
 
@@ -1131,7 +1207,7 @@ Double Opcodes
 
   dst.zw = min(src0.zw, src1.zw)
 
-.. opcode:: DMAX - Maximum Double
+.. opcode:: DMAX - Maximum
 
 .. math::
 
@@ -1139,7 +1215,7 @@ Double Opcodes
 
   dst.zw = max(src0.zw, src1.zw)
 
-.. opcode:: DMUL - Multiply Double
+.. opcode:: DMUL - Multiply
 
 .. math::
 
@@ -1148,7 +1224,7 @@ Double Opcodes
   dst.zw = src0.zw \times src1.zw
 
 
-.. opcode:: DMAD - Multiply And Add Doubles
+.. opcode:: DMAD - Multiply And Add
 
 .. math::
 
@@ -1157,7 +1233,7 @@ Double Opcodes
   dst.zw = src0.zw \times src1.zw + src2.zw
 
 
-.. opcode:: DRCP - Reciprocal Double
+.. opcode:: DRCP - Reciprocal
 
 .. math::
 
@@ -1165,7 +1241,7 @@ Double Opcodes
 
    dst.zw = \frac{1}{src.zw}
 
-.. opcode:: DSQRT - Square root double
+.. opcode:: DSQRT - Square Root
 
 .. math::
 
@@ -1260,6 +1336,8 @@ wrapping rules.
 Declaration Semantic
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
+  Vertex and fragment shader input and output registers may be labeled
+  with semantic information consisting of a name and index.
 
   Follows Declaration token if Semantic bit is set.
 
@@ -1280,90 +1358,121 @@ Declaration Semantic
 TGSI_SEMANTIC_POSITION
 """"""""""""""""""""""
 
-Position, sometimes known as HPOS or WPOS for historical reasons, is the
-location of the vertex in space, in ``(x, y, z, w)`` format. ``x``, ``y``, and ``z``
-are the Cartesian coordinates, and ``w`` is the homogenous coordinate and used
-for the perspective divide, if enabled.
+For vertex shaders, TGSI_SEMANTIC_POSITION indicates the vertex shader
+output register which contains the homogeneous vertex position in the clip
+space coordinate system.  After clipping, the X, Y and Z components of the
+vertex will be divided by the W value to get normalized device coordinates.
 
-As a vertex shader output, position should be scaled to the viewport. When
-used in fragment shaders, position will be in window coordinates. The convention
-used depends on the FS_COORD_ORIGIN and FS_COORD_PIXEL_CENTER properties.
+For fragment shaders, TGSI_SEMANTIC_POSITION is used to indicate that
+fragment shader input contains the fragment's window position.  The X
+component starts at zero and always increases from left to right.
+The Y component starts at zero and always increases but Y=0 may either
+indicate the top of the window or the bottom depending on the fragment
+coordinate origin convention (see TGSI_PROPERTY_FS_COORD_ORIGIN).
+The Z coordinate ranges from 0 to 1 to represent depth from the front
+to the back of the Z buffer.  The W component contains the reciprocol
+of the interpolated vertex position W component.
 
-XXX additionally, is there a way to configure the perspective divide? it's
-accelerated on most chipsets AFAIK...
+Fragment shaders may also declare an output register with
+TGSI_SEMANTIC_POSITION.  Only the Z component is writable.  This allows
+the fragment shader to change the fragment's Z position.
 
-Position, if not specified, usually defaults to ``(0, 0, 0, 1)``, and can
-be partially specified as ``(x, y, 0, 1)`` or ``(x, y, z, 1)``.
 
-XXX usually? can we solidify that?
 
 TGSI_SEMANTIC_COLOR
 """""""""""""""""""
 
-Colors are used to, well, color the primitives. Colors are always in
-``(r, g, b, a)`` format.
+For vertex shader outputs or fragment shader inputs/outputs, this
+label indicates that the resister contains an R,G,B,A color.
 
-If alpha is not specified, it defaults to 1.
+Several shader inputs/outputs may contain colors so the semantic index
+is used to distinguish them.  For example, color[0] may be the diffuse
+color while color[1] may be the specular color.
+
+This label is needed so that the flat/smooth shading can be applied
+to the right interpolants during rasterization.
+
+
 
 TGSI_SEMANTIC_BCOLOR
 """"""""""""""""""""
 
 Back-facing colors are only used for back-facing polygons, and are only valid
 in vertex shader outputs. After rasterization, all polygons are front-facing
-and COLOR and BCOLOR end up occupying the same slots in the fragment, so
-all BCOLORs effectively become regular COLORs in the fragment shader.
+and COLOR and BCOLOR end up occupying the same slots in the fragment shader,
+so all BCOLORs effectively become regular COLORs in the fragment shader.
+
 
 TGSI_SEMANTIC_FOG
 """""""""""""""""
 
-The fog coordinate historically has been used to replace the depth coordinate
-for generation of fog in dedicated fog blocks. Gallium, however, does not use
-dedicated fog acceleration, placing it entirely in the fragment shader
-instead.
+Vertex shader inputs and outputs and fragment shader inputs may be
+labeled with TGSI_SEMANTIC_FOG to indicate that the register contains
+a fog coordinate in the form (F, 0, 0, 1).  Typically, the fragment
+shader will use the fog coordinate to compute a fog blend factor which
+is used to blend the normal fragment color with a constant fog color.
 
-The fog coordinate should be written in ``(f, 0, 0, 1)`` format. Only the first
-component matters when writing from the vertex shader; the driver will ensure
-that the coordinate is in this format when used as a fragment shader input.
+Only the first component matters when writing from the vertex shader;
+the driver will ensure that the coordinate is in this format when used
+as a fragment shader input.
+
 
 TGSI_SEMANTIC_PSIZE
 """""""""""""""""""
 
-PSIZE, or point size, is used to specify point sizes per-vertex. It should
-be in ``(s, 0, 0, 1)`` format, where ``s`` is the (possibly clamped) point size.
-Only the first component matters when writing from the vertex shader.
+Vertex shader input and output registers may be labeled with
+TGIS_SEMANTIC_PSIZE to indicate that the register contains a point size
+in the form (S, 0, 0, 1).  The point size controls the width or diameter
+of points for rasterization.  This label cannot be used in fragment
+shaders.
 
 When using this semantic, be sure to set the appropriate state in the
 :ref:`rasterizer` first.
 
+
 TGSI_SEMANTIC_GENERIC
 """""""""""""""""""""
 
-Generic semantics are nearly always used for texture coordinate attributes,
-in ``(s, t, r, q)`` format. ``t`` and ``r`` may be unused for certain kinds
-of lookups, and ``q`` is the level-of-detail bias for biased sampling.
+All vertex/fragment shader inputs/outputs not labeled with any other
+semantic label can be considered to be generic attributes.  Typical
+uses of generic inputs/outputs are texcoords and user-defined values.
 
-These attributes are called "generic" because they may be used for anything
-else, including parameters, texture generation information, or anything that
-can be stored inside a four-component vector.
 
 TGSI_SEMANTIC_NORMAL
 """"""""""""""""""""
 
-Vertex normal; could be used to implement per-pixel lighting for legacy APIs
-that allow mixing fixed-function and programmable stages.
+Indicates that a vertex shader input is a normal vector.  This is
+typically only used for legacy graphics APIs.
+
 
 TGSI_SEMANTIC_FACE
 """"""""""""""""""
 
-FACE is the facing bit, to store the facing information for the fragment
-shader. ``(f, 0, 0, 1)`` is the format. The first component will be positive
-when the fragment is front-facing, and negative when the component is
-back-facing.
+This label applies to fragment shader inputs only and indicates that
+the register contains front/back-face information of the form (F, 0,
+0, 1).  The first component will be positive when the fragment belongs
+to a front-facing polygon, and negative when the fragment belongs to a
+back-facing polygon.
+
 
 TGSI_SEMANTIC_EDGEFLAG
 """"""""""""""""""""""
 
-XXX no clue
+For vertex shaders, this sematic label indicates that an input or
+output is a boolean edge flag.  The register layout is [F, x, x, x]
+where F is 0.0 or 1.0 and x = don't care.  Normally, the vertex shader
+simply copies the edge flag input to the edgeflag output.
+
+Edge flags are used to control which lines or points are actually
+drawn when the polygon mode converts triangles/quads/polygons into
+points or lines.
+
+TGSI_SEMANTIC_STENCIL
+""""""""""""""""""""""
+
+For fragment shaders, this semantic label indicates than an output
+is a writable stencil reference value. Only the Y component is writable.
+This allows the fragment shader to change the fragments stencilref value.
 
 
 Properties
@@ -1407,6 +1516,11 @@ GL_ARB_fragment_coord_conventions extension.
 DirectX 9 uses INTEGER.
 DirectX 10 uses HALF_INTEGER.
 
+FS_COLOR0_WRITES_ALL_CBUFS
+""""""""""""""""""""""""""
+Specifies that writes to the fragment shader color 0 are replicated to all
+bound cbufs. This facilitates OpenGL's fragColor output vs fragData[0] where
+fragData is directed to a single color buffer, but fragColor is broadcast.
 
 
 Texture Sampling and Texture Formats
@@ -1420,9 +1534,9 @@ well.
 +--------------------+--------------+--------------------+--------------+
 | Texture Components | Gallium      | OpenGL             | Direct3D 9   |
 +====================+==============+====================+==============+
-| R                  | XXX TBD      | (r, 0, 0, 1)       | (r, 1, 1, 1) |
+| R                  | (r, 0, 0, 1) | (r, 0, 0, 1)       | (r, 1, 1, 1) |
 +--------------------+--------------+--------------------+--------------+
-| RG                 | XXX TBD      | (r, g, 0, 1)       | (r, g, 1, 1) |
+| RG                 | (r, g, 0, 1) | (r, g, 0, 1)       | (r, g, 1, 1) |
 +--------------------+--------------+--------------------+--------------+
 | RGB                | (r, g, b, 1) | (r, g, b, 1)       | (r, g, b, 1) |
 +--------------------+--------------+--------------------+--------------+
@@ -1441,6 +1555,8 @@ well.
 +--------------------+--------------+--------------------+--------------+
 | Z                  | XXX TBD      | (z, z, z, 1)       | (0, z, 0, 1) |
 |                    |              | [#depth-tex-mode]_ |              |
++--------------------+--------------+--------------------+--------------+
+| S                  | (s, s, s, s) | unknown            | unknown      |
 +--------------------+--------------+--------------------+--------------+
 
 .. [#envmap-bumpmap] http://www.opengl.org/registry/specs/ATI/envmap_bumpmap.txt

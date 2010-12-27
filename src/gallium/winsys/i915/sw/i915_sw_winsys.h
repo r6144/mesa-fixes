@@ -16,8 +16,6 @@ struct i915_sw_winsys
 
    boolean dump_cmd;
 
-   unsigned id;
-
    size_t max_batch_size;
 };
 
@@ -27,7 +25,6 @@ i915_sw_winsys(struct i915_winsys *iws)
    return (struct i915_sw_winsys *)iws;
 }
 
-struct pipe_screen* i915_sw_create_screen(void);
 struct pipe_fence_handle * i915_sw_fence_create(void);
 
 void i915_sw_winsys_init_batchbuffer_functions(struct i915_sw_winsys *idws);
@@ -46,8 +43,8 @@ struct i915_sw_buffer {
    void *ptr;
    unsigned map_count;
    enum i915_winsys_buffer_type type;
-   enum i915_winsys_buffer_tile tile;
-   const char *name;
+   enum i915_winsys_buffer_tile tiling;
+   unsigned stride;
 };
 
 static INLINE struct i915_sw_buffer *

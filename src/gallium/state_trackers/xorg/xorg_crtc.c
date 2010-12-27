@@ -50,6 +50,7 @@
 #include <X11/extensions/dpms.h>
 #endif
 
+#include "state_tracker/drm_driver.h"
 #include "util/u_inlines.h"
 #include "util/u_rect.h"
 
@@ -93,7 +94,8 @@ crtc_set_mode_major(xf86CrtcPtr crtc, DisplayModePtr mode,
     struct crtc_private *crtcp = crtc->driver_private;
     drmModeCrtcPtr drm_crtc = crtcp->drm_crtc;
     drmModeModeInfo drm_mode;
-    int i, ret, connector_id;
+    int i, ret;
+    unsigned int connector_id;
 
     for (i = 0; i < config->num_output; output = NULL, i++) {
 	output = config->output[i];
@@ -146,6 +148,7 @@ crtc_gamma_set(xf86CrtcPtr crtc, CARD16 * red, CARD16 * green, CARD16 * blue,
     /* XXX: hockup */
 }
 
+#if 0 /* Implement and enable to enable rotation and reflection. */
 static void *
 crtc_shadow_allocate(xf86CrtcPtr crtc, int width, int height)
 {
@@ -167,6 +170,8 @@ crtc_shadow_destroy(xf86CrtcPtr crtc, PixmapPtr rotate_pixmap, void *data)
 {
     /* ScrnInfoPtr pScrn = crtc->scrn; */
 }
+
+#endif
 
 /*
  * Cursor functions
@@ -205,6 +210,7 @@ crtc_load_cursor_argb_ga3d(xf86CrtcPtr crtc, CARD32 * image)
 	templat.target = PIPE_TEXTURE_2D;
 	templat.last_level = 0;
 	templat.depth0 = 1;
+	templat.array_size = 1;
 	templat.format = PIPE_FORMAT_B8G8R8A8_UNORM;
 	templat.width0 = 64;
 	templat.height0 = 64;
@@ -220,15 +226,19 @@ crtc_load_cursor_argb_ga3d(xf86CrtcPtr crtc, CARD32 * image)
     }
 
     transfer = pipe_get_transfer(ms->ctx, crtcp->cursor_tex,
-                                         0, 0, 0,
-                                         PIPE_TRANSFER_WRITE,
-                                         0, 0, 64, 64);
+                                 0, 0,
+                                 PIPE_TRANSFER_WRITE,
+                                 0, 0, 64, 64);
     ptr = ms->ctx->transfer_map(ms->ctx, transfer);
     util_copy_rect(ptr, crtcp->cursor_tex->format,
 		   transfer->stride, 0, 0,
 		   64, 64, (void*)image, 64 * 4, 0, 0);
     ms->ctx->transfer_unmap(ms->ctx, transfer);
     ms->ctx->transfer_destroy(ms->ctx, transfer);
+
+    if (crtc->cursor_shown)
+	drmModeSetCursor(ms->fd, crtcp->drm_crtc->crtc_id,
+			 crtcp->cursor_handle, 64, 64);
 }
 
 #if HAVE_LIBKMS
@@ -265,6 +275,10 @@ crtc_load_cursor_argb_kms(xf86CrtcPtr crtc, CARD32 * image)
     kms_bo_map(crtcp->cursor_bo, (void**)&ptr);
     memcpy(ptr, image, 64*64*4);
     kms_bo_unmap(crtcp->cursor_bo);
+
+    if (crtc->cursor_shown)
+	drmModeSetCursor(ms->fd, crtcp->drm_crtc->crtc_id,
+			 crtcp->cursor_handle, 64, 64);
 
     return;
 
@@ -348,7 +362,7 @@ crtc_destroy(xf86CrtcPtr crtc)
 
     drmModeFreeCrtc(crtcp->drm_crtc);
 
-    xfree(crtcp);
+    free(crtcp);
     crtc->driver_private = NULL;
 }
 
@@ -362,9 +376,9 @@ static const xf86CrtcFuncsRec crtc_funcs = {
     .hide_cursor = crtc_hide_cursor,
     .load_cursor_argb = crtc_load_cursor_argb,
 
-    .shadow_create = crtc_shadow_create,
-    .shadow_allocate = crtc_shadow_allocate,
-    .shadow_destroy = crtc_shadow_destroy,
+    .shadow_create = NULL,
+    .shadow_allocate = NULL,
+    .shadow_destroy = NULL,
 
     .gamma_set = crtc_gamma_set,
     .destroy = crtc_destroy,
@@ -396,7 +410,7 @@ xorg_crtc_init(ScrnInfoPtr pScrn)
 	if (crtc == NULL)
 	    goto out;
 
-	crtcp = xcalloc(1, sizeof(struct crtc_private));
+	crtcp = calloc(1, sizeof(struct crtc_private));
 	if (!crtcp) {
 	    xf86CrtcDestroy(crtc);
 	    goto out;

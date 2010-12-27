@@ -172,17 +172,15 @@ llvmpipe_resource_stride(struct pipe_resource *resource,
 
 void *
 llvmpipe_resource_map(struct pipe_resource *resource,
-		      unsigned face_slice,
-		      unsigned level,
-		      unsigned zslice,
+                      unsigned level,
+                      unsigned layer,
                       enum lp_texture_usage tex_usage,
                       enum lp_texture_layout layout);
 
 void
 llvmpipe_resource_unmap(struct pipe_resource *resource,
-                       unsigned face_slice,
                        unsigned level,
-                       unsigned zslice);
+                       unsigned layer);
 
 
 void *
@@ -223,6 +221,17 @@ llvmpipe_get_texture_tile(struct llvmpipe_resource *lpr,
                            unsigned x, unsigned y);
 
 
+void
+llvmpipe_unswizzle_cbuf_tile(struct llvmpipe_resource *lpr,
+                             unsigned face_slice, unsigned level,
+                             unsigned x, unsigned y,
+                             uint8_t *tile);
+
+void
+llvmpipe_swizzle_cbuf_tile(struct llvmpipe_resource *lpr,
+                           unsigned face_slice, unsigned level,
+                           unsigned x, unsigned y,
+                           uint8_t *tile);
 
 extern void
 llvmpipe_print_resources(void);

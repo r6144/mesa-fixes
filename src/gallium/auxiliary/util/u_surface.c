@@ -40,7 +40,20 @@
 #include "util/u_inlines.h"
 #include "util/u_rect.h"
 #include "util/u_surface.h"
+#include "util/u_pack_color.h"
 
+void
+u_surface_default_template(struct pipe_surface *view,
+                           const struct pipe_resource *texture,
+                           unsigned bind)
+{
+   view->format = texture->format;
+   view->u.tex.level = 0;
+   view->u.tex.first_layer = 0;
+   view->u.tex.last_layer = 0;
+   /* XXX should filter out all non-rt/ds bind flags ? */
+   view->usage = bind;
+}
 
 /**
  * Helper to quickly create an RGBA rendering surface of a certain size.
@@ -49,9 +62,9 @@
  * \return TRUE for success, FALSE if failure
  */
 boolean
-util_create_rgba_surface(struct pipe_screen *screen,
+util_create_rgba_surface(struct pipe_context *pipe,
                          uint width, uint height,
-			 uint bind,
+                         uint bind,
                          struct pipe_resource **textureOut,
                          struct pipe_surface **surfaceOut)
 {
@@ -64,12 +77,14 @@ util_create_rgba_surface(struct pipe_screen *screen,
    const uint target = PIPE_TEXTURE_2D;
    enum pipe_format format = PIPE_FORMAT_NONE;
    struct pipe_resource templ;
+   struct pipe_surface surf_templ;
+   struct pipe_screen *screen = pipe->screen;
    uint i;
 
    /* Choose surface format */
    for (i = 0; rgbaFormats[i]; i++) {
       if (screen->is_format_supported(screen, rgbaFormats[i],
-                                      target, bind, 0)) {
+                                      target, 0, bind, 0)) {
          format = rgbaFormats[i];
          break;
       }
@@ -85,17 +100,20 @@ util_create_rgba_surface(struct pipe_screen *screen,
    templ.width0 = width;
    templ.height0 = height;
    templ.depth0 = 1;
+   templ.array_size = 1;
    templ.bind = bind;
 
    *textureOut = screen->resource_create(screen, &templ);
    if (!*textureOut)
       return FALSE;
 
+   /* create surface */
+   memset(&surf_templ, 0, sizeof(surf_templ));
+   u_surface_default_template(&surf_templ, *textureOut, bind);
    /* create surface / view into texture */
-   *surfaceOut = screen->get_tex_surface(screen, 
-					 *textureOut,
-					 0, 0, 0,
-					 bind);
+   *surfaceOut = pipe->create_surface(pipe,
+                                      *textureOut,
+                                      &surf_templ);
    if (!*surfaceOut) {
       pipe_resource_reference(textureOut, NULL);
       return FALSE;
@@ -119,46 +137,45 @@ util_destroy_rgba_surface(struct pipe_resource *texture,
 
 
 /**
- * Fallback function for pipe->surface_copy().
+ * Fallback function for pipe->resource_copy_region().
  * Note: (X,Y)=(0,0) is always the upper-left corner.
- * if do_flip, flip the image vertically on its way from src rect to dst rect.
  */
 void
-util_surface_copy(struct pipe_context *pipe,
-                  boolean do_flip,
-                  struct pipe_surface *dst,
-                  unsigned dst_x, unsigned dst_y,
-                  struct pipe_surface *src,
-                  unsigned src_x, unsigned src_y, 
-                  unsigned w, unsigned h)
+util_resource_copy_region(struct pipe_context *pipe,
+                          struct pipe_resource *dst,
+                          unsigned dst_level,
+                          unsigned dst_x, unsigned dst_y, unsigned dst_z,
+                          struct pipe_resource *src,
+                          unsigned src_level,
+                          const struct pipe_box *src_box)
 {
    struct pipe_transfer *src_trans, *dst_trans;
    void *dst_map;
    const void *src_map;
    enum pipe_format src_format, dst_format;
+   unsigned w = src_box->width;
+   unsigned h = src_box->height;
 
-   assert(src->texture && dst->texture);
-   if (!src->texture || !dst->texture)
+   assert(src && dst);
+   if (!src || !dst)
       return;
 
-   src_format = src->texture->format;
-   dst_format = dst->texture->format;
+   src_format = src->format;
+   dst_format = dst->format;
 
    src_trans = pipe_get_transfer(pipe,
-				 src->texture,
-				 src->face,
-				 src->level,
-				 src->zslice,
-				 PIPE_TRANSFER_READ,
-				 src_x, src_y, w, h);
+                                 src,
+                                 src_level,
+                                 src_box->z,
+                                 PIPE_TRANSFER_READ,
+                                 src_box->x, src_box->y, w, h);
 
    dst_trans = pipe_get_transfer(pipe,
-				 dst->texture,
-				 dst->face,
-				 dst->level,
-				 dst->zslice,
-				 PIPE_TRANSFER_WRITE,
-				 dst_x, dst_y, w, h);
+                                 dst,
+                                 dst_level,
+                                 dst_z,
+                                 PIPE_TRANSFER_WRITE,
+                                 dst_x, dst_y, w, h);
 
    assert(util_format_get_blocksize(dst_format) == util_format_get_blocksize(src_format));
    assert(util_format_get_blockwidth(dst_format) == util_format_get_blockwidth(src_format));
@@ -171,16 +188,15 @@ util_surface_copy(struct pipe_context *pipe,
    assert(dst_map);
 
    if (src_map && dst_map) {
-      /* If do_flip, invert src_y position and pass negative src stride */
       util_copy_rect(dst_map,
                      dst_format,
                      dst_trans->stride,
                      0, 0,
                      w, h,
                      src_map,
-                     do_flip ? -(int) src_trans->stride : src_trans->stride,
+                     src_trans->stride,
                      0,
-                     do_flip ? h - 1 : 0);
+                     0);
    }
 
    pipe->transfer_unmap(pipe, src_trans);
@@ -196,27 +212,33 @@ util_surface_copy(struct pipe_context *pipe,
 
 
 /**
- * Fallback for pipe->surface_fill() function.
+ * Fallback for pipe->clear_render_target() function.
+ * XXX this looks too hackish to be really useful.
+ * cpp > 4 looks like a gross hack at best...
+ * Plus can't use these transfer fallbacks when clearing
+ * multisampled surfaces for instance.
  */
 void
-util_surface_fill(struct pipe_context *pipe,
-                  struct pipe_surface *dst,
-                  unsigned dstx, unsigned dsty,
-                  unsigned width, unsigned height, unsigned value)
+util_clear_render_target(struct pipe_context *pipe,
+                         struct pipe_surface *dst,
+                         const float *rgba,
+                         unsigned dstx, unsigned dsty,
+                         unsigned width, unsigned height)
 {
    struct pipe_transfer *dst_trans;
    void *dst_map;
+   union util_color uc;
 
    assert(dst->texture);
    if (!dst->texture)
       return;
+   /* XXX: should handle multiple layers */
    dst_trans = pipe_get_transfer(pipe,
-				 dst->texture,
-				 dst->face,
-				 dst->level,
-				 dst->zslice,
-				 PIPE_TRANSFER_WRITE,
-				 dstx, dsty, width, height);
+                                 dst->texture,
+                                 dst->u.tex.level,
+                                 dst->u.tex.first_layer,
+                                 PIPE_TRANSFER_WRITE,
+                                 dstx, dsty, width, height);
 
    dst_map = pipe->transfer_map(pipe, dst_trans);
 
@@ -225,38 +247,112 @@ util_surface_fill(struct pipe_context *pipe,
    if (dst_map) {
       assert(dst_trans->stride > 0);
 
-      switch (util_format_get_blocksize(dst->texture->format)) {
+      util_pack_color(rgba, dst->texture->format, &uc);
+      util_fill_rect(dst_map, dst->texture->format,
+                     dst_trans->stride,
+                     0, 0, width, height, &uc);
+   }
+
+   pipe->transfer_unmap(pipe, dst_trans);
+   pipe->transfer_destroy(pipe, dst_trans);
+}
+
+/**
+ * Fallback for pipe->clear_stencil() function.
+ * sw fallback doesn't look terribly useful here.
+ * Plus can't use these transfer fallbacks when clearing
+ * multisampled surfaces for instance.
+ */
+void
+util_clear_depth_stencil(struct pipe_context *pipe,
+                         struct pipe_surface *dst,
+                         unsigned clear_flags,
+                         double depth,
+                         unsigned stencil,
+                         unsigned dstx, unsigned dsty,
+                         unsigned width, unsigned height)
+{
+   struct pipe_transfer *dst_trans;
+   ubyte *dst_map;
+   boolean need_rmw = FALSE;
+
+   if ((clear_flags & PIPE_CLEAR_DEPTHSTENCIL) &&
+       ((clear_flags & PIPE_CLEAR_DEPTHSTENCIL) != PIPE_CLEAR_DEPTHSTENCIL) &&
+       util_format_is_depth_and_stencil(dst->format))
+      need_rmw = TRUE;
+
+   assert(dst->texture);
+   if (!dst->texture)
+      return;
+   dst_trans = pipe_get_transfer(pipe,
+                                 dst->texture,
+                                 dst->u.tex.level,
+                                 dst->u.tex.first_layer,
+                                 (need_rmw ? PIPE_TRANSFER_READ_WRITE :
+                                     PIPE_TRANSFER_WRITE),
+                                 dstx, dsty, width, height);
+
+   dst_map = pipe->transfer_map(pipe, dst_trans);
+
+   assert(dst_map);
+
+   if (dst_map) {
+      unsigned dst_stride = dst_trans->stride;
+      unsigned zstencil = util_pack_z_stencil(dst->texture->format, depth, stencil);
+      unsigned i, j;
+      assert(dst_trans->stride > 0);
+
+      switch (util_format_get_blocksize(dst->format)) {
       case 1:
-      case 2:
-      case 4:
-         util_fill_rect(dst_map, dst->texture->format,
-			dst_trans->stride,
-                        0, 0, width, height, value);
+         assert(dst->format == PIPE_FORMAT_S8_USCALED);
+         if(dst_stride == width)
+            memset(dst_map, (ubyte) zstencil, height * width);
+         else {
+            for (i = 0; i < height; i++) {
+               memset(dst_map, (ubyte) zstencil, width);
+               dst_map += dst_stride;
+            }
+         }
          break;
+      case 2:
+         assert(dst->format == PIPE_FORMAT_Z16_UNORM);
+         for (i = 0; i < height; i++) {
+            uint16_t *row = (uint16_t *)dst_map;
+            for (j = 0; j < width; j++)
+               *row++ = (uint16_t) zstencil;
+            dst_map += dst_stride;
+            }
+         break;
+      case 4:
+         if (!need_rmw) {
+            for (i = 0; i < height; i++) {
+               uint32_t *row = (uint32_t *)dst_map;
+               for (j = 0; j < width; j++)
+                  *row++ = zstencil;
+               dst_map += dst_stride;
+            }
+         }
+         else {
+            uint32_t dst_mask;
+            if (dst->format == PIPE_FORMAT_Z24_UNORM_S8_USCALED)
+               dst_mask = 0xffffff00;
+            else {
+               assert(dst->format == PIPE_FORMAT_S8_USCALED_Z24_UNORM);
+               dst_mask = 0xffffff;
+            }
+            if (clear_flags & PIPE_CLEAR_DEPTH)
+               dst_mask = ~dst_mask;
+            for (i = 0; i < height; i++) {
+               uint32_t *row = (uint32_t *)dst_map;
+               for (j = 0; j < width; j++) {
+                  uint32_t tmp = *row & dst_mask;
+                  *row++ = tmp | (zstencil & ~dst_mask);
+               }
+               dst_map += dst_stride;
+            }
+         }
+        break;
       case 8:
-      {
-	 /* expand the 4-byte clear value to an 8-byte value */
-	 ushort *row = (ushort *) dst_map;
-	 ushort val0 = UBYTE_TO_USHORT((value >>  0) & 0xff);
-	 ushort val1 = UBYTE_TO_USHORT((value >>  8) & 0xff);
-	 ushort val2 = UBYTE_TO_USHORT((value >> 16) & 0xff);
-	 ushort val3 = UBYTE_TO_USHORT((value >> 24) & 0xff);
-	 unsigned i, j;
-	 val0 = (val0 << 8) | val0;
-	 val1 = (val1 << 8) | val1;
-	 val2 = (val2 << 8) | val2;
-	 val3 = (val3 << 8) | val3;
-	 for (i = 0; i < height; i++) {
-	    for (j = 0; j < width; j++) {
-	       row[j*4+0] = val0;
-	       row[j*4+1] = val1;
-	       row[j*4+2] = val2;
-	       row[j*4+3] = val3;
-	    }
-	    row += dst_trans->stride/2;
-	 }
-      }
-      break;
       default:
          assert(0);
          break;

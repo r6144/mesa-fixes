@@ -12,7 +12,7 @@ include $(TOP)/configs/current
 
 GL_MAJOR = 1
 GL_MINOR = 5
-GL_TINY = 0$(MESA_MAJOR)0$(MESA_MINOR)0$(MESA_TINY)
+GL_TINY = 0$(MESA_MAJOR)$(MESA_MINOR)0$(MESA_TINY)
 
 
 HEADERS = \
@@ -57,9 +57,10 @@ default: $(TOP)/$(LIB_DIR)/$(GL_LIB_NAME)
 
 
 $(TOP)/$(LIB_DIR)/$(GL_LIB_NAME): $(OBJECTS) $(CORE_MESA)
-	@ $(MKLIB) -o $(GL_LIB) -linker '$(CC)' -ldflags '$(LDFLAGS)' \
+	@ $(MKLIB) -o $(GL_LIB) -linker '$(CXX)' -ldflags '$(LDFLAGS)' \
 		-major $(GL_MAJOR) -minor $(GL_MINOR) -patch $(GL_TINY) \
-		-install $(TOP)/$(LIB_DIR) $(MKLIB_OPTIONS) \
+		-install $(TOP)/$(LIB_DIR) \
+		-cplusplus $(MKLIB_OPTIONS) \
 		-id $(INSTALL_LIB_DIR)/lib$(GL_LIB).$(GL_MAJOR).dylib \
 		$(GL_LIB_DEPS) $(OBJECTS) $(CORE_MESA)
 

@@ -14,10 +14,9 @@
 
 #include "main/imports.h"
 #include "main/image.h"
-#include "main/bufferobj.h"
 #include "main/macros.h"
-#include "shader/program.h"
-#include "shader/prog_print.h"
+#include "program/program.h"
+#include "program/prog_print.h"
 
 #include "st_context.h"
 #include "st_atom.h"
@@ -101,7 +100,7 @@ lookup_shader(struct pipe_context *pipe,
 }
 
 static void
-st_DrawTex(GLcontext *ctx, GLfloat x, GLfloat y, GLfloat z,
+st_DrawTex(struct gl_context *ctx, GLfloat x, GLfloat y, GLfloat z,
            GLfloat width, GLfloat height)
 {
    struct st_context *st = ctx->st;
@@ -221,7 +220,7 @@ st_DrawTex(GLcontext *ctx, GLfloat x, GLfloat y, GLfloat z,
          }
       }
 
-      pipe_buffer_unmap(pipe, vbuffer, vbuffer_transfer);
+      pipe_buffer_unmap(pipe, vbuffer_transfer);
 
 #undef SET_ATTRIB
    }

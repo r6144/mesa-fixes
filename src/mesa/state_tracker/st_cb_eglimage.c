@@ -33,6 +33,7 @@
 #include "util/u_format.h"
 #include "st_cb_eglimage.h"
 #include "st_cb_fbo.h"
+#include "st_context.h"
 #include "st_texture.h"
 #include "st_format.h"
 #include "st_manager.h"
@@ -70,7 +71,7 @@ st_pipe_format_to_base_format(enum pipe_format format)
 }
 
 static void
-st_egl_image_target_renderbuffer_storage(GLcontext *ctx,
+st_egl_image_target_renderbuffer_storage(struct gl_context *ctx,
 					 struct gl_renderbuffer *rb,
 					 GLeglImageOES image_handle)
 {
@@ -79,7 +80,7 @@ st_egl_image_target_renderbuffer_storage(GLcontext *ctx,
    struct pipe_surface *ps;
    unsigned usage;
 
-   usage = PIPE_BIND_RENDER_TARGET | PIPE_BIND_BLIT_SOURCE | PIPE_BIND_BLIT_DESTINATION;
+   usage = PIPE_BIND_RENDER_TARGET;
    ps = st_manager_get_egl_image_surface(st, (void *) image_handle, usage);
    if (ps) {
       strb->Base.Width = ps->width;
@@ -97,7 +98,7 @@ st_egl_image_target_renderbuffer_storage(GLcontext *ctx,
 }
 
 static void
-st_bind_surface(GLcontext *ctx, GLenum target,
+st_bind_surface(struct gl_context *ctx, GLenum target,
                 struct gl_texture_object *texObj,
                 struct gl_texture_image *texImage,
                 struct pipe_surface *ps)
@@ -105,6 +106,7 @@ st_bind_surface(GLcontext *ctx, GLenum target,
    struct st_texture_object *stObj;
    struct st_texture_image *stImage;
    GLenum internalFormat;
+   gl_format texFormat;
 
    /* map pipe format to base format */
    if (util_format_get_component_bits(ps->format, UTIL_FORMAT_COLORSPACE_RGB, 3) > 0)
@@ -121,13 +123,16 @@ st_bind_surface(GLcontext *ctx, GLenum target,
       stObj->surface_based = GL_TRUE;
    }
 
+   texFormat = st_pipe_format_to_mesa_format(ps->format);
+
    _mesa_init_teximage_fields(ctx, target, texImage,
-                              ps->width, ps->height, 1, 0, internalFormat);
-   texImage->TexFormat = st_pipe_format_to_mesa_format(ps->format);
-   _mesa_set_fetch_functions(texImage, 2);
+                              ps->width, ps->height, 1, 0, internalFormat,
+                              texFormat);
 
    /* FIXME create a non-default sampler view from the pipe_surface? */
-   pipe_resource_reference(&stImage->pt, ps->texture);
+   pipe_resource_reference(&stObj->pt, ps->texture);
+   pipe_sampler_view_reference(&stObj->sampler_view, NULL);
+   pipe_resource_reference(&stImage->pt, stObj->pt);
 
    stObj->width0 = ps->width;
    stObj->height0 = ps->height;
@@ -137,7 +142,7 @@ st_bind_surface(GLcontext *ctx, GLenum target,
 }
 
 static void
-st_egl_image_target_texture_2d(GLcontext *ctx, GLenum target,
+st_egl_image_target_texture_2d(struct gl_context *ctx, GLenum target,
 			       struct gl_texture_object *texObj,
 			       struct gl_texture_image *texImage,
 			       GLeglImageOES image_handle)
@@ -146,7 +151,7 @@ st_egl_image_target_texture_2d(GLcontext *ctx, GLenum target,
    struct pipe_surface *ps;
    unsigned usage;
 
-   usage = PIPE_BIND_SAMPLER_VIEW | PIPE_BIND_BLIT_DESTINATION | PIPE_BIND_BLIT_SOURCE;
+   usage = PIPE_BIND_SAMPLER_VIEW;
    ps = st_manager_get_egl_image_surface(st, (void *) image_handle, usage);
    if (ps) {
       st_bind_surface(ctx, target, texObj, texImage, ps);

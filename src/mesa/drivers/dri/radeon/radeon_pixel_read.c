@@ -32,6 +32,7 @@
 #include "main/state.h"
 #include "swrast/swrast.h"
 
+#include "radeon_buffer_objects.h"
 #include "radeon_common_context.h"
 #include "radeon_debug.h"
 #include "radeon_mipmap_tree.h"
@@ -85,7 +86,7 @@ static gl_format gl_format_and_type_to_mesa_format(GLenum format, GLenum type)
 }
 
 static GLboolean
-do_blit_readpixels(GLcontext * ctx,
+do_blit_readpixels(struct gl_context * ctx,
                    GLint x, GLint y, GLsizei width, GLsizei height,
                    GLenum format, GLenum type,
                    const struct gl_pixelstore_attrib *pack, GLvoid * pixels)
@@ -96,6 +97,7 @@ do_blit_readpixels(GLcontext * ctx,
     unsigned dst_rowstride, dst_imagesize, aligned_rowstride, flip_y;
     struct radeon_bo *dst_buffer;
     GLint dst_x = 0, dst_y = 0;
+    intptr_t dst_offset;
 
     return GL_FALSE; /* Works around the th125 problem including a crash in copy_rows() here */
     /* It's not worth if number of pixels to copy is really small */
@@ -128,10 +130,23 @@ do_blit_readpixels(GLcontext * ctx,
     assert(x >= 0 && y >= 0);
 
     aligned_rowstride = get_texture_image_row_stride(radeon, dst_format, dst_rowstride, 0);
+    dst_rowstride *= _mesa_get_format_bytes(dst_format);
+    if (_mesa_is_bufferobj(pack->BufferObj) && aligned_rowstride != dst_rowstride)
+        return GL_FALSE;
     dst_imagesize = get_texture_image_size(dst_format,
                                            aligned_rowstride,
                                            height, 1, 0);
-    dst_buffer = radeon_bo_open(radeon->radeonScreen->bom, 0, dst_imagesize, 1024, RADEON_GEM_DOMAIN_GTT, 0);
+
+    if (!_mesa_is_bufferobj(pack->BufferObj))
+    {
+        dst_buffer = radeon_bo_open(radeon->radeonScreen->bom, 0, dst_imagesize, 1024, RADEON_GEM_DOMAIN_GTT, 0);
+        dst_offset = 0;
+    }
+    else
+    {
+        dst_buffer = get_radeon_buffer_object(pack->BufferObj)->bo;
+        dst_offset = (intptr_t)pixels;
+    }
 
     /* Disable source Y flipping for FBOs */
     flip_y = (ctx->ReadBuffer->Name == 0);
@@ -150,7 +165,7 @@ do_blit_readpixels(GLcontext * ctx,
                           x,
                           y,
                           dst_buffer,
-                          0, /* dst_offset */
+                          dst_offset,
                           dst_format,
                           aligned_rowstride / _mesa_get_format_bytes(dst_format),
                           width,
@@ -161,25 +176,33 @@ do_blit_readpixels(GLcontext * ctx,
                           height,
                           flip_y))
     {
-        radeon_bo_map(dst_buffer, 0);
-        dst_rowstride *= _mesa_get_format_bytes(dst_format);
-        copy_rows(pixels, dst_rowstride, dst_buffer->ptr,
-                  aligned_rowstride, height, dst_rowstride);
-        radeon_bo_unmap(dst_buffer);
-        radeon_bo_unref(dst_buffer);
+        if (!_mesa_is_bufferobj(pack->BufferObj))
+        {
+            radeon_bo_map(dst_buffer, 0);
+            copy_rows(pixels, dst_rowstride, dst_buffer->ptr,
+                      aligned_rowstride, height, dst_rowstride);
+            radeon_bo_unmap(dst_buffer);
+            radeon_bo_unref(dst_buffer);
+        }
+
         return GL_TRUE;
-    } else {
-        radeon_bo_unref(dst_buffer);
-        return GL_FALSE;
     }
+
+    if (!_mesa_is_bufferobj(pack->BufferObj))
+        radeon_bo_unref(dst_buffer);
+
+    return GL_FALSE;
 }
 
 void
-radeonReadPixels(GLcontext * ctx,
+radeonReadPixels(struct gl_context * ctx,
                  GLint x, GLint y, GLsizei width, GLsizei height,
                  GLenum format, GLenum type,
                  const struct gl_pixelstore_attrib *pack, GLvoid * pixels)
 {
+    radeonContextPtr radeon = RADEON_CONTEXT(ctx);
+    radeon_prepare_render(radeon);
+
     if (do_blit_readpixels(ctx, x, y, width, height, format, type, pack, pixels))
         return;
 

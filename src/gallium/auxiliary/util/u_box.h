@@ -61,13 +61,20 @@ void u_box_2d_zslice( unsigned x,
 }
 
 static INLINE
-struct pipe_subresource u_subresource( unsigned face,
-				       unsigned level )
+void u_box_3d( unsigned x,
+	       unsigned y,
+	       unsigned z,
+	       unsigned w,
+	       unsigned h,
+	       unsigned d,
+	       struct pipe_box *box )
 {
-   struct pipe_subresource subresource;
-   subresource.face = face;
-   subresource.level = level;
-   return subresource;
+   box->x = x;
+   box->y = y;
+   box->z = z;
+   box->width = w;
+   box->height = h;
+   box->depth = d;
 }
 
 #endif

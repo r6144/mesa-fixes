@@ -59,6 +59,8 @@ struct u_upload_mgr *u_upload_create( struct pipe_context *pipe,
                                       unsigned usage )
 {
    struct u_upload_mgr *upload = CALLOC_STRUCT( u_upload_mgr );
+   if (!upload)
+      return NULL;
 
    upload->pipe = pipe;
    upload->default_size = default_size;
@@ -106,7 +108,7 @@ my_buffer_write(struct pipe_context *pipe,
 
    memcpy(map + offset, data, size);
    pipe_buffer_flush_mapped_range(pipe, transfer, offset, dirty_size);
-   pipe_buffer_unmap(pipe, buf, transfer);
+   pipe_buffer_unmap(pipe, transfer);
 
    return PIPE_OK;
 }
@@ -241,7 +243,7 @@ enum pipe_error u_upload_buffer( struct u_upload_mgr *upload,
 
 done:
    if (map)
-      pipe_buffer_unmap( upload->pipe, inbuf, transfer );
+      pipe_buffer_unmap( upload->pipe, transfer );
 
    return ret;
 }

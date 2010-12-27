@@ -52,6 +52,7 @@ struct wrapper_sw_winsys
    struct sw_winsys base;
    struct pipe_screen *screen;
    struct pipe_context *pipe;
+   enum pipe_texture_target target;
 };
 
 struct wrapper_sw_displaytarget
@@ -92,9 +93,9 @@ wsw_dt_get_stride(struct wrapper_sw_displaytarget *wdt, unsigned *stride)
    struct pipe_resource *tex = wdt->tex;
    struct pipe_transfer *tr;
 
-   tr = pipe_get_transfer(pipe, tex, 0, 0, 0,
-			  PIPE_TRANSFER_READ_WRITE,
-			  0, 0, wdt->width, wdt->height);
+   tr = pipe_get_transfer(pipe, tex, 0, 0,
+                          PIPE_TRANSFER_READ_WRITE,
+                          0, 0, wdt->width, wdt->height);
    if (!tr)
       return FALSE;
 
@@ -145,9 +146,11 @@ wsw_dt_create(struct sw_winsys *ws,
     * XXX Why don't we just get the template.
     */
    memset(&templ, 0, sizeof(templ));
-   templ.target = PIPE_TEXTURE_2D;
+   templ.target = wsw->target;
    templ.width0 = width;
    templ.height0 = height;
+   templ.depth0 = 1;
+   templ.array_size = 1;
    templ.format = format;
    templ.bind = bind;
 
@@ -203,9 +206,9 @@ wsw_dt_map(struct sw_winsys *ws,
 
       assert(!wdt->transfer);
 
-      tr = pipe_get_transfer(pipe, tex, 0, 0, 0,
-			     PIPE_TRANSFER_READ_WRITE,
-			     0, 0, wdt->width, wdt->height);
+      tr = pipe_get_transfer(pipe, tex, 0, 0,
+                             PIPE_TRANSFER_READ_WRITE,
+                             0, 0, wdt->width, wdt->height);
       if (!tr)
          return NULL;
 
@@ -271,7 +274,7 @@ wsw_destroy(struct sw_winsys *ws)
 }
 
 struct sw_winsys *
-wrapper_sw_winsys_warp_pipe_screen(struct pipe_screen *screen)
+wrapper_sw_winsys_wrap_pipe_screen(struct pipe_screen *screen)
 {
    struct wrapper_sw_winsys *wsw = CALLOC_STRUCT(wrapper_sw_winsys);
 
@@ -291,10 +294,28 @@ wrapper_sw_winsys_warp_pipe_screen(struct pipe_screen *screen)
    if (!wsw->pipe)
       goto err_free;
 
+   if(screen->get_param(screen, PIPE_CAP_NPOT_TEXTURES))
+      wsw->target = PIPE_TEXTURE_2D;
+   else
+      wsw->target = PIPE_TEXTURE_RECT;
+
    return &wsw->base;
 
 err_free:
    FREE(wsw);
 err:
    return NULL;
+}
+
+struct pipe_screen *
+wrapper_sw_winsys_dewrap_pipe_screen(struct sw_winsys *ws)
+{
+   struct wrapper_sw_winsys *wsw = wrapper_sw_winsys(ws);
+   struct pipe_screen *screen = wsw->screen;
+
+   wsw->pipe->destroy(wsw->pipe);
+   /* don't destroy the screen its needed later on */
+
+   FREE(wsw);
+   return screen;
 }

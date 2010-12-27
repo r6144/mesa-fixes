@@ -93,6 +93,7 @@ struct tgsi_sampler
 
 #define TGSI_EXEC_NUM_TEMPS       128
 #define TGSI_EXEC_NUM_IMMEDIATES  256
+#define TGSI_EXEC_NUM_TEMP_ARRAYS 8
 
 /*
  * Locations of various utility registers (_I = Index, _C = Channel)
@@ -130,34 +131,15 @@ struct tgsi_sampler
 #define TGSI_EXEC_TEMP_PRIMITIVE_I  (TGSI_EXEC_NUM_TEMPS + 2)
 #define TGSI_EXEC_TEMP_PRIMITIVE_C  2
 
-/* NVIDIA condition code (CC) vector
- */
-#define TGSI_EXEC_CC_GT       0x01
-#define TGSI_EXEC_CC_EQ       0x02
-#define TGSI_EXEC_CC_LT       0x04
-#define TGSI_EXEC_CC_UN       0x08
-
-#define TGSI_EXEC_CC_X_MASK   0x000000ff
-#define TGSI_EXEC_CC_X_SHIFT  0
-#define TGSI_EXEC_CC_Y_MASK   0x0000ff00
-#define TGSI_EXEC_CC_Y_SHIFT  8
-#define TGSI_EXEC_CC_Z_MASK   0x00ff0000
-#define TGSI_EXEC_CC_Z_SHIFT  16
-#define TGSI_EXEC_CC_W_MASK   0xff000000
-#define TGSI_EXEC_CC_W_SHIFT  24
-
-#define TGSI_EXEC_TEMP_CC_I         (TGSI_EXEC_NUM_TEMPS + 2)
-#define TGSI_EXEC_TEMP_CC_C         3
-
-#define TGSI_EXEC_TEMP_THREE_I      (TGSI_EXEC_NUM_TEMPS + 3)
-#define TGSI_EXEC_TEMP_THREE_C      0
+#define TGSI_EXEC_TEMP_THREE_I      (TGSI_EXEC_NUM_TEMPS + 2)
+#define TGSI_EXEC_TEMP_THREE_C      3
 
 #define TGSI_EXEC_TEMP_HALF_I       (TGSI_EXEC_NUM_TEMPS + 3)
-#define TGSI_EXEC_TEMP_HALF_C       1
+#define TGSI_EXEC_TEMP_HALF_C       0
 
 /* execution mask, each value is either 0 or ~0 */
 #define TGSI_EXEC_MASK_I            (TGSI_EXEC_NUM_TEMPS + 3)
-#define TGSI_EXEC_MASK_C            2
+#define TGSI_EXEC_MASK_C            1
 
 /* 4 register buffer for various purposes */
 #define TGSI_EXEC_TEMP_R0           (TGSI_EXEC_NUM_TEMPS + 4)
@@ -237,8 +219,11 @@ struct tgsi_exec_machine
     */
    struct tgsi_exec_vector       Temps[TGSI_EXEC_NUM_TEMPS +
                                        TGSI_EXEC_NUM_TEMP_EXTRAS];
+   struct tgsi_exec_vector       TempArray[TGSI_EXEC_NUM_TEMP_ARRAYS][TGSI_EXEC_NUM_TEMPS];
 
    float                         Imms[TGSI_EXEC_NUM_IMMEDIATES][4];
+
+   float                         ImmArray[TGSI_EXEC_NUM_IMMEDIATES][4];
 
    struct tgsi_exec_vector       Inputs[TGSI_MAX_PRIM_VERTICES * PIPE_MAX_ATTRIBS];
    struct tgsi_exec_vector       Outputs[TGSI_MAX_TOTAL_VERTICES];
@@ -249,7 +234,10 @@ struct tgsi_exec_machine
    struct tgsi_sampler           **Samplers;
 
    unsigned                      ImmLimit;
+
    const void *Consts[PIPE_MAX_CONSTANT_BUFFERS];
+   unsigned ConstsSize[PIPE_MAX_CONSTANT_BUFFERS];
+
    const struct tgsi_token       *Tokens;   /**< Declarations, instructions */
    unsigned                      Processor; /**< TGSI_PROCESSOR_x */
 
@@ -362,6 +350,50 @@ tgsi_set_exec_mask(struct tgsi_exec_machine *mach,
    mask[3] = ch3 ? ~0 : 0;
 }
 
+
+extern void
+tgsi_exec_set_constant_buffers(struct tgsi_exec_machine *mach,
+                               unsigned num_bufs,
+                               const void **bufs,
+                               const unsigned *buf_sizes);
+
+
+static INLINE int
+tgsi_exec_get_shader_param(enum pipe_shader_cap param)
+{
+   switch(param) {
+   case PIPE_SHADER_CAP_MAX_INSTRUCTIONS:
+   case PIPE_SHADER_CAP_MAX_ALU_INSTRUCTIONS:
+   case PIPE_SHADER_CAP_MAX_TEX_INSTRUCTIONS:
+   case PIPE_SHADER_CAP_MAX_TEX_INDIRECTIONS:
+      return INT_MAX;
+   case PIPE_SHADER_CAP_MAX_CONTROL_FLOW_DEPTH:
+      return TGSI_EXEC_MAX_NESTING;
+   case PIPE_SHADER_CAP_MAX_INPUTS:
+      return TGSI_EXEC_MAX_INPUT_ATTRIBS;
+   case PIPE_SHADER_CAP_MAX_CONSTS:
+      return TGSI_EXEC_MAX_CONST_BUFFER;
+   case PIPE_SHADER_CAP_MAX_CONST_BUFFERS:
+      return PIPE_MAX_CONSTANT_BUFFERS;
+   case PIPE_SHADER_CAP_MAX_TEMPS:
+      return TGSI_EXEC_NUM_TEMPS;
+   case PIPE_SHADER_CAP_MAX_ADDRS:
+      return TGSI_EXEC_NUM_ADDRS;
+   case PIPE_SHADER_CAP_MAX_PREDS:
+      return TGSI_EXEC_NUM_PREDS;
+   case PIPE_SHADER_CAP_TGSI_CONT_SUPPORTED:
+      return 1;
+   case PIPE_SHADER_CAP_INDIRECT_INPUT_ADDR:
+   case PIPE_SHADER_CAP_INDIRECT_OUTPUT_ADDR:
+   case PIPE_SHADER_CAP_INDIRECT_TEMP_ADDR:
+   case PIPE_SHADER_CAP_INDIRECT_CONST_ADDR:
+      return 1;
+   case PIPE_SHADER_CAP_SUBROUTINES:
+      return 1;
+   default:
+      return 0;
+   }
+}
 
 #if defined __cplusplus
 } /* extern "C" */

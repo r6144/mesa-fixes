@@ -49,7 +49,6 @@
 #include "pipe/p_screen.h"
 #include "util/u_inlines.h"
 #include "util/u_debug.h"
-#include "state_tracker/drm_api.h"
 
 #define DRV_ERROR(msg)	xf86DrvMsg(pScrn->scrnIndex, X_ERROR, msg);
 
@@ -67,12 +66,28 @@ typedef struct
 
 #define XORG_NR_FENCES 3
 
+enum xorg_throttling_reason {
+    THROTTLE_RENDER,
+    THROTTLE_SWAP
+};
+
 typedef struct _CustomizerRec
 {
-    Bool (*winsys_screen_init)(struct _CustomizerRec *cust, int fd);
+    Bool dirty_throttling;
+    Bool swap_throttling;
+    Bool no_3d;
+    Bool unhidden_hw_cursor_update;
+    Bool (*winsys_pre_init) (struct _CustomizerRec *cust, int fd);
+    Bool (*winsys_screen_init)(struct _CustomizerRec *cust);
     Bool (*winsys_screen_close)(struct _CustomizerRec *cust);
     Bool (*winsys_enter_vt)(struct _CustomizerRec *cust);
     Bool (*winsys_leave_vt)(struct _CustomizerRec *cust);
+    void (*winsys_context_throttle)(struct _CustomizerRec *cust,
+				    struct pipe_context *pipe,
+				    enum xorg_throttling_reason reason);
+    Bool (*winsys_check_fb_size) (struct _CustomizerRec *cust,
+				  unsigned long pitch,
+				  unsigned long height);
 } CustomizerRec, *CustomizerPtr;
 
 typedef struct _modesettingRec
@@ -91,7 +106,12 @@ typedef struct _modesettingRec
     Bool noAccel;
     Bool SWCursor;
     CursorPtr cursor;
+    Bool swapThrottling;
+    Bool dirtyThrottling;
     CloseScreenProcPtr CloseScreen;
+    Bool no3D;
+    Bool from_3D;
+    Bool isMaster;
 
     /* Broken-out options. */
     OptionInfoPtr Options;
@@ -111,7 +131,6 @@ typedef struct _modesettingRec
     struct kms_bo *root_bo;
 
     /* gallium */
-    struct drm_api *api;
     struct pipe_screen *screen;
     struct pipe_context *ctx;
     boolean d_depth_bits_last;
@@ -137,6 +156,7 @@ CustomizerPtr xorg_customizer(ScrnInfoPtr pScrn);
 
 Bool xorg_has_gallium(ScrnInfoPtr pScrn);
 
+void xorg_flush(ScreenPtr pScreen);
 /***********************************************************************
  * xorg_exa.c
  */

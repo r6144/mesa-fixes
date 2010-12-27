@@ -28,7 +28,7 @@
 #ifndef PIPE_DEFINES_H
 #define PIPE_DEFINES_H
 
-#include "p_format.h"
+#include "p_compiler.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -119,11 +119,11 @@ enum pipe_error {
 #define PIPE_POLYGON_MODE_LINE  1
 #define PIPE_POLYGON_MODE_POINT 2
 
-/** Polygon front/back window, also for culling */
-#define PIPE_WINDING_NONE 0
-#define PIPE_WINDING_CW   1
-#define PIPE_WINDING_CCW  2
-#define PIPE_WINDING_BOTH (PIPE_WINDING_CW | PIPE_WINDING_CCW)
+/** Polygon face specification, eg for culling */
+#define PIPE_FACE_NONE           0
+#define PIPE_FACE_FRONT          1
+#define PIPE_FACE_BACK           2
+#define PIPE_FACE_FRONT_AND_BACK (PIPE_FACE_FRONT | PIPE_FACE_BACK)
 
 /** Stencil ops */
 #define PIPE_STENCIL_OP_KEEP       0
@@ -135,13 +135,17 @@ enum pipe_error {
 #define PIPE_STENCIL_OP_DECR_WRAP  6
 #define PIPE_STENCIL_OP_INVERT     7
 
-/** Texture types */
+/** Texture types.
+ * See the documentation for info on PIPE_TEXTURE_RECT vs PIPE_TEXTURE_2D */
 enum pipe_texture_target {
-   PIPE_BUFFER       = 0,
-   PIPE_TEXTURE_1D   = 1,
-   PIPE_TEXTURE_2D   = 2,
-   PIPE_TEXTURE_3D   = 3,
-   PIPE_TEXTURE_CUBE = 4,
+   PIPE_BUFFER           = 0,
+   PIPE_TEXTURE_1D       = 1,
+   PIPE_TEXTURE_2D       = 2,
+   PIPE_TEXTURE_3D       = 3,
+   PIPE_TEXTURE_CUBE     = 4,
+   PIPE_TEXTURE_RECT     = 5,
+   PIPE_TEXTURE_1D_ARRAY = 6,
+   PIPE_TEXTURE_2D_ARRAY = 7,
    PIPE_MAX_TEXTURE_TYPES
 };
 
@@ -176,22 +180,15 @@ enum pipe_texture_target {
 #define PIPE_TEX_COMPARE_NONE          0
 #define PIPE_TEX_COMPARE_R_TO_TEXTURE  1
 
-
-/**
- * Surface layout -- a hint?  Or some driver-internal poking out into
- * the interface?
- */
-#define PIPE_SURFACE_LAYOUT_LINEAR  0
-
-
 /**
  * Clear buffer bits
  */
 /** All color buffers currently bound */
 #define PIPE_CLEAR_COLOR        (1 << 0)
+#define PIPE_CLEAR_DEPTH        (1 << 1)
+#define PIPE_CLEAR_STENCIL      (1 << 2)
 /** Depth/stencil combined */
-#define PIPE_CLEAR_DEPTHSTENCIL (1 << 1)
-
+#define PIPE_CLEAR_DEPTHSTENCIL (PIPE_CLEAR_DEPTH | PIPE_CLEAR_STENCIL)
 
 /**
  * Transfer object usage flags
@@ -278,17 +275,16 @@ enum pipe_transfer_usage {
  * Resource binding flags -- state tracker must specify in advance all
  * the ways a resource might be used.
  */
-#define PIPE_BIND_DEPTH_STENCIL        (1 << 0) /* get_tex_surface */
-#define PIPE_BIND_RENDER_TARGET        (1 << 1) /* get_tex_surface */
-#define PIPE_BIND_SAMPLER_VIEW         (1 << 2) /* get_sampler_view */
+#define PIPE_BIND_DEPTH_STENCIL        (1 << 0) /* create_surface */
+#define PIPE_BIND_RENDER_TARGET        (1 << 1) /* create_surface */
+#define PIPE_BIND_SAMPLER_VIEW         (1 << 2) /* create_sampler_view */
 #define PIPE_BIND_VERTEX_BUFFER        (1 << 3) /* set_vertex_buffers */
 #define PIPE_BIND_INDEX_BUFFER         (1 << 4) /* draw_elements */
 #define PIPE_BIND_CONSTANT_BUFFER      (1 << 5) /* set_constant_buffer */
-#define PIPE_BIND_BLIT_SOURCE          (1 << 6) /* surface_copy */
-#define PIPE_BIND_BLIT_DESTINATION     (1 << 7) /* surface_copy, fill */
 #define PIPE_BIND_DISPLAY_TARGET       (1 << 8) /* flush_front_buffer */
 #define PIPE_BIND_TRANSFER_WRITE       (1 << 9) /* get_transfer */
 #define PIPE_BIND_TRANSFER_READ        (1 << 10) /* get_transfer */
+#define PIPE_BIND_STREAM_OUTPUT        (1 << 11) /* set_stream_output_buffers */
 #define PIPE_BIND_CUSTOM               (1 << 16) /* state-tracker/winsys usages */
 
 /* The first two flags above were previously part of the amorphous
@@ -323,6 +319,7 @@ enum pipe_transfer_usage {
 #define PIPE_USAGE_STATIC         2 /* same as immutable?? */
 #define PIPE_USAGE_IMMUTABLE      3 /* no change after first upload */
 #define PIPE_USAGE_STREAM         4 /* upload, draw, upload, draw */
+#define PIPE_USAGE_STAGING        5 /* supports data transfers from the GPU to the CPU */
 
 
 /* These are intended to be used in calls to is_format_supported, but
@@ -380,7 +377,10 @@ enum pipe_transfer_usage {
 #define PIPE_QUERY_PRIMITIVES_GENERATED  1
 #define PIPE_QUERY_PRIMITIVES_EMITTED    2
 #define PIPE_QUERY_TIME_ELAPSED          3
-#define PIPE_QUERY_TYPES                 4
+#define PIPE_QUERY_SO_STATISTICS         5
+#define PIPE_QUERY_GPU_FINISHED          6
+#define PIPE_QUERY_TIMESTAMP_DISJOINT    7
+#define PIPE_QUERY_TYPES                 8
 
 
 /**
@@ -426,6 +426,7 @@ enum pipe_cap {
    PIPE_CAP_OCCLUSION_QUERY,
    PIPE_CAP_TIMER_QUERY,
    PIPE_CAP_TEXTURE_SHADOW_MAP,
+   PIPE_CAP_TEXTURE_SWIZZLE,
    PIPE_CAP_MAX_TEXTURE_2D_LEVELS,
    PIPE_CAP_MAX_TEXTURE_3D_LEVELS,
    PIPE_CAP_MAX_TEXTURE_CUBE_LEVELS,
@@ -442,49 +443,49 @@ enum pipe_cap {
    PIPE_CAP_TEXTURE_MIRROR_CLAMP,
    PIPE_CAP_TEXTURE_MIRROR_REPEAT,
    PIPE_CAP_MAX_VERTEX_TEXTURE_UNITS,
-   PIPE_CAP_TGSI_CONT_SUPPORTED,
    PIPE_CAP_BLEND_EQUATION_SEPARATE,
    PIPE_CAP_SM3,  /*< Shader Model, supported */
-   PIPE_CAP_MAX_PREDICATE_REGISTERS,
+   PIPE_CAP_STREAM_OUTPUT,
+   PIPE_CAP_PRIMITIVE_RESTART,
    /** Maximum texture image units accessible from vertex and fragment shaders
     * combined */
    PIPE_CAP_MAX_COMBINED_SAMPLERS,
-   PIPE_CAP_MAX_CONST_BUFFERS,
-   PIPE_CAP_MAX_CONST_BUFFER_SIZE,  /*< In bytes */
    /** blend enables and write masks per rendertarget */
    PIPE_CAP_INDEP_BLEND_ENABLE,
    /** different blend funcs per rendertarget */
    PIPE_CAP_INDEP_BLEND_FUNC,
+   PIPE_CAP_DEPTHSTENCIL_CLEAR_SEPARATE,
+   PIPE_CAP_ARRAY_TEXTURES,
    PIPE_CAP_TGSI_FS_COORD_ORIGIN_UPPER_LEFT,
    PIPE_CAP_TGSI_FS_COORD_ORIGIN_LOWER_LEFT,
    PIPE_CAP_TGSI_FS_COORD_PIXEL_CENTER_HALF_INTEGER,
    PIPE_CAP_TGSI_FS_COORD_PIXEL_CENTER_INTEGER,
-
-   /*
-    * Shader limits.
-    */
-   PIPE_CAP_MAX_FS_INSTRUCTIONS,
-   PIPE_CAP_MAX_FS_ALU_INSTRUCTIONS,
-   PIPE_CAP_MAX_FS_TEX_INSTRUCTIONS,
-   PIPE_CAP_MAX_FS_TEX_INDIRECTIONS,
-   PIPE_CAP_MAX_FS_CONTROL_FLOW_DEPTH,
-   PIPE_CAP_MAX_FS_INPUTS,
-   PIPE_CAP_MAX_FS_CONSTS,
-   PIPE_CAP_MAX_FS_TEMPS,
-   PIPE_CAP_MAX_FS_ADDRS,
-   PIPE_CAP_MAX_FS_PREDS,
-   PIPE_CAP_MAX_VS_INSTRUCTIONS,
-   PIPE_CAP_MAX_VS_ALU_INSTRUCTIONS,
-   PIPE_CAP_MAX_VS_TEX_INSTRUCTIONS,
-   PIPE_CAP_MAX_VS_TEX_INDIRECTIONS,
-   PIPE_CAP_MAX_VS_CONTROL_FLOW_DEPTH,
-   PIPE_CAP_MAX_VS_INPUTS,
-   PIPE_CAP_MAX_VS_CONSTS,
-   PIPE_CAP_MAX_VS_TEMPS,
-   PIPE_CAP_MAX_VS_ADDRS,
-   PIPE_CAP_MAX_VS_PREDS
+   PIPE_CAP_DEPTH_CLAMP,
+   PIPE_CAP_SHADER_STENCIL_EXPORT,
 };
 
+/* Shader caps not specific to any single stage */
+enum pipe_shader_cap
+{
+   PIPE_SHADER_CAP_MAX_INSTRUCTIONS, /* if 0, it means the stage is unsupported */
+   PIPE_SHADER_CAP_MAX_ALU_INSTRUCTIONS,
+   PIPE_SHADER_CAP_MAX_TEX_INSTRUCTIONS,
+   PIPE_SHADER_CAP_MAX_TEX_INDIRECTIONS,
+   PIPE_SHADER_CAP_MAX_CONTROL_FLOW_DEPTH,
+   PIPE_SHADER_CAP_MAX_INPUTS,
+   PIPE_SHADER_CAP_MAX_CONSTS,
+   PIPE_SHADER_CAP_MAX_CONST_BUFFERS,
+   PIPE_SHADER_CAP_MAX_TEMPS,
+   PIPE_SHADER_CAP_MAX_ADDRS,
+   PIPE_SHADER_CAP_MAX_PREDS,
+   /* boolean caps */
+   PIPE_SHADER_CAP_TGSI_CONT_SUPPORTED,
+   PIPE_SHADER_CAP_INDIRECT_INPUT_ADDR,
+   PIPE_SHADER_CAP_INDIRECT_OUTPUT_ADDR,
+   PIPE_SHADER_CAP_INDIRECT_TEMP_ADDR,
+   PIPE_SHADER_CAP_INDIRECT_CONST_ADDR,
+   PIPE_SHADER_CAP_SUBROUTINES, /* BGNSUB, ENDSUB, CAL, RET */
+};
 
 /**
  * Referenced query flags.
@@ -494,6 +495,19 @@ enum pipe_cap {
 #define PIPE_REFERENCED_FOR_READ  (1 << 0)
 #define PIPE_REFERENCED_FOR_WRITE (1 << 1)
 
+/**
+ * Composite query types
+ */
+struct pipe_query_data_so_statistics
+{
+   uint64_t num_primitives_written;
+   uint64_t primitives_storage_needed;
+};
+struct pipe_query_data_timestamp_disjoint
+{
+   uint64_t frequency;
+   boolean  disjoint;
+};
 
 #ifdef __cplusplus
 }

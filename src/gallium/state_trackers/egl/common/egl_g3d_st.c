@@ -29,6 +29,7 @@
 #include "util/u_memory.h"
 #include "util/u_string.h"
 #include "util/u_inlines.h"
+#include "util/u_pointer.h"
 #include "util/u_dl.h"
 #include "egldriver.h"
 #include "eglimage.h"
@@ -48,168 +49,13 @@ egl_g3d_st_manager(struct st_manager *smapi)
    return (struct egl_g3d_st_manager *) smapi;
 }
 
-static struct egl_g3d_st_module {
-   const char *filename;
-   struct util_dl_library *lib;
-   struct st_api *stapi;
-} egl_g3d_st_modules[ST_API_COUNT];
-
-static EGLBoolean
-egl_g3d_search_path_callback(const char *dir, size_t len, void *callback_data)
-{
-   struct egl_g3d_st_module *stmod =
-      (struct egl_g3d_st_module *) callback_data;
-   char path[1024];
-   int ret;
-
-   ret = util_snprintf(path, sizeof(path),
-         "%.*s/%s", len, dir, stmod->filename);
-   if (ret > 0 && ret < sizeof(path))
-      stmod->lib = util_dl_open(path);
-
-   return !(stmod->lib);
-}
-
-static boolean
-egl_g3d_load_st_module(struct egl_g3d_st_module *stmod,
-                       const char *filename, const char *procname)
-{
-   struct st_api *(*create_api)(void);
-
-   stmod->filename = filename;
-   if (stmod->filename)
-      _eglSearchPathForEach(egl_g3d_search_path_callback, (void *) stmod);
-   else
-      stmod->lib = util_dl_open(NULL);
-
-   if (stmod->lib) {
-      create_api = (struct st_api *(*)(void))
-         util_dl_get_proc_address(stmod->lib, procname);
-      if (create_api)
-         stmod->stapi = create_api();
-
-      if (!stmod->stapi) {
-         util_dl_close(stmod->lib);
-         stmod->lib = NULL;
-      }
-   }
-
-   if (stmod->stapi) {
-      return TRUE;
-   }
-   else {
-      stmod->filename = NULL;
-      return FALSE;
-   }
-}
-
-void
-egl_g3d_init_st_apis(struct st_api *stapis[ST_API_COUNT])
-{
-   const char *skip_checks[ST_API_COUNT], *symbols[ST_API_COUNT];
-   const char *filenames[ST_API_COUNT][4];
-   struct util_dl_library *self;
-   int num_needed = 0, api;
-
-   self = util_dl_open(NULL);
-
-   /* collect the necessary data for loading modules */
-   for (api = 0; api < ST_API_COUNT; api++) {
-      int count = 0;
-
-      switch (api) {
-      case ST_API_OPENGL:
-         skip_checks[api] = "glColor4d";
-         symbols[api] = ST_CREATE_OPENGL_SYMBOL;
-         filenames[api][count++] = "api_GL.so";
-         break;
-      case ST_API_OPENGL_ES1:
-         skip_checks[api] = "glColor4x";
-         symbols[api] = ST_CREATE_OPENGL_ES1_SYMBOL;
-         filenames[api][count++] = "api_GLESv1_CM.so";
-         filenames[api][count++] = "api_GL.so";
-         break;
-      case ST_API_OPENGL_ES2:
-         skip_checks[api] = "glShaderBinary";
-         symbols[api] = ST_CREATE_OPENGL_ES2_SYMBOL;
-         filenames[api][count++] = "api_GLESv2.so";
-         filenames[api][count++] = "api_GL.so";
-         break;
-      case ST_API_OPENVG:
-         skip_checks[api] = "vgClear";
-         symbols[api] = ST_CREATE_OPENVG_SYMBOL;
-         filenames[api][count++]= "api_OpenVG.so";
-         break;
-      default:
-         assert(!"Unknown API Type\n");
-         skip_checks[api] = NULL;
-         symbols[api] = NULL;
-         break;
-      }
-      filenames[api][count++]= NULL;
-      assert(count < Elements(filenames[api]));
-
-      /* heuristicically decide if the module is needed */
-      if (!self || !skip_checks[api] ||
-          util_dl_get_proc_address(self, skip_checks[api])) {
-         /* unset so the module is not skipped */
-         skip_checks[api] = NULL;
-         num_needed++;
-      }
-   }
-   /* mark all moudles needed if we wrongly decided that none is needed */
-   if (!num_needed)
-      memset(skip_checks, 0, sizeof(skip_checks));
-
-   if (self)
-      util_dl_close(self);
-
-   for (api = 0; api < ST_API_COUNT; api++) {
-      struct egl_g3d_st_module *stmod = &egl_g3d_st_modules[api];
-      const char **p;
-
-      /* skip the module */
-      if (skip_checks[api])
-         continue;
-
-      /* try all filenames, including NULL */
-      for (p = filenames[api]; *p; p++) {
-         if (egl_g3d_load_st_module(stmod, *p, symbols[api]))
-            break;
-      }
-      if (!stmod->stapi)
-         egl_g3d_load_st_module(stmod, NULL, symbols[api]);
-
-      stapis[api] = stmod->stapi;
-   }
-}
-
-void
-egl_g3d_destroy_st_apis(void)
-{
-   int api;
-
-   for (api = 0; api < ST_API_COUNT; api++) {
-      struct egl_g3d_st_module *stmod = &egl_g3d_st_modules[api];
-
-      if (stmod->stapi) {
-         stmod->stapi->destroy(stmod->stapi);
-         stmod->stapi = NULL;
-      }
-      if (stmod->lib) {
-         util_dl_close(stmod->lib);
-         stmod->lib = NULL;
-      }
-      stmod->filename = NULL;
-   }
-}
-
 static boolean
 egl_g3d_st_manager_get_egl_image(struct st_manager *smapi,
-                                 struct st_egl_image *stimg)
+                                 void *egl_image,
+                                 struct st_egl_image *out)
 {
    struct egl_g3d_st_manager *gsmapi = egl_g3d_st_manager(smapi);
-   EGLImageKHR handle = (EGLImageKHR) stimg->egl_image;
+   EGLImageKHR handle = (EGLImageKHR) egl_image;
    _EGLImage *img;
    struct egl_g3d_image *gimg;
 
@@ -224,15 +70,21 @@ egl_g3d_st_manager_get_egl_image(struct st_manager *smapi,
 
    gimg = egl_g3d_image(img);
 
-   stimg->texture = NULL;
-   pipe_resource_reference(&stimg->texture, gimg->texture);
-   stimg->face = gimg->face;
-   stimg->level = gimg->level;
-   stimg->zslice = gimg->zslice;
+   out->texture = NULL;
+   pipe_resource_reference(&out->texture, gimg->texture);
+   out->level = gimg->level;
+   out->layer = gimg->layer;
 
    _eglUnlockMutex(&gsmapi->display->Mutex);
 
    return TRUE;
+}
+
+static int
+egl_g3d_st_manager_get_param(struct st_manager *smapi,
+                             enum st_manager_param param)
+{
+   return 0;
 }
 
 struct st_manager *
@@ -247,6 +99,7 @@ egl_g3d_create_st_manager(_EGLDisplay *dpy)
 
       gsmapi->base.screen = gdpy->native->screen;
       gsmapi->base.get_egl_image = egl_g3d_st_manager_get_egl_image;
+      gsmapi->base.get_param = egl_g3d_st_manager_get_param;
    }
 
    return &gsmapi->base;;
@@ -266,7 +119,35 @@ egl_g3d_st_framebuffer_flush_front_pbuffer(struct st_framebuffer_iface *stfbi,
    return TRUE;
 }
 
-static boolean 
+static void
+pbuffer_reference_openvg_image(struct egl_g3d_surface *gsurf)
+{
+   /* TODO */
+}
+
+static void
+pbuffer_allocate_render_texture(struct egl_g3d_surface *gsurf)
+{
+   struct egl_g3d_display *gdpy =
+      egl_g3d_display(gsurf->base.Resource.Display);
+   struct pipe_screen *screen = gdpy->native->screen;
+   struct pipe_resource templ, *ptex;
+
+   memset(&templ, 0, sizeof(templ));
+   templ.target = PIPE_TEXTURE_2D;
+   templ.last_level = 0;
+   templ.width0 = gsurf->base.Width;
+   templ.height0 = gsurf->base.Height;
+   templ.depth0 = 1;
+   templ.array_size = 1;
+   templ.format = gsurf->stvis.color_format;
+   templ.bind = PIPE_BIND_RENDER_TARGET;
+
+   ptex = screen->resource_create(screen, &templ);
+   gsurf->render_texture = ptex;
+}
+
+static boolean
 egl_g3d_st_framebuffer_validate_pbuffer(struct st_framebuffer_iface *stfbi,
                                         const enum st_attachment_type *statts,
                                         unsigned count,
@@ -274,7 +155,6 @@ egl_g3d_st_framebuffer_validate_pbuffer(struct st_framebuffer_iface *stfbi,
 {
    _EGLSurface *surf = (_EGLSurface *) stfbi->st_manager_private;
    struct egl_g3d_surface *gsurf = egl_g3d_surface(surf);
-   struct pipe_resource templ;
    unsigned i;
 
    for (i = 0; i < count; i++) {
@@ -284,20 +164,19 @@ egl_g3d_st_framebuffer_validate_pbuffer(struct st_framebuffer_iface *stfbi,
          continue;
 
       if (!gsurf->render_texture) {
-         struct egl_g3d_display *gdpy =
-            egl_g3d_display(gsurf->base.Resource.Display);
-         struct pipe_screen *screen = gdpy->native->screen;
+         switch (gsurf->client_buffer_type) {
+         case EGL_NONE:
+            pbuffer_allocate_render_texture(gsurf);
+            break;
+         case EGL_OPENVG_IMAGE:
+            pbuffer_reference_openvg_image(gsurf);
+            break;
+         default:
+            break;
+         }
 
-         memset(&templ, 0, sizeof(templ));
-         templ.target = PIPE_TEXTURE_2D;
-         templ.last_level = 0;
-         templ.width0 = gsurf->base.Width;
-         templ.height0 = gsurf->base.Height;
-         templ.depth0 = 1;
-         templ.format = gsurf->stvis.color_format;
-         templ.bind = PIPE_BIND_RENDER_TARGET;
-
-         gsurf->render_texture = screen->resource_create(screen, &templ);
+         if (!gsurf->render_texture)
+            return FALSE;
       }
 
       pipe_resource_reference(&out[i], gsurf->render_texture);
@@ -313,7 +192,8 @@ egl_g3d_st_framebuffer_flush_front(struct st_framebuffer_iface *stfbi,
    _EGLSurface *surf = (_EGLSurface *) stfbi->st_manager_private;
    struct egl_g3d_surface *gsurf = egl_g3d_surface(surf);
 
-   return gsurf->native->flush_frontbuffer(gsurf->native);
+   return gsurf->native->present(gsurf->native,
+         NATIVE_ATTACHMENT_FRONT_LEFT, FALSE, 0);
 }
 
 static boolean 

@@ -28,19 +28,36 @@
 #ifndef PIPE_CONTEXT_H
 #define PIPE_CONTEXT_H
 
-#include "p_state.h"
-
+#include "p_compiler.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-   
-struct pipe_screen;
+
+struct pipe_blend_color;
+struct pipe_blend_state;
+struct pipe_box;
+struct pipe_clip_state;
+struct pipe_depth_stencil_alpha_state;
+struct pipe_draw_info;
 struct pipe_fence_handle;
-struct pipe_state_cache;
+struct pipe_framebuffer_state;
+struct pipe_index_buffer;
 struct pipe_query;
-struct pipe_winsys;
+struct pipe_poly_stipple;
+struct pipe_rasterizer_state;
+struct pipe_resource;
+struct pipe_sampler_state;
+struct pipe_sampler_view;
+struct pipe_scissor_state;
+struct pipe_shader_state;
+struct pipe_stencil_ref;
+struct pipe_stream_output_state;
+struct pipe_surface;
+struct pipe_vertex_buffer;
+struct pipe_vertex_element;
+struct pipe_viewport_state;
 
 /**
  * Gallium rendering context.  Basically:
@@ -61,46 +78,13 @@ struct pipe_context {
     * VBO drawing
     */
    /*@{*/
-   void (*draw_arrays)( struct pipe_context *pipe,
-                        unsigned mode, unsigned start, unsigned count);
+   void (*draw_vbo)( struct pipe_context *pipe,
+                     const struct pipe_draw_info *info );
 
-   void (*draw_elements)( struct pipe_context *pipe,
-                          struct pipe_resource *indexBuffer,
-                          unsigned indexSize,
-                          int indexBias,
-                          unsigned mode, unsigned start, unsigned count);
-
-   void (*draw_arrays_instanced)(struct pipe_context *pipe,
-                                 unsigned mode,
-                                 unsigned start,
-                                 unsigned count,
-                                 unsigned startInstance,
-                                 unsigned instanceCount);
-
-   void (*draw_elements_instanced)(struct pipe_context *pipe,
-                                   struct pipe_resource *indexBuffer,
-                                   unsigned indexSize,
-                                   int indexBias,
-                                   unsigned mode,
-                                   unsigned start,
-                                   unsigned count,
-                                   unsigned startInstance,
-                                   unsigned instanceCount);
-
-   /* XXX: this is (probably) a temporary entrypoint, as the range
-    * information should be available from the vertex_buffer state.
-    * Using this to quickly evaluate a specialized path in the draw
-    * module.
+   /**
+    * Draw the stream output buffer at index 0
     */
-   void (*draw_range_elements)( struct pipe_context *pipe,
-                                struct pipe_resource *indexBuffer,
-                                unsigned indexSize,
-                                int indexBias,
-                                unsigned minIndex,
-                                unsigned maxIndex,
-                                unsigned mode, 
-                                unsigned start, 
-                                unsigned count);
+   void (*draw_stream_output)( struct pipe_context *pipe, unsigned mode );
    /*@}*/
 
    /**
@@ -130,10 +114,10 @@ struct pipe_context {
     * \param wait  if true, this query will block until the result is ready
     * \return TRUE if results are ready, FALSE otherwise
     */
-   boolean (*get_query_result)(struct pipe_context *pipe, 
+   boolean (*get_query_result)(struct pipe_context *pipe,
                                struct pipe_query *q,
                                boolean wait,
-                               uint64_t *result);
+                               void *result);
    /*@}*/
 
    /**
@@ -153,6 +137,9 @@ struct pipe_context {
    void   (*bind_vertex_sampler_states)(struct pipe_context *,
                                         unsigned num_samplers,
                                         void **samplers);
+   void   (*bind_geometry_sampler_states)(struct pipe_context *,
+                                          unsigned num_samplers,
+                                          void **samplers);
    void   (*delete_sampler_state)(struct pipe_context *, void *);
 
    void * (*create_rasterizer_state)(struct pipe_context *,
@@ -186,6 +173,11 @@ struct pipe_context {
    void   (*bind_vertex_elements_state)(struct pipe_context *, void *);
    void   (*delete_vertex_elements_state)(struct pipe_context *, void *);
 
+   void * (*create_stream_output_state)(struct pipe_context *,
+                                        const struct pipe_stream_output_state *);
+   void   (*bind_stream_output_state)(struct pipe_context *, void *);
+   void   (*delete_stream_output_state)(struct pipe_context*, void*);
+
    /*@}*/
 
    /**
@@ -197,6 +189,9 @@ struct pipe_context {
 
    void (*set_stencil_ref)( struct pipe_context *,
                             const struct pipe_stencil_ref * );
+
+   void (*set_sample_mask)( struct pipe_context *,
+                            unsigned sample_mask );
 
    void (*set_clip_state)( struct pipe_context *,
                             const struct pipe_clip_state * );
@@ -225,40 +220,57 @@ struct pipe_context {
                                     unsigned num_views,
                                     struct pipe_sampler_view **);
 
+   void (*set_geometry_sampler_views)(struct pipe_context *,
+                                      unsigned num_views,
+                                      struct pipe_sampler_view **);
+
    void (*set_vertex_buffers)( struct pipe_context *,
                                unsigned num_buffers,
                                const struct pipe_vertex_buffer * );
+
+   void (*set_index_buffer)( struct pipe_context *pipe,
+                             const struct pipe_index_buffer * );
+
+   void (*set_stream_output_buffers)(struct pipe_context *,
+                                     struct pipe_resource **buffers,
+                                     int *offsets, /*array of offsets
+                                                     from the start of each
+                                                     of the buffers */
+                                     int num_buffers);
 
    /*@}*/
 
 
    /**
-    * Surface functions
+    * Resource functions for blit-like functionality
     *
-    * The pipe driver is allowed to set these functions to NULL, and in that
-    * case, they will not be available.
+    * If a driver supports multisampling, resource_resolve must be available.
     */
    /*@{*/
 
    /**
-    * Copy a block of pixels from one surface to another.
-    * The surfaces must be of the same format.
+    * Copy a block of pixels from one resource to another.
+    * The resource must be of the same format.
+    * Resources with nr_samples > 1 are not allowed.
     */
-   void (*surface_copy)(struct pipe_context *pipe,
-			struct pipe_surface *dest,
-			unsigned destx, unsigned desty,
-			struct pipe_surface *src,
-			unsigned srcx, unsigned srcy,
-			unsigned width, unsigned height);
+   void (*resource_copy_region)(struct pipe_context *pipe,
+                                struct pipe_resource *dst,
+                                unsigned dst_level,
+                                unsigned dstx, unsigned dsty, unsigned dstz,
+                                struct pipe_resource *src,
+                                unsigned src_level,
+                                const struct pipe_box *src_box);
 
    /**
-    * Fill a region of a surface with a constant value.
+    * Resolve a multisampled resource into a non-multisampled one.
+    * Source and destination must have the same size and same format.
     */
-   void (*surface_fill)(struct pipe_context *pipe,
-			struct pipe_surface *dst,
-			unsigned dstx, unsigned dsty,
-			unsigned width, unsigned height,
-			unsigned value);
+   void (*resource_resolve)(struct pipe_context *pipe,
+                            struct pipe_resource *dst,
+                            unsigned dst_layer,
+                            struct pipe_resource *src,
+                            unsigned src_layer);
+
    /*@}*/
 
    /**
@@ -272,9 +284,33 @@ struct pipe_context {
     */
    void (*clear)(struct pipe_context *pipe,
                  unsigned buffers,
-		 const float *rgba,
+                 const float *rgba,
                  double depth,
-		 unsigned stencil);
+                 unsigned stencil);
+
+   /**
+    * Clear a color rendertarget surface.
+    * \param rgba  pointer to an array of one float for each of r, g, b, a.
+    */
+   void (*clear_render_target)(struct pipe_context *pipe,
+                               struct pipe_surface *dst,
+                               const float *rgba,
+                               unsigned dstx, unsigned dsty,
+                               unsigned width, unsigned height);
+
+   /**
+    * Clear a depth-stencil surface.
+    * \param clear_flags  bitfield of PIPE_CLEAR_DEPTH/STENCIL values.
+    * \param depth  depth clear value in [0,1].
+    * \param stencil  stencil clear value
+    */
+   void (*clear_depth_stencil)(struct pipe_context *pipe,
+                               struct pipe_surface *dst,
+                               unsigned clear_flags,
+                               double depth,
+                               unsigned stencil,
+                               unsigned dstx, unsigned dsty,
+                               unsigned width, unsigned height);
 
    /** Flush rendering
     * \param flags  bitmask of PIPE_FLUSH_x tokens)
@@ -290,13 +326,13 @@ struct pipe_context {
     * PIPE_REFERENCED_FOR_READ | PIPE_REFERENCED_FOR_WRITE.
     * \param pipe  context whose unflushed hw commands will be checked.
     * \param texture  texture to check.
-    * \param face  cubemap face. Use 0 for non-cubemap texture.
     * \param level  mipmap level.
+    * \param layer  cubemap face, 2d array or 3d slice, 0 otherwise. Use -1 for any layer.
     * \return mask of PIPE_REFERENCED_FOR_READ/WRITE or PIPE_UNREFERENCED
     */
    unsigned int (*is_resource_referenced)(struct pipe_context *pipe,
-					  struct pipe_resource *texture,
-					  unsigned face, unsigned level);
+                                          struct pipe_resource *texture,
+                                          unsigned level, int layer);
 
    /**
     * Create a view on a texture to be used by a shader stage.
@@ -310,20 +346,32 @@ struct pipe_context {
 
 
    /**
+    * Get a surface which is a "view" into a resource, used by
+    * render target / depth stencil stages.
+    * \param usage  bitmaks of PIPE_BIND_* flags
+    */
+   struct pipe_surface *(*create_surface)(struct pipe_context *ctx,
+                                          struct pipe_resource *resource,
+                                          const struct pipe_surface *templat);
+
+   void (*surface_destroy)(struct pipe_context *ctx,
+                           struct pipe_surface *);
+
+   /**
     * Get a transfer object for transferring data to/from a texture.
     *
     * Transfers are (by default) context-private and allow uploads to be
     * interleaved with
     */
    struct pipe_transfer *(*get_transfer)(struct pipe_context *,
-					 struct pipe_resource *resource,
-					 struct pipe_subresource,
-					 unsigned usage,  /* a combination of PIPE_TRANSFER_x */
-					 const struct pipe_box *);
+                                         struct pipe_resource *resource,
+                                         unsigned level,
+                                         unsigned usage,  /* a combination of PIPE_TRANSFER_x */
+                                         const struct pipe_box *);
 
    void (*transfer_destroy)(struct pipe_context *,
-                                struct pipe_transfer *);
-   
+                            struct pipe_transfer *);
+
    void *(*transfer_map)( struct pipe_context *,
                           struct pipe_transfer *transfer );
 
@@ -343,13 +391,13 @@ struct pipe_context {
     * pointer.  XXX: strides??
     */
    void (*transfer_inline_write)( struct pipe_context *,
-				  struct pipe_resource *,
-				  struct pipe_subresource,
-				  unsigned usage, /* a combination of PIPE_TRANSFER_x */
-				  const struct pipe_box *,
-				  const void *data,
-				  unsigned stride,
-				  unsigned slice_stride);
+                                  struct pipe_resource *,
+                                  unsigned level,
+                                  unsigned usage, /* a combination of PIPE_TRANSFER_x */
+                                  const struct pipe_box *,
+                                  const void *data,
+                                  unsigned stride,
+                                  unsigned layer_stride);
 
 };
 

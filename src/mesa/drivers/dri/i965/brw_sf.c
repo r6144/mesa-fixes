@@ -108,7 +108,7 @@ static void compile_sf_prog( struct brw_context *brw,
     */
    program = brw_get_program(&c.func, &program_size);
 
-   if (INTEL_DEBUG & DEBUG_SF) {
+   if (unlikely(INTEL_DEBUG & DEBUG_SF)) {
       printf("sf:\n");
       for (i = 0; i < program_size / sizeof(struct brw_instruction); i++)
 	 brw_disasm(stdout, &((struct brw_instruction *)program)[i],
@@ -118,7 +118,7 @@ static void compile_sf_prog( struct brw_context *brw,
 
    /* Upload
     */
-   dri_bo_unreference(brw->sf.prog_bo);
+   drm_intel_bo_unreference(brw->sf.prog_bo);
    brw->sf.prog_bo = brw_upload_cache_with_auxdata(&brw->cache, BRW_SF_PROG,
 						   &c.key, sizeof(c.key),
 						   NULL, 0,
@@ -132,7 +132,7 @@ static void compile_sf_prog( struct brw_context *brw,
  */
 static void upload_sf_prog(struct brw_context *brw)
 {
-   GLcontext *ctx = &brw->intel.ctx;
+   struct gl_context *ctx = &brw->intel.ctx;
    struct brw_sf_prog_key key;
 
    memset(&key, 0, sizeof(key));
@@ -191,7 +191,7 @@ static void upload_sf_prog(struct brw_context *brw)
       key.frontface_ccw = (ctx->Polygon.FrontFace == GL_CCW) ^ (ctx->DrawBuffer->Name != 0);
    }
 
-   dri_bo_unreference(brw->sf.prog_bo);
+   drm_intel_bo_unreference(brw->sf.prog_bo);
    brw->sf.prog_bo = brw_search_cache(&brw->cache, BRW_SF_PROG,
 				      &key, sizeof(key),
 				      NULL, 0,

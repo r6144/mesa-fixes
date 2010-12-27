@@ -50,13 +50,8 @@ void failover_fail_over( struct failover_context *failover )
 }
 
 
-static void failover_draw_elements( struct pipe_context *pipe,
-                                    struct pipe_resource *indexResource,
-                                    unsigned indexSize,
-                                    int indexBias,
-                                    unsigned prim, 
-                                    unsigned start, 
-                                    unsigned count)
+static void failover_draw_vbo( struct pipe_context *pipe,
+                               const struct pipe_draw_info *info)
 {
    struct failover_context *failover = failover_context( pipe );
 
@@ -70,13 +65,7 @@ static void failover_draw_elements( struct pipe_context *pipe,
    /* Try hardware:
     */
    if (failover->mode == FO_HW) {
-      failover->hw->draw_elements( failover->hw, 
-                                   indexResource, 
-                                   indexSize, 
-                                   indexBias,
-                                   prim, 
-                                   start, 
-                                   count );
+      failover->hw->draw_vbo( failover->hw, info );
    }
 
    /* Possibly try software:
@@ -88,13 +77,7 @@ static void failover_draw_elements( struct pipe_context *pipe,
 	 failover_state_emit( failover );
       }
 
-      failover->sw->draw_elements( failover->sw, 
-				   indexResource, 
-				   indexSize, 
-				   indexBias,
-				   prim, 
-				   start, 
-				   count );
+      failover->sw->draw_vbo( failover->sw, info );
 
       /* Be ready to switch back to hardware rendering without an
        * intervening flush.  Unlikely to be much performance impact to
@@ -104,23 +87,16 @@ static void failover_draw_elements( struct pipe_context *pipe,
    }
 }
 
-
-static void failover_draw_arrays( struct pipe_context *pipe,
-				     unsigned prim, unsigned start, unsigned count)
-{
-   failover_draw_elements(pipe, NULL, 0, 0, prim, start, count);
-}
-
 static unsigned int
 failover_is_resource_referenced( struct pipe_context *_pipe,
-				 struct pipe_resource *resource,
-				 unsigned face, unsigned level)
+                                 struct pipe_resource *resource,
+                                 unsigned level, int layer)
 {
    struct failover_context *failover = failover_context( _pipe );
    struct pipe_context *pipe = (failover->mode == FO_HW) ?
       failover->hw : failover->sw;
 
-   return pipe->is_resource_referenced(pipe, resource, face, level);
+   return pipe->is_resource_referenced(pipe, resource, level, layer);
 }
 
 struct pipe_context *failover_create( struct pipe_context *hw,
@@ -140,12 +116,14 @@ struct pipe_context *failover_create( struct pipe_context *hw,
    failover->pipe.get_name = hw->get_name;
    failover->pipe.get_vendor = hw->get_vendor;
    failover->pipe.get_param = hw->get_param;
+   failover->pipe.get_shader_param = hw->get_shader_param;
    failover->pipe.get_paramf = hw->get_paramf;
 #endif
 
-   failover->pipe.draw_arrays = failover_draw_arrays;
-   failover->pipe.draw_elements = failover_draw_elements;
+   failover->pipe.draw_vbo = failover_draw_vbo;
    failover->pipe.clear = hw->clear;
+   failover->pipe.clear_render_target = hw->clear_render_target;
+   failover->pipe.clear_depth_stencil = hw->clear_depth_stencil;
 
    /* No software occlusion fallback (or other optional functionality)
     * at this point - if the hardware doesn't support it, don't
@@ -156,14 +134,13 @@ struct pipe_context *failover_create( struct pipe_context *hw,
 
    failover_init_state_functions( failover );
 
-   failover->pipe.surface_copy = hw->surface_copy;
-   failover->pipe.surface_fill = hw->surface_fill;
+   failover->pipe.resource_copy_region = hw->resource_copy_region;
 
 #if 0
-   failover->pipe.texture_create = hw->texture_create;
-   failover->pipe.texture_destroy = hw->texture_destroy;
-   failover->pipe.get_tex_surface = hw->get_tex_surface;
-   failover->pipe.texture_update = hw->texture_update;
+   failover->pipe.resource_create = hw->resource_create;
+   failover->pipe.resource_destroy = hw->resource_destroy;
+   failover->pipe.create_surface = hw->create_surface;
+   failover->pipe.surface_destroy = hw->surface_destroy;
 #endif
 
    failover->pipe.flush = hw->flush;

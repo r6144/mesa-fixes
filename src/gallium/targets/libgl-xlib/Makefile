@@ -10,7 +10,7 @@ include $(TOP)/configs/current
 
 GL_MAJOR = 1
 GL_MINOR = 5
-GL_TINY = 0$(MESA_MAJOR)0$(MESA_MINOR)0$(MESA_TINY)
+GL_TINY = 0$(MESA_MAJOR)$(MESA_MINOR)0$(MESA_TINY)
 
 
 INCLUDE_DIRS = \
@@ -25,7 +25,10 @@ INCLUDE_DIRS = \
 	$(X11_CFLAGS)
 
 DEFINES += \
-	-DGALLIUM_SOFTPIPE
+	-DGALLIUM_SOFTPIPE \
+	-DGALLIUM_RBUG \
+	-DGALLIUM_TRACE \
+	-DGALLIUM_GALAHAD
 #-DGALLIUM_CELL will be defined by the config */
 
 XLIB_TARGET_SOURCES = \
@@ -43,11 +46,19 @@ LIBS = \
 	$(TOP)/src/gallium/winsys/sw/xlib/libws_xlib.a \
 	$(TOP)/src/gallium/drivers/trace/libtrace.a \
 	$(TOP)/src/gallium/drivers/rbug/librbug.a \
-	$(TOP)/src/gallium/drivers/identity/libidentity.a \
+	$(TOP)/src/gallium/drivers/galahad/libgalahad.a \
 	$(TOP)/src/mapi/glapi/libglapi.a \
 	$(TOP)/src/mesa/libmesagallium.a \
 	$(GALLIUM_AUXILIARIES) \
 	$(CELL_SPU_LIB) \
+
+
+# LLVM
+ifeq ($(MESA_LLVM),1)
+DEFINES += -DGALLIUM_LLVMPIPE
+GL_LIB_DEPS += $(LLVM_LIBS) 
+LDFLAGS += $(LLVM_LDFLAGS)
+endif
 
 
 .SUFFIXES : .cpp
@@ -68,8 +79,9 @@ $(TOP)/$(LIB_DIR)/gallium:
 # Make the libGL.so library
 $(TOP)/$(LIB_DIR)/gallium/$(GL_LIB_NAME): $(XLIB_TARGET_OBJECTS) $(LIBS) Makefile
 	$(TOP)/bin/mklib -o $(GL_LIB) \
-		-linker "$(CC)" \
+		-linker "$(CXX)" -ldflags '$(LDFLAGS)' \
 		-major $(GL_MAJOR) -minor $(GL_MINOR) -patch $(GL_TINY) \
+		-cplusplus \
 		-install $(TOP)/$(LIB_DIR)/gallium \
 		$(MKLIB_OPTIONS) $(XLIB_TARGET_OBJECTS) \
 		-Wl,--start-group $(LIBS) -Wl,--end-group $(GL_LIB_DEPS)
@@ -97,7 +109,7 @@ tags:
 	etags `find . -name \*.[ch]` $(TOP)/include/GL/*.h
 
 clean:
-	-rm -f *.o
+	-rm -f *.o depend
 
 
 include depend

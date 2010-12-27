@@ -54,6 +54,11 @@ struct lp_jit_texture
    uint32_t row_stride[LP_MAX_TEXTURE_LEVELS];
    uint32_t img_stride[LP_MAX_TEXTURE_LEVELS];
    const void *data[LP_MAX_TEXTURE_LEVELS];
+   /* sampler state, actually */
+   float min_lod;
+   float max_lod;
+   float lod_bias;
+   float border_color[4];
 };
 
 
@@ -65,6 +70,10 @@ enum {
    LP_JIT_TEXTURE_ROW_STRIDE,
    LP_JIT_TEXTURE_IMG_STRIDE,
    LP_JIT_TEXTURE_DATA,
+   LP_JIT_TEXTURE_MIN_LOD,
+   LP_JIT_TEXTURE_MAX_LOD,
+   LP_JIT_TEXTURE_LOD_BIAS,
+   LP_JIT_TEXTURE_BORDER_COLOR,
    LP_JIT_TEXTURE_NUM_FIELDS  /* number of fields above */
 };
 
@@ -89,9 +98,6 @@ struct lp_jit_context
 
    uint32_t stencil_ref_front, stencil_ref_back;
 
-   /** floats, not ints */
-   float scissor_xmin, scissor_ymin, scissor_xmax, scissor_ymax;
-
    /* FIXME: store (also?) in floats */
    uint8_t *blend_color;
 
@@ -108,45 +114,29 @@ enum {
    LP_JIT_CTX_ALPHA_REF,
    LP_JIT_CTX_STENCIL_REF_FRONT,
    LP_JIT_CTX_STENCIL_REF_BACK,
-   LP_JIT_CTX_SCISSOR_XMIN,
-   LP_JIT_CTX_SCISSOR_YMIN,
-   LP_JIT_CTX_SCISSOR_XMAX,
-   LP_JIT_CTX_SCISSOR_YMAX,
    LP_JIT_CTX_BLEND_COLOR,
    LP_JIT_CTX_TEXTURES,
    LP_JIT_CTX_COUNT
 };
 
 
-#define lp_jit_context_constants(_builder, _ptr) \
-   lp_build_struct_get(_builder, _ptr, LP_JIT_CTX_CONSTANTS, "constants")
+#define lp_jit_context_constants(_gallivm, _ptr) \
+   lp_build_struct_get(_gallivm, _ptr, LP_JIT_CTX_CONSTANTS, "constants")
 
-#define lp_jit_context_alpha_ref_value(_builder, _ptr) \
-   lp_build_struct_get(_builder, _ptr, LP_JIT_CTX_ALPHA_REF, "alpha_ref_value")
+#define lp_jit_context_alpha_ref_value(_gallivm, _ptr) \
+   lp_build_struct_get(_gallivm, _ptr, LP_JIT_CTX_ALPHA_REF, "alpha_ref_value")
 
-#define lp_jit_context_stencil_ref_front_value(_builder, _ptr) \
-   lp_build_struct_get(_builder, _ptr, LP_JIT_CTX_STENCIL_REF_FRONT, "stencil_ref_front")
+#define lp_jit_context_stencil_ref_front_value(_gallivm, _ptr) \
+   lp_build_struct_get(_gallivm, _ptr, LP_JIT_CTX_STENCIL_REF_FRONT, "stencil_ref_front")
 
-#define lp_jit_context_stencil_ref_back_value(_builder, _ptr) \
-   lp_build_struct_get(_builder, _ptr, LP_JIT_CTX_STENCIL_REF_BACK, "stencil_ref_back")
+#define lp_jit_context_stencil_ref_back_value(_gallivm, _ptr) \
+   lp_build_struct_get(_gallivm, _ptr, LP_JIT_CTX_STENCIL_REF_BACK, "stencil_ref_back")
 
-#define lp_jit_context_scissor_xmin_value(_builder, _ptr) \
-   lp_build_struct_get(_builder, _ptr, LP_JIT_CTX_SCISSOR_XMIN, "scissor_xmin")
+#define lp_jit_context_blend_color(_gallivm, _ptr) \
+   lp_build_struct_get(_gallivm, _ptr, LP_JIT_CTX_BLEND_COLOR, "blend_color")
 
-#define lp_jit_context_scissor_ymin_value(_builder, _ptr) \
-   lp_build_struct_get(_builder, _ptr, LP_JIT_CTX_SCISSOR_YMIN, "scissor_ymin")
-
-#define lp_jit_context_scissor_xmax_value(_builder, _ptr) \
-   lp_build_struct_get(_builder, _ptr, LP_JIT_CTX_SCISSOR_XMAX, "scissor_xmax")
-
-#define lp_jit_context_scissor_ymax_value(_builder, _ptr) \
-   lp_build_struct_get(_builder, _ptr, LP_JIT_CTX_SCISSOR_YMAX, "scissor_ymax")
-
-#define lp_jit_context_blend_color(_builder, _ptr) \
-   lp_build_struct_get(_builder, _ptr, LP_JIT_CTX_BLEND_COLOR, "blend_color")
-
-#define lp_jit_context_textures(_builder, _ptr) \
-   lp_build_struct_get_ptr(_builder, _ptr, LP_JIT_CTX_TEXTURES, "textures")
+#define lp_jit_context_textures(_gallivm, _ptr) \
+   lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CTX_TEXTURES, "textures")
 
 
 
@@ -154,49 +144,14 @@ typedef void
 (*lp_jit_frag_func)(const struct lp_jit_context *context,
                     uint32_t x,
                     uint32_t y,
-                    float facing,
+                    uint32_t facing,
                     const void *a0,
                     const void *dadx,
                     const void *dady,
                     uint8_t **color,
                     void *depth,
-                    const int32_t c1,
-                    const int32_t c2,
-                    const int32_t c3,
-                    const int32_t *step1,
-                    const int32_t *step2,
-                    const int32_t *step3,
+                    uint32_t mask,
                     uint32_t *counter);
-
-
-/** cast wrapper to avoid compiler warnings */
-static INLINE lp_jit_frag_func
-cast_voidptr_to_lp_jit_frag_func(void *v)
-{
-   union {
-      void *v;
-      lp_jit_frag_func f;
-   } u;
-   assert(sizeof(u.v) == sizeof(u.f));
-   u.v = v;
-   return u.f;
-}
-
-
-/** cast wrapper */
-static INLINE void *
-cast_lp_jit_frag_func_to_voidptr(lp_jit_frag_func f)
-{
-   union {
-      void *v;
-      lp_jit_frag_func f;
-   } u;
-   assert(sizeof(u.v) == sizeof(u.f));
-   u.f = f;
-   return u.v;
-}
-
-
 
 
 void
@@ -205,6 +160,10 @@ lp_jit_screen_cleanup(struct llvmpipe_screen *screen);
 
 void
 lp_jit_screen_init(struct llvmpipe_screen *screen);
+
+
+LLVMTypeRef
+lp_jit_get_context_type(struct llvmpipe_context *lp);
 
 
 #endif /* LP_JIT_H */

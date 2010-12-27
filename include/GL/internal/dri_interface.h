@@ -74,7 +74,6 @@ typedef struct __DRIcoreExtensionRec		__DRIcoreExtension;
 typedef struct __DRIextensionRec		__DRIextension;
 typedef struct __DRIcopySubBufferExtensionRec	__DRIcopySubBufferExtension;
 typedef struct __DRIswapControlExtensionRec	__DRIswapControlExtension;
-typedef struct __DRIallocateExtensionRec	__DRIallocateExtension;
 typedef struct __DRIframeTrackingExtensionRec	__DRIframeTrackingExtension;
 typedef struct __DRImediaStreamCounterExtensionRec	__DRImediaStreamCounterExtension;
 typedef struct __DRItexOffsetExtensionRec	__DRItexOffsetExtension;
@@ -147,23 +146,6 @@ struct __DRIswapControlExtensionRec {
     __DRIextension base;
     void (*setSwapInterval)(__DRIdrawable *drawable, unsigned int inteval);
     unsigned int (*getSwapInterval)(__DRIdrawable *drawable);
-};
-
-/**
- * Used by drivers that implement the GLX_MESA_allocate_memory.
- */
-#define __DRI_ALLOCATE "DRI_Allocate"
-#define __DRI_ALLOCATE_VERSION 1
-struct __DRIallocateExtensionRec {
-    __DRIextension base;
-
-    void *(*allocateMemory)(__DRIscreen *screen, GLsizei size,
-			    GLfloat readfreq, GLfloat writefreq,
-			    GLfloat priority);
-   
-    void (*freeMemory)(__DRIscreen *screen, GLvoid *pointer);
-   
-    GLuint (*memoryOffset)(__DRIscreen *screen, const GLvoid *pointer);
 };
 
 /**
@@ -807,12 +789,23 @@ struct __DRIdri2ExtensionRec {
 #define __DRI_IMAGE_FORMAT_XRGB8888     0x1002
 #define __DRI_IMAGE_FORMAT_ARGB8888     0x1003
 
+#define __DRI_IMAGE_USE_SHARE		0x0001
+#define __DRI_IMAGE_USE_SCANOUT		0x0002
+
+/**
+ * queryImage attributes
+ */
+
+#define __DRI_IMAGE_ATTRIB_STRIDE	0x2000
+#define __DRI_IMAGE_ATTRIB_HANDLE	0x2001
+#define __DRI_IMAGE_ATTRIB_NAME		0x2002
+
 typedef struct __DRIimageRec          __DRIimage;
 typedef struct __DRIimageExtensionRec __DRIimageExtension;
 struct __DRIimageExtensionRec {
     __DRIextension base;
 
-    __DRIimage *(*createImageFromName)(__DRIcontext *context,
+    __DRIimage *(*createImageFromName)(__DRIscreen *screen,
 				       int width, int height, int format,
 				       int name, int pitch,
 				       void *loaderPrivate);
@@ -822,7 +815,15 @@ struct __DRIimageExtensionRec {
 					       void *loaderPrivate);
 
     void (*destroyImage)(__DRIimage *image);
+
+    __DRIimage *(*createImage)(__DRIscreen *screen,
+			       int width, int height, int format,
+			       unsigned int use,
+			       void *loaderPrivate);
+
+   GLboolean (*queryImage)(__DRIimage *image, int attrib, int *value);
 };
+
 
 /**
  * This extension must be implemented by the loader and passed to the
@@ -840,7 +841,7 @@ typedef struct __DRIimageLookupExtensionRec __DRIimageLookupExtension;
 struct __DRIimageLookupExtensionRec {
     __DRIextension base;
 
-    __DRIimage *(*lookupEGLImage)(__DRIcontext *context, void *image,
+    __DRIimage *(*lookupEGLImage)(__DRIscreen *screen, void *image,
 				  void *loaderPrivate);
 };
 

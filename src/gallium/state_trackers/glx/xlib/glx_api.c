@@ -34,10 +34,6 @@
 #include "GL/glx.h"
 
 #include "xm_api.h"
-#include "main/context.h"
-#include "main/macros.h"
-#include "main/imports.h"
-#include "main/version.h"
 
 
 /* This indicates the client-side GLX API and GLX encoder version. */
@@ -49,9 +45,6 @@
  */
 #define SERVER_MAJOR_VERSION 1
 #define SERVER_MINOR_VERSION 4
-
-/* This is appended onto the glXGetClient/ServerString version strings. */
-#define MESA_GLX_VERSION "Mesa " MESA_VERSION_STRING
 
 /* Who implemented this GLX? */
 #define VENDOR "Brian Paul"
@@ -603,8 +596,8 @@ destroy_visuals_on_display(Display *dpy)
 static int
 close_display_callback(Display *dpy, XExtCodes *codes)
 {
-   destroy_visuals_on_display(dpy);
    xmesa_destroy_buffers_on_display(dpy);
+   destroy_visuals_on_display(dpy);
    return 0;
 }
 
@@ -1299,7 +1292,7 @@ glXCopyContext( Display *dpy, GLXContext src, GLXContext dst,
    XMesaContext xm_dst = dst->xmesaContext;
    (void) dpy;
    if (MakeCurrent_PrevContext == src) {
-      _mesa_Flush();
+      glFlush();
    }
    XMesaCopyContext(xm_src, xm_dst, mask);
 }
@@ -1676,7 +1669,7 @@ glXQueryServerString( Display *dpy, int screen, int name )
 {
    static char version[1000];
    sprintf(version, "%d.%d %s",
-	   SERVER_MAJOR_VERSION, SERVER_MINOR_VERSION, MESA_GLX_VERSION);
+	   SERVER_MAJOR_VERSION, SERVER_MINOR_VERSION, xmesa_get_name());
 
    (void) dpy;
    (void) screen;
@@ -1701,7 +1694,7 @@ glXGetClientString( Display *dpy, int name )
 {
    static char version[1000];
    sprintf(version, "%d.%d %s", CLIENT_MAJOR_VERSION,
-	   CLIENT_MINOR_VERSION, MESA_GLX_VERSION);
+	   CLIENT_MINOR_VERSION, xmesa_get_name());
 
    (void) dpy;
 

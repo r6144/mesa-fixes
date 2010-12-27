@@ -31,6 +31,7 @@
 #include "os/os_thread.h"
 #include "util/u_format.h"
 #include "gallivm/lp_bld_debug.h"
+#include "lp_memory.h"
 #include "lp_rast.h"
 #include "lp_scene.h"
 #include "lp_state.h"
@@ -39,20 +40,53 @@
 #include "lp_limits.h"
 
 
-struct lp_rasterizer;
+/* If we crash in a jitted function, we can examine jit_line and jit_state
+ * to get some info.  This is not thread-safe, however.
+ */
+#ifdef DEBUG
 
+struct lp_rasterizer_task;
+extern int jit_line;
+extern const struct lp_rast_state *jit_state;
+extern const struct lp_rasterizer_task *jit_task;
+
+#define BEGIN_JIT_CALL(state, task)                  \
+   do { \
+      jit_line = __LINE__; \
+      jit_state = state; \
+      jit_task = task; \
+   } while (0)
+
+#define END_JIT_CALL() \
+   do { \
+      jit_line = 0; \
+      jit_state = NULL; \
+   } while (0)
+
+#else
+
+#define BEGIN_JIT_CALL(X, Y)
+#define END_JIT_CALL()
+
+#endif
+
+
+struct lp_rasterizer;
+struct cmd_bin;
 
 /**
  * Per-thread rasterization state
  */
 struct lp_rasterizer_task
 {
+   const struct cmd_bin *bin;
+   const struct lp_rast_state *state;
+
+   struct lp_scene *scene;
    unsigned x, y;          /**< Pos of this tile in framebuffer, in pixels */
 
    uint8_t *color_tiles[PIPE_MAX_COLOR_BUFS];
    uint8_t *depth_tile;
-
-   const struct lp_rast_state *current_state;
 
    /** "back" pointer */
    struct lp_rasterizer *rast;
@@ -62,6 +96,7 @@ struct lp_rasterizer_task
 
    /* occlude counter for visiable pixels */
    uint32_t vis_counter;
+   struct llvmpipe_query *query;
 
    pipe_semaphore work_ready;
    pipe_semaphore work_done;
@@ -77,39 +112,8 @@ struct lp_rasterizer
 {
    boolean exit_flag;
 
-   /* Framebuffer stuff
-    */
-   struct {
-      void *map;
-      unsigned tiles_per_row;
-      unsigned blocksize;
-      enum pipe_format format;
-   } cbuf[PIPE_MAX_COLOR_BUFS];
-
-   struct {
-      uint8_t *map;
-      unsigned stride;
-      unsigned blocksize;
-   } zsbuf;
-
-   struct {
-      unsigned nr_cbufs;
-      unsigned clear_color;
-      unsigned clear_depth;
-      char clear_stencil;
-   } state;
-
    /** The incoming queue of scenes ready to rasterize */
    struct lp_scene_queue *full_scenes;
-
-   /**
-    * The outgoing queue of processed scenes to return to setup module
-    *
-    * XXX: while scenes are per-context but the rasterizer is
-    * (potentially) shared, these empty scenes should be returned to
-    * the context which created them rather than retained here.
-    */
-   /*   struct lp_scene_queue *empty_scenes; */
 
    /** The scene currently being rasterized by the threads */
    struct lp_scene *curr_scene;
@@ -125,10 +129,12 @@ struct lp_rasterizer
 };
 
 
-void lp_rast_shade_quads( struct lp_rasterizer_task *task,
-                          const struct lp_rast_shader_inputs *inputs,
-                          unsigned x, unsigned y,
-                          int32_t c1, int32_t c2, int32_t c3);
+void
+lp_rast_shade_quads_mask(struct lp_rasterizer_task *task,
+                         const struct lp_rast_shader_inputs *inputs,
+                         unsigned x, unsigned y,
+                         unsigned mask);
+
 
 
 /**
@@ -139,25 +145,63 @@ void lp_rast_shade_quads( struct lp_rasterizer_task *task,
  * \param x, y location of 4x4 block in window coords
  */
 static INLINE void *
-lp_rast_get_depth_block_pointer(const struct lp_rasterizer *rast,
+lp_rast_get_depth_block_pointer(struct lp_rasterizer_task *task,
                                 unsigned x, unsigned y)
 {
+   const struct lp_scene *scene = task->scene;
    void *depth;
 
    assert((x % TILE_VECTOR_WIDTH) == 0);
    assert((y % TILE_VECTOR_HEIGHT) == 0);
 
-   assert(rast->zsbuf.map || !rast->curr_scene->fb.zsbuf);
+   if (!scene->zsbuf.map) {
+      /* Either out of memory or no zsbuf.  Can't tell without access
+       * to the state.  Just use dummy tile memory, but don't print
+       * the oom warning as this most likely because there is no
+       * zsbuf.
+       */
+      return lp_dummy_tile;
+   }
 
-   if (!rast->zsbuf.map)
-      return NULL;
-
-   depth = (rast->zsbuf.map +
-            rast->zsbuf.stride * y +
-            rast->zsbuf.blocksize * x * TILE_VECTOR_HEIGHT);
+   depth = (scene->zsbuf.map +
+            scene->zsbuf.stride * y +
+            scene->zsbuf.blocksize * x * TILE_VECTOR_HEIGHT);
 
    assert(lp_check_alignment(depth, 16));
    return depth;
+}
+
+
+/**
+ * Get pointer to the swizzled color tile
+ */
+static INLINE uint8_t *
+lp_rast_get_color_tile_pointer(struct lp_rasterizer_task *task,
+                               unsigned buf, enum lp_texture_usage usage)
+{
+   const struct lp_scene *scene = task->scene;
+
+   assert(task->x % TILE_SIZE == 0);
+   assert(task->y % TILE_SIZE == 0);
+   assert(buf < scene->fb.nr_cbufs);
+
+   if (!task->color_tiles[buf]) {
+      struct pipe_surface *cbuf = scene->fb.cbufs[buf];
+      struct llvmpipe_resource *lpt;
+      assert(cbuf);
+      lpt = llvmpipe_resource(cbuf->texture);
+      task->color_tiles[buf] = lp_swizzled_cbuf[task->thread_index][buf];
+
+      if (usage != LP_TEX_USAGE_WRITE_ALL) {
+         llvmpipe_swizzle_cbuf_tile(lpt,
+                                    cbuf->u.tex.first_layer,
+                                    cbuf->u.tex.level,
+                                    task->x, task->y,
+                                    task->color_tiles[buf]);
+      }
+   }
+
+   return task->color_tiles[buf];
 }
 
 
@@ -178,7 +222,7 @@ lp_rast_get_color_block_pointer(struct lp_rasterizer_task *task,
    assert((x % TILE_VECTOR_WIDTH) == 0);
    assert((y % TILE_VECTOR_HEIGHT) == 0);
 
-   color = task->color_tiles[buf];
+   color = lp_rast_get_color_tile_pointer(task, buf, LP_TEX_USAGE_READ_WRITE);
    assert(color);
 
    px = x % TILE_SIZE;
@@ -203,30 +247,65 @@ lp_rast_shade_quads_all( struct lp_rasterizer_task *task,
                          const struct lp_rast_shader_inputs *inputs,
                          unsigned x, unsigned y )
 {
-   struct lp_rasterizer *rast = task->rast;
-   const struct lp_rast_state *state = task->current_state;
+   const struct lp_scene *scene = task->scene;
+   const struct lp_rast_state *state = task->state;
+   struct lp_fragment_shader_variant *variant = state->variant;
    uint8_t *color[PIPE_MAX_COLOR_BUFS];
    void *depth;
    unsigned i;
 
    /* color buffer */
-   for (i = 0; i < rast->state.nr_cbufs; i++)
+   for (i = 0; i < scene->fb.nr_cbufs; i++)
       color[i] = lp_rast_get_color_block_pointer(task, i, x, y);
 
-   depth = lp_rast_get_depth_block_pointer(rast, x, y);
+   depth = lp_rast_get_depth_block_pointer(task, x, y);
 
    /* run shader on 4x4 block */
-   state->jit_function[RAST_WHOLE]( &state->jit_context,
-                                    x, y,
-                                    inputs->facing,
-                                    inputs->a0,
-                                    inputs->dadx,
-                                    inputs->dady,
-                                    color,
-                                    depth,
-                                    INT_MIN, INT_MIN, INT_MIN,
-                                    NULL, NULL, NULL, &task->vis_counter );
+   BEGIN_JIT_CALL(state, task);
+   variant->jit_function[RAST_WHOLE]( &state->jit_context,
+                                      x, y,
+                                      inputs->frontfacing,
+                                      GET_A0(inputs),
+                                      GET_DADX(inputs),
+                                      GET_DADY(inputs),
+                                      color,
+                                      depth,
+                                      0xffff,
+                                      &task->vis_counter );
+   END_JIT_CALL();
 }
 
+void lp_rast_triangle_1( struct lp_rasterizer_task *, 
+                         const union lp_rast_cmd_arg );
+void lp_rast_triangle_2( struct lp_rasterizer_task *, 
+                         const union lp_rast_cmd_arg );
+void lp_rast_triangle_3( struct lp_rasterizer_task *, 
+                         const union lp_rast_cmd_arg );
+void lp_rast_triangle_4( struct lp_rasterizer_task *, 
+                         const union lp_rast_cmd_arg );
+void lp_rast_triangle_5( struct lp_rasterizer_task *, 
+                         const union lp_rast_cmd_arg );
+void lp_rast_triangle_6( struct lp_rasterizer_task *, 
+                         const union lp_rast_cmd_arg );
+void lp_rast_triangle_7( struct lp_rasterizer_task *, 
+                         const union lp_rast_cmd_arg );
+void lp_rast_triangle_8( struct lp_rasterizer_task *, 
+                         const union lp_rast_cmd_arg );
+
+void lp_rast_triangle_3_4(struct lp_rasterizer_task *,
+			  const union lp_rast_cmd_arg );
+
+void lp_rast_triangle_3_16( struct lp_rasterizer_task *, 
+                            const union lp_rast_cmd_arg );
+
+void lp_rast_triangle_4_16( struct lp_rasterizer_task *, 
+                            const union lp_rast_cmd_arg );
+
+void
+lp_rast_set_state(struct lp_rasterizer_task *task,
+                  const union lp_rast_cmd_arg arg);
+ 
+void
+lp_debug_bin( const struct cmd_bin *bin );
 
 #endif

@@ -32,16 +32,13 @@
 #include "pipe/p_screen.h"
 #include "pipe/p_context.h"
 #include "pipe/p_state.h"
-#include "state_tracker/drm_api.h"
+#include "state_tracker/drm_driver.h"
 #include "egllog.h"
 
 #include "native_x11.h"
 #include "x11_screen.h"
 
-enum dri2_surface_type {
-   DRI2_SURFACE_TYPE_WINDOW,
-   DRI2_SURFACE_TYPE_PIXMAP,
-};
+#ifdef GLX_DIRECT_RENDERING
 
 struct dri2_display {
    struct native_display base;
@@ -50,7 +47,6 @@ struct dri2_display {
 
    struct native_event_handler *event_handler;
 
-   struct drm_api *api;
    struct x11_screen *xscr;
    int xscr_number;
    const char *dri_driver;
@@ -65,7 +61,6 @@ struct dri2_display {
 struct dri2_surface {
    struct native_surface base;
    Drawable drawable;
-   enum dri2_surface_type type;
    enum pipe_format color_format;
    struct dri2_display *dri2dpy;
 
@@ -135,6 +130,7 @@ dri2_surface_process_drawable_buffers(struct native_surface *nsurf,
    templ.width0 = dri2surf->width;
    templ.height0 = dri2surf->height;
    templ.depth0 = 1;
+   templ.array_size = 1;
    templ.format = dri2surf->color_format;
    templ.bind = PIPE_BIND_RENDER_TARGET;
 
@@ -337,6 +333,32 @@ dri2_surface_swap_buffers(struct native_surface *nsurf)
 }
 
 static boolean
+dri2_surface_present(struct native_surface *nsurf,
+                     enum native_attachment natt,
+                     boolean preserve,
+                     uint swap_interval)
+{
+   boolean ret;
+
+   if (swap_interval)
+      return FALSE;
+
+   switch (natt) {
+   case NATIVE_ATTACHMENT_FRONT_LEFT:
+      ret = dri2_surface_flush_frontbuffer(nsurf);
+      break;
+   case NATIVE_ATTACHMENT_BACK_LEFT:
+      ret = dri2_surface_swap_buffers(nsurf);
+      break;
+   default:
+      ret = FALSE;
+      break;
+   }
+
+   return ret;
+}
+
+static boolean
 dri2_surface_validate(struct native_surface *nsurf, uint attachment_mask,
                       unsigned int *seq_num, struct pipe_resource **textures,
                       int *width, int *height)
@@ -411,12 +433,10 @@ dri2_surface_destroy(struct native_surface *nsurf)
 
 static struct dri2_surface *
 dri2_display_create_surface(struct native_display *ndpy,
-                            enum dri2_surface_type type,
                             Drawable drawable,
-                            const struct native_config *nconf)
+                            enum pipe_format color_format)
 {
    struct dri2_display *dri2dpy = dri2_display(ndpy);
-   struct dri2_config *dri2conf = dri2_config(nconf);
    struct dri2_surface *dri2surf;
 
    dri2surf = CALLOC_STRUCT(dri2_surface);
@@ -424,13 +444,11 @@ dri2_display_create_surface(struct native_display *ndpy,
       return NULL;
 
    dri2surf->dri2dpy = dri2dpy;
-   dri2surf->type = type;
    dri2surf->drawable = drawable;
-   dri2surf->color_format = dri2conf->base.color_format;
+   dri2surf->color_format = color_format;
 
    dri2surf->base.destroy = dri2_surface_destroy;
-   dri2surf->base.swap_buffers = dri2_surface_swap_buffers;
-   dri2surf->base.flush_frontbuffer = dri2_surface_flush_frontbuffer;
+   dri2surf->base.present = dri2_surface_present;
    dri2surf->base.validate = dri2_surface_validate;
    dri2surf->base.wait = dri2_surface_wait;
 
@@ -453,8 +471,8 @@ dri2_display_create_window_surface(struct native_display *ndpy,
 {
    struct dri2_surface *dri2surf;
 
-   dri2surf = dri2_display_create_surface(ndpy, DRI2_SURFACE_TYPE_WINDOW,
-         (Drawable) win, nconf);
+   dri2surf = dri2_display_create_surface(ndpy,
+         (Drawable) win, nconf->color_format);
    return (dri2surf) ? &dri2surf->base : NULL;
 }
 
@@ -465,8 +483,29 @@ dri2_display_create_pixmap_surface(struct native_display *ndpy,
 {
    struct dri2_surface *dri2surf;
 
-   dri2surf = dri2_display_create_surface(ndpy, DRI2_SURFACE_TYPE_PIXMAP,
-         (Drawable) pix, nconf);
+   if (!nconf) {
+      struct dri2_display *dri2dpy = dri2_display(ndpy);
+      uint depth, nconf_depth;
+      int i;
+
+      depth = x11_drawable_get_depth(dri2dpy->xscr, (Drawable) pix);
+      for (i = 0; i < dri2dpy->num_configs; i++) {
+         nconf_depth = util_format_get_blocksizebits(
+               dri2dpy->configs[i].base.color_format);
+         /* simple depth match for now */
+         if (depth == nconf_depth ||
+             (depth == 24 && depth + 8 == nconf_depth)) {
+            nconf = &dri2dpy->configs[i].base;
+            break;
+         }
+      }
+
+      if (!nconf)
+         return NULL;
+   }
+
+   dri2surf = dri2_display_create_surface(ndpy,
+         (Drawable) pix, nconf->color_format);
    return (dri2surf) ? &dri2surf->base : NULL;
 }
 
@@ -498,9 +537,9 @@ choose_color_format(const __GLcontextModes *mode, enum pipe_format formats[32])
 
 static boolean
 is_format_supported(struct pipe_screen *screen,
-                    enum pipe_format fmt, boolean is_color)
+                    enum pipe_format fmt, unsigned sample_count, boolean is_color)
 {
-   return screen->is_format_supported(screen, fmt, PIPE_TEXTURE_2D,
+   return screen->is_format_supported(screen, fmt, PIPE_TEXTURE_2D, sample_count,
          (is_color) ? PIPE_BIND_RENDER_TARGET :
          PIPE_BIND_DEPTH_STENCIL, 0);
 }
@@ -512,16 +551,17 @@ dri2_display_convert_config(struct native_display *ndpy,
 {
    enum pipe_format formats[32];
    int num_formats, i;
+   int sample_count = 0;
 
    if (!(mode->renderType & GLX_RGBA_BIT) || !mode->rgbMode)
       return FALSE;
 
-   /* skip single-buffered configs */
-   if (!mode->doubleBufferMode)
-      return FALSE;
-
    /* only interested in native renderable configs */
    if (!mode->xRenderable || !mode->drawableType)
+      return FALSE;
+
+   /* fast/slow configs are probably not relevant */
+   if (mode->visualRating == GLX_SLOW_CONFIG)
       return FALSE;
 
    nconf->buffer_mask = 1 << NATIVE_ATTACHMENT_FRONT_LEFT;
@@ -536,7 +576,7 @@ dri2_display_convert_config(struct native_display *ndpy,
    /* choose color format */
    num_formats = choose_color_format(mode, formats);
    for (i = 0; i < num_formats; i++) {
-      if (is_format_supported(ndpy->screen, formats[i], TRUE)) {
+      if (is_format_supported(ndpy->screen, formats[i], sample_count, TRUE)) {
          nconf->color_format = formats[i];
          break;
       }
@@ -544,17 +584,33 @@ dri2_display_convert_config(struct native_display *ndpy,
    if (nconf->color_format == PIPE_FORMAT_NONE)
       return FALSE;
 
-   if (mode->drawableType & GLX_WINDOW_BIT)
+   if ((mode->drawableType & GLX_WINDOW_BIT) && mode->visualID)
       nconf->window_bit = TRUE;
    if (mode->drawableType & GLX_PIXMAP_BIT)
       nconf->pixmap_bit = TRUE;
 
    nconf->native_visual_id = mode->visualID;
-   nconf->native_visual_type = mode->visualType;
+   switch (mode->visualType) {
+   case GLX_TRUE_COLOR:
+      nconf->native_visual_type = TrueColor;
+      break;
+   case GLX_DIRECT_COLOR:
+      nconf->native_visual_type = DirectColor;
+      break;
+   case GLX_PSEUDO_COLOR:
+      nconf->native_visual_type = PseudoColor;
+      break;
+   case GLX_STATIC_COLOR:
+      nconf->native_visual_type = StaticColor;
+      break;
+   case GLX_GRAY_SCALE:
+      nconf->native_visual_type = GrayScale;
+      break;
+   case GLX_STATIC_GRAY:
+      nconf->native_visual_type = StaticGray;
+      break;
+   }
    nconf->level = mode->level;
-   nconf->samples = mode->samples;
-
-   nconf->slow_config = (mode->visualRating == GLX_SLOW_CONFIG);
 
    if (mode->transparentPixel == GLX_TRANSPARENT_RGB) {
       nconf->transparent_rgb = TRUE;
@@ -590,8 +646,17 @@ dri2_display_get_configs(struct native_display *ndpy, int *num_configs)
       count = 0;
       for (i = 0; i < num_modes; i++) {
          struct native_config *nconf = &dri2dpy->configs[count].base;
-         if (dri2_display_convert_config(&dri2dpy->base, modes, nconf))
-            count++;
+
+         if (dri2_display_convert_config(&dri2dpy->base, modes, nconf)) {
+            int j;
+            /* look for duplicates */
+            for (j = 0; j < count; j++) {
+               if (memcmp(&dri2dpy->configs[j], nconf, sizeof(*nconf)) == 0)
+                  break;
+            }
+            if (j == count)
+               count++;
+         }
          modes = modes->next;
       }
 
@@ -632,9 +697,14 @@ dri2_display_get_param(struct native_display *ndpy,
 
    switch (param) {
    case NATIVE_PARAM_USE_NATIVE_BUFFER:
-      /* DRI2GetBuffers use the native buffers */
+      /* DRI2GetBuffers uses the native buffers */
       val = TRUE;
       break;
+   case NATIVE_PARAM_PRESERVE_BUFFER:
+      /* DRI2CopyRegion is used */
+      val = TRUE;
+      break;
+   case NATIVE_PARAM_MAX_SWAP_INTERVAL:
    default:
       val = 0;
       break;
@@ -661,8 +731,6 @@ dri2_display_destroy(struct native_display *ndpy)
       x11_screen_destroy(dri2dpy->xscr);
    if (dri2dpy->own_dpy)
       XCloseDisplay(dri2dpy->dpy);
-   if (dri2dpy->api && dri2dpy->api->destroy)
-      dri2dpy->api->destroy(dri2dpy->api);
    FREE(dri2dpy);
 }
 
@@ -694,7 +762,6 @@ static boolean
 dri2_display_init_screen(struct native_display *ndpy)
 {
    struct dri2_display *dri2dpy = dri2_display(ndpy);
-   const char *driver = dri2dpy->api->name;
    int fd;
 
    if (!x11_screen_support(dri2dpy->xscr, X11_SCREEN_EXTENSION_DRI2) ||
@@ -705,19 +772,15 @@ dri2_display_init_screen(struct native_display *ndpy)
 
    dri2dpy->dri_driver = x11_screen_probe_dri2(dri2dpy->xscr,
          &dri2dpy->dri_major, &dri2dpy->dri_minor);
-   if (!dri2dpy->dri_driver || !driver ||
-       strcmp(dri2dpy->dri_driver, driver) != 0) {
-      _eglLog(_EGL_WARNING, "Driver mismatch: %s != %s",
-            dri2dpy->dri_driver, dri2dpy->api->name);
-      return FALSE;
-   }
 
    fd = x11_screen_enable_dri2(dri2dpy->xscr,
          dri2_display_invalidate_buffers, &dri2dpy->base);
    if (fd < 0)
       return FALSE;
 
-   dri2dpy->base.screen = dri2dpy->api->create_screen(dri2dpy->api, fd, NULL);
+   dri2dpy->base.screen =
+      dri2dpy->event_handler->new_drm_screen(&dri2dpy->base,
+            dri2dpy->dri_driver, fd);
    if (!dri2dpy->base.screen) {
       _eglLog(_EGL_WARNING, "failed to create DRM screen");
       return FALSE;
@@ -740,9 +803,9 @@ dri2_display_hash_table_compare(void *key1, void *key2)
 }
 
 struct native_display *
-x11_create_dri2_display(EGLNativeDisplayType dpy,
+x11_create_dri2_display(Display *dpy,
                         struct native_event_handler *event_handler,
-                        struct drm_api *api)
+                        void *user_data)
 {
    struct dri2_display *dri2dpy;
 
@@ -751,7 +814,7 @@ x11_create_dri2_display(EGLNativeDisplayType dpy,
       return NULL;
 
    dri2dpy->event_handler = event_handler;
-   dri2dpy->api = api;
+   dri2dpy->base.user_data = user_data;
 
    dri2dpy->dpy = dpy;
    if (!dri2dpy->dpy) {
@@ -791,3 +854,15 @@ x11_create_dri2_display(EGLNativeDisplayType dpy,
 
    return &dri2dpy->base;
 }
+
+#else /* GLX_DIRECT_RENDERING */
+
+struct native_display *
+x11_create_dri2_display(Display *dpy,
+                        struct native_event_handler *event_handler,
+                        void *user_data)
+{
+   return NULL;
+}
+
+#endif /* GLX_DIRECT_RENDERING */

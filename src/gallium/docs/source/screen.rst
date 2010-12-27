@@ -36,7 +36,9 @@ The integer capabilities:
   bound.
 * ``OCCLUSION_QUERY``: Whether occlusion queries are available.
 * ``TIMER_QUERY``: Whether timer queries are available.
-* ``TEXTURE_SHADOW_MAP``: XXX
+* ``TEXTURE_SHADOW_MAP``: indicates whether the fragment shader hardware
+  can do the depth texture / Z comparison operation in TEX instructions
+  for shadow testing.
 * ``MAX_TEXTURE_2D_LEVELS``: The maximum number of mipmap levels available
   for a 2D texture.
 * ``MAX_TEXTURE_3D_LEVELS``: The maximum number of mipmap levels available
@@ -55,7 +57,13 @@ The integer capabilities:
   from color blend equations, in :ref:`Blend` state.
 * ``SM3``: Whether the vertex shader and fragment shader support equivalent
   opcodes to the Shader Model 3 specification. XXX oh god this is horrible
-* ``MAX_PREDICATE_REGISTERS``: XXX
+* ``MAX_PREDICATE_REGISTERS``: indicates the number of predicate registers
+  available.  Predicate register may be set as a side-effect of ALU
+  instructions to indicate less than, greater than or equal to zero.
+  Later instructions can use a predicate register to control writing to
+  each channel of destination registers.  NOTE: predicate registers have
+  not been fully implemented in Gallium at this time.  See the
+  GL_NV_fragment_program extension for more info (look for "condition codes").
 * ``MAX_COMBINED_SAMPLERS``: The total number of samplers accessible from
   the vertex and fragment shader, inclusive.
 * ``MAX_CONST_BUFFERS``: Maximum number of constant buffers that can be bound
@@ -147,9 +155,6 @@ resources might be created and handled quite differently.
 * ``PIPE_BIND_VERTEX_BUFFER``: A vertex buffer.
 * ``PIPE_BIND_INDEX_BUFFER``: An vertex index/element buffer.
 * ``PIPE_BIND_CONSTANT_BUFFER``: A buffer of shader constants.
-* ``PIPE_BIND_BLIT_SOURCE``: A blit source, as given to surface_copy.
-* ``PIPE_BIND_BLIT_DESTINATION``: A blit destination, as given to surface_copy
-  and surface_fill.
 * ``PIPE_BIND_TRANSFER_WRITE``: A transfer object which will be written to.
 * ``PIPE_BIND_TRANSFER_READ``: A transfer object which will be read from.
 * ``PIPE_BIND_CUSTOM``:
@@ -236,12 +241,14 @@ Determine if a resource in the given format can be used in a specific manner.
 
 **target** one of the PIPE_TEXTURE_x flags
 
+**sample_count** the number of samples. 0 and 1 mean no multisampling,
+the maximum allowed legal value is 32.
+
 **bindings** is a bitmask of :ref:`PIPE_BIND` flags.
 
 **geom_flags** is a bitmask of PIPE_TEXTURE_GEOM_x flags.
 
 Returns TRUE if all usages can be satisfied.
-
 
 .. _resource_create:
 
@@ -251,25 +258,33 @@ resource_create
 Create a new resource from a template.
 The following fields of the pipe_resource must be specified in the template:
 
-target
+**target** one of the pipe_texture_target enums.
+Note that PIPE_BUFFER and PIPE_TEXTURE_X are not really fundamentally different.
+Modern APIs allow using buffers as shader resources.
 
-format
+**format** one of the pipe_format enums.
 
-width0
+**width0** the width of the base mip level of the texture or size of the buffer.
 
-height0
+**height0** the height of the base mip level of the texture
+(1 for 1D or 1D array textures).
 
-depth0
+**depth0** the depth of the base mip level of the texture
+(1 for everything else).
 
-last_level
+**array_size the array size for 1D and 2D array textures.
+For cube maps this must be 6, for other textures 1.
 
-nr_samples
+**last_level** the last mip map level present.
 
-usage
+**nr_samples** the nr of msaa samples. 0 (or 1) specifies a resource
+which isn't multisampled.
 
-bind
+**usage** one of the PIPE_USAGE flags.
 
-flags
+**bind** bitmask of the PIPE_BIND flags.
+
+**flags** bitmask of PIPE_RESOURCE_FLAG flags.
 
 
 

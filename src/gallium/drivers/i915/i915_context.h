@@ -193,8 +193,7 @@ struct i915_velems_state {
 };
 
 
-struct i915_context
-{
+struct i915_context {
    struct pipe_context base;
 
    struct i915_winsys *iws;
@@ -221,6 +220,7 @@ struct i915_context
    struct pipe_sampler_view *fragment_sampler_views[PIPE_MAX_SAMPLERS];
    struct pipe_viewport_state viewport;
    struct pipe_vertex_buffer vertex_buffer[PIPE_MAX_ATTRIBS];
+   struct pipe_index_buffer index_buffer;
 
    unsigned dirty;
 
@@ -237,8 +237,6 @@ struct i915_context
 
    struct i915_state current;
    unsigned hardware_dirty;
-   
-   unsigned debug;
 };
 
 /* A flag for each state_tracker state object:
@@ -274,7 +272,7 @@ struct i915_context
 #define I915_HW_PROGRAM           (1<<I915_CACHE_PROGRAM)
 #define I915_HW_CONSTANTS         (1<<I915_CACHE_CONSTANTS)
 #define I915_HW_IMMEDIATE         (1<<(I915_MAX_CACHE+0))
-#define I915_HW_INVARIENT         (1<<(I915_MAX_CACHE+1))
+#define I915_HW_INVARIANT         (1<<(I915_MAX_CACHE+1))
 
 
 /***********************************************************************
@@ -318,8 +316,6 @@ struct pipe_context *i915_create_context(struct pipe_screen *screen,
 					 void *priv);
 
 
-
-
 /***********************************************************************
  * Inline conversion functions.  These are better-typed than the
  * macros used previously:
@@ -329,7 +325,6 @@ i915_context( struct pipe_context *pipe )
 {
    return (struct i915_context *)pipe;
 }
-
 
 
 #endif

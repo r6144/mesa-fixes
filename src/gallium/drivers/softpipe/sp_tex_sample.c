@@ -44,6 +44,9 @@
 #include "sp_tex_tile_cache.h"
 
 
+/** Set to one to help debug texture sampling */
+#define DEBUG_TEX 0
+
 
 /*
  * Return fractional part of 'f'.  Used for computing interpolation weights.
@@ -71,7 +74,7 @@ lerp(float a, float v0, float v1)
 
 
 /**
- * Do 2D/biliner interpolation of float values.
+ * Do 2D/bilinear interpolation of float values.
  * v00, v10, v01 and v11 are typically four texture samples in a square/box.
  * a and b are the horizontal and vertical interpolants.
  * It's important that this function is inlined when compiled with
@@ -105,14 +108,14 @@ lerp_3d(float a, float b, float c,
 
 /**
  * Compute coord % size for repeat wrap modes.
- * Note that if coord is a signed integer, coord % size doesn't give
- * the right value for coord < 0 (in terms of texture repeat).  Just
- * casting to unsigned fixes that.
+ * Note that if coord is negative, coord % size doesn't give the right
+ * value.  To avoid that problem we add a large multiple of the size
+ * (rather than using a conditional).
  */
 static INLINE int
 repeat(int coord, unsigned size)
 {
-   return (int) ((unsigned) coord % size);
+   return (coord + size * 1024) % size;
 }
 
 
@@ -542,7 +545,7 @@ wrap_linear_unorm_clamp_to_edge(const float s[4], unsigned size,
  * derivatives w.r.t X and Y, then compute lambda (level of detail).
  */
 static float
-compute_lambda_1d(const struct sp_sampler_varient *samp,
+compute_lambda_1d(const struct sp_sampler_variant *samp,
                   const float s[QUAD_SIZE],
                   const float t[QUAD_SIZE],
                   const float p[QUAD_SIZE])
@@ -557,7 +560,7 @@ compute_lambda_1d(const struct sp_sampler_varient *samp,
 
 
 static float
-compute_lambda_2d(const struct sp_sampler_varient *samp,
+compute_lambda_2d(const struct sp_sampler_variant *samp,
                   const float s[QUAD_SIZE],
                   const float t[QUAD_SIZE],
                   const float p[QUAD_SIZE])
@@ -576,7 +579,7 @@ compute_lambda_2d(const struct sp_sampler_varient *samp,
 
 
 static float
-compute_lambda_3d(const struct sp_sampler_varient *samp,
+compute_lambda_3d(const struct sp_sampler_variant *samp,
                   const float s[QUAD_SIZE],
                   const float t[QUAD_SIZE],
                   const float p[QUAD_SIZE])
@@ -605,7 +608,7 @@ compute_lambda_3d(const struct sp_sampler_varient *samp,
  * Since there aren't derivatives to use, just return 0.
  */
 static float
-compute_lambda_vert(const struct sp_sampler_varient *samp,
+compute_lambda_vert(const struct sp_sampler_variant *samp,
                     const float s[QUAD_SIZE],
                     const float t[QUAD_SIZE],
                     const float p[QUAD_SIZE])
@@ -631,7 +634,7 @@ compute_lambda_vert(const struct sp_sampler_varient *samp,
 
 
 static INLINE const float *
-get_texel_2d_no_border(const struct sp_sampler_varient *samp,
+get_texel_2d_no_border(const struct sp_sampler_variant *samp,
 		       union tex_tile_address addr, int x, int y)
 {
    const struct softpipe_tex_cached_tile *tile;
@@ -648,7 +651,7 @@ get_texel_2d_no_border(const struct sp_sampler_varient *samp,
 
 
 static INLINE const float *
-get_texel_2d(const struct sp_sampler_varient *samp,
+get_texel_2d(const struct sp_sampler_variant *samp,
 	     union tex_tile_address addr, int x, int y)
 {
    const struct pipe_resource *texture = samp->texture;
@@ -667,7 +670,7 @@ get_texel_2d(const struct sp_sampler_varient *samp,
 /* Gather a quad of adjacent texels within a tile:
  */
 static INLINE void
-get_texel_quad_2d_no_border_single_tile(const struct sp_sampler_varient *samp,
+get_texel_quad_2d_no_border_single_tile(const struct sp_sampler_variant *samp,
 					union tex_tile_address addr, 
 					unsigned x, unsigned y, 
 					const float *out[4])
@@ -691,7 +694,7 @@ get_texel_quad_2d_no_border_single_tile(const struct sp_sampler_varient *samp,
 /* Gather a quad of potentially non-adjacent texels:
  */
 static INLINE void
-get_texel_quad_2d_no_border(const struct sp_sampler_varient *samp,
+get_texel_quad_2d_no_border(const struct sp_sampler_variant *samp,
 			    union tex_tile_address addr,
 			    int x0, int y0, 
 			    int x1, int y1,
@@ -706,7 +709,7 @@ get_texel_quad_2d_no_border(const struct sp_sampler_varient *samp,
 /* Can involve a lot of unnecessary checks for border color:
  */
 static INLINE void
-get_texel_quad_2d(const struct sp_sampler_varient *samp,
+get_texel_quad_2d(const struct sp_sampler_variant *samp,
 		  union tex_tile_address addr,
 		  int x0, int y0, 
 		  int x1, int y1,
@@ -720,10 +723,10 @@ get_texel_quad_2d(const struct sp_sampler_varient *samp,
 
 
 
-/* 3d varients:
+/* 3d variants:
  */
 static INLINE const float *
-get_texel_3d_no_border(const struct sp_sampler_varient *samp,
+get_texel_3d_no_border(const struct sp_sampler_variant *samp,
                        union tex_tile_address addr, int x, int y, int z)
 {
    const struct softpipe_tex_cached_tile *tile;
@@ -741,7 +744,7 @@ get_texel_3d_no_border(const struct sp_sampler_varient *samp,
 
 
 static INLINE const float *
-get_texel_3d(const struct sp_sampler_varient *samp,
+get_texel_3d(const struct sp_sampler_variant *samp,
 	     union tex_tile_address addr, int x, int y, int z)
 {
    const struct pipe_resource *texture = samp->texture;
@@ -772,6 +775,18 @@ pot_level_size(unsigned base_pot, unsigned level)
 }
 
 
+static void
+print_sample(const char *function, float rgba[NUM_CHANNELS][QUAD_SIZE])
+{
+   debug_printf("%s %g %g %g %g, %g %g %g %g, %g %g %g %g, %g %g %g %g\n",
+                function,
+                rgba[0][0], rgba[1][0], rgba[2][0], rgba[3][0],
+                rgba[0][1], rgba[1][1], rgba[2][1], rgba[3][1],
+                rgba[0][2], rgba[1][2], rgba[2][2], rgba[3][2],
+                rgba[0][3], rgba[1][3], rgba[2][3], rgba[3][3]);
+}
+
+
 /* Some image-filter fastpaths:
  */
 static INLINE void
@@ -783,7 +798,7 @@ img_filter_2d_linear_repeat_POT(struct tgsi_sampler *tgsi_sampler,
                                 enum tgsi_sampler_control control,
                                 float rgba[NUM_CHANNELS][QUAD_SIZE])
 {
-   const struct sp_sampler_varient *samp = sp_sampler_varient(tgsi_sampler);
+   const struct sp_sampler_variant *samp = sp_sampler_variant(tgsi_sampler);
    unsigned  j;
    unsigned level = samp->level;
    unsigned xpot = pot_level_size(samp->xpot, level);
@@ -830,6 +845,10 @@ img_filter_2d_linear_repeat_POT(struct tgsi_sampler *tgsi_sampler,
                               tx[2][c], tx[3][c]);
       }
    }
+
+   if (DEBUG_TEX) {
+      print_sample(__FUNCTION__, rgba);
+   }
 }
 
 
@@ -842,7 +861,7 @@ img_filter_2d_nearest_repeat_POT(struct tgsi_sampler *tgsi_sampler,
                                  enum tgsi_sampler_control control,
                                  float rgba[NUM_CHANNELS][QUAD_SIZE])
 {
-   const struct sp_sampler_varient *samp = sp_sampler_varient(tgsi_sampler);
+   const struct sp_sampler_variant *samp = sp_sampler_variant(tgsi_sampler);
    unsigned  j;
    unsigned level = samp->level;
    unsigned xpot = pot_level_size(samp->xpot, level);
@@ -870,6 +889,10 @@ img_filter_2d_nearest_repeat_POT(struct tgsi_sampler *tgsi_sampler,
          rgba[c][j] = out[c];
       }
    }
+
+   if (DEBUG_TEX) {
+      print_sample(__FUNCTION__, rgba);
+   }
 }
 
 
@@ -882,7 +905,7 @@ img_filter_2d_nearest_clamp_POT(struct tgsi_sampler *tgsi_sampler,
                                 enum tgsi_sampler_control control,
                                 float rgba[NUM_CHANNELS][QUAD_SIZE])
 {
-   const struct sp_sampler_varient *samp = sp_sampler_varient(tgsi_sampler);
+   const struct sp_sampler_variant *samp = sp_sampler_variant(tgsi_sampler);
    unsigned  j;
    unsigned level = samp->level;
    unsigned xpot = pot_level_size(samp->xpot, level);
@@ -919,6 +942,10 @@ img_filter_2d_nearest_clamp_POT(struct tgsi_sampler *tgsi_sampler,
          rgba[c][j] = out[c];
       }
    }
+
+   if (DEBUG_TEX) {
+      print_sample(__FUNCTION__, rgba);
+   }
 }
 
 
@@ -931,7 +958,7 @@ img_filter_1d_nearest(struct tgsi_sampler *tgsi_sampler,
                         enum tgsi_sampler_control control,
                         float rgba[NUM_CHANNELS][QUAD_SIZE])
 {
-   const struct sp_sampler_varient *samp = sp_sampler_varient(tgsi_sampler);
+   const struct sp_sampler_variant *samp = sp_sampler_variant(tgsi_sampler);
    const struct pipe_resource *texture = samp->texture;
    unsigned level0, j;
    int width;
@@ -955,6 +982,10 @@ img_filter_1d_nearest(struct tgsi_sampler *tgsi_sampler,
          rgba[c][j] = out[c];
       }
    }
+
+   if (DEBUG_TEX) {
+      print_sample(__FUNCTION__, rgba);
+   }
 }
 
 
@@ -967,7 +998,7 @@ img_filter_2d_nearest(struct tgsi_sampler *tgsi_sampler,
                       enum tgsi_sampler_control control,
                       float rgba[NUM_CHANNELS][QUAD_SIZE])
 {
-   const struct sp_sampler_varient *samp = sp_sampler_varient(tgsi_sampler);
+   const struct sp_sampler_variant *samp = sp_sampler_variant(tgsi_sampler);
    const struct pipe_resource *texture = samp->texture;
    unsigned level0, j;
    int width, height;
@@ -995,6 +1026,10 @@ img_filter_2d_nearest(struct tgsi_sampler *tgsi_sampler,
          rgba[c][j] = out[c];
       }
    }
+
+   if (DEBUG_TEX) {
+      print_sample(__FUNCTION__, rgba);
+   }
 }
 
 
@@ -1015,7 +1050,7 @@ img_filter_cube_nearest(struct tgsi_sampler *tgsi_sampler,
                         enum tgsi_sampler_control control,
                         float rgba[NUM_CHANNELS][QUAD_SIZE])
 {
-   const struct sp_sampler_varient *samp = sp_sampler_varient(tgsi_sampler);
+   const struct sp_sampler_variant *samp = sp_sampler_variant(tgsi_sampler);
    const struct pipe_resource *texture = samp->texture;
    const unsigned *faces = samp->faces; /* zero when not cube-mapping */
    unsigned level0, j;
@@ -1043,6 +1078,10 @@ img_filter_cube_nearest(struct tgsi_sampler *tgsi_sampler,
          rgba[c][j] = out[c];
       }
    }
+
+   if (DEBUG_TEX) {
+      print_sample(__FUNCTION__, rgba);
+   }
 }
 
 
@@ -1055,7 +1094,7 @@ img_filter_3d_nearest(struct tgsi_sampler *tgsi_sampler,
                       enum tgsi_sampler_control control,
                       float rgba[NUM_CHANNELS][QUAD_SIZE])
 {
-   const struct sp_sampler_varient *samp = sp_sampler_varient(tgsi_sampler);
+   const struct sp_sampler_variant *samp = sp_sampler_variant(tgsi_sampler);
    const struct pipe_resource *texture = samp->texture;
    unsigned level0, j;
    int width, height, depth;
@@ -1097,7 +1136,7 @@ img_filter_1d_linear(struct tgsi_sampler *tgsi_sampler,
                      enum tgsi_sampler_control control,
                      float rgba[NUM_CHANNELS][QUAD_SIZE])
 {
-   const struct sp_sampler_varient *samp = sp_sampler_varient(tgsi_sampler);
+   const struct sp_sampler_variant *samp = sp_sampler_variant(tgsi_sampler);
    const struct pipe_resource *texture = samp->texture;
    unsigned level0, j;
    int width;
@@ -1137,7 +1176,7 @@ img_filter_2d_linear(struct tgsi_sampler *tgsi_sampler,
                      enum tgsi_sampler_control control,
                      float rgba[NUM_CHANNELS][QUAD_SIZE])
 {
-   const struct sp_sampler_varient *samp = sp_sampler_varient(tgsi_sampler);
+   const struct sp_sampler_variant *samp = sp_sampler_variant(tgsi_sampler);
    const struct pipe_resource *texture = samp->texture;
    unsigned level0, j;
    int width, height;
@@ -1184,7 +1223,7 @@ img_filter_cube_linear(struct tgsi_sampler *tgsi_sampler,
                        enum tgsi_sampler_control control,
                        float rgba[NUM_CHANNELS][QUAD_SIZE])
 {
-   const struct sp_sampler_varient *samp = sp_sampler_varient(tgsi_sampler);
+   const struct sp_sampler_variant *samp = sp_sampler_variant(tgsi_sampler);
    const struct pipe_resource *texture = samp->texture;
    const unsigned *faces = samp->faces; /* zero when not cube-mapping */
    unsigned level0, j;
@@ -1233,7 +1272,7 @@ img_filter_3d_linear(struct tgsi_sampler *tgsi_sampler,
                      enum tgsi_sampler_control control,
                      float rgba[NUM_CHANNELS][QUAD_SIZE])
 {
-   const struct sp_sampler_varient *samp = sp_sampler_varient(tgsi_sampler);
+   const struct sp_sampler_variant *samp = sp_sampler_variant(tgsi_sampler);
    const struct pipe_resource *texture = samp->texture;
    unsigned level0, j;
    int width, height, depth;
@@ -1309,7 +1348,7 @@ mip_filter_linear(struct tgsi_sampler *tgsi_sampler,
                   enum tgsi_sampler_control control,
                   float rgba[NUM_CHANNELS][QUAD_SIZE])
 {
-   struct sp_sampler_varient *samp = sp_sampler_varient(tgsi_sampler);
+   struct sp_sampler_variant *samp = sp_sampler_variant(tgsi_sampler);
    const struct pipe_resource *texture = samp->texture;
    int level0;
    float lambda;
@@ -1355,6 +1394,10 @@ mip_filter_linear(struct tgsi_sampler *tgsi_sampler,
          }
       }
    }
+
+   if (DEBUG_TEX) {
+      print_sample(__FUNCTION__, rgba);
+   }
 }
 
 
@@ -1372,7 +1415,7 @@ mip_filter_nearest(struct tgsi_sampler *tgsi_sampler,
                    enum tgsi_sampler_control control,
                    float rgba[NUM_CHANNELS][QUAD_SIZE])
 {
-   struct sp_sampler_varient *samp = sp_sampler_varient(tgsi_sampler);
+   struct sp_sampler_variant *samp = sp_sampler_variant(tgsi_sampler);
    const struct pipe_resource *texture = samp->texture;
    float lambda;
    float lod[QUAD_SIZE];
@@ -1400,13 +1443,9 @@ mip_filter_nearest(struct tgsi_sampler *tgsi_sampler,
       samp->min_img_filter(tgsi_sampler, s, t, p, NULL, tgsi_sampler_lod_bias, rgba);
    }
 
-#if 0
-   printf("RGBA %g %g %g %g, %g %g %g %g, %g %g %g %g, %g %g %g %g\n",
-          rgba[0][0], rgba[1][0], rgba[2][0], rgba[3][0],
-          rgba[0][1], rgba[1][1], rgba[2][1], rgba[3][1],
-          rgba[0][2], rgba[1][2], rgba[2][2], rgba[3][2],
-          rgba[0][3], rgba[1][3], rgba[2][3], rgba[3][3]);
-#endif
+   if (DEBUG_TEX) {
+      print_sample(__FUNCTION__, rgba);
+   }
 }
 
 
@@ -1419,7 +1458,7 @@ mip_filter_none(struct tgsi_sampler *tgsi_sampler,
                 enum tgsi_sampler_control control,
                 float rgba[NUM_CHANNELS][QUAD_SIZE])
 {
-   struct sp_sampler_varient *samp = sp_sampler_varient(tgsi_sampler);
+   struct sp_sampler_variant *samp = sp_sampler_variant(tgsi_sampler);
    float lambda;
    float lod[QUAD_SIZE];
 
@@ -1460,7 +1499,7 @@ mip_filter_linear_2d_linear_repeat_POT(
    enum tgsi_sampler_control control,
    float rgba[NUM_CHANNELS][QUAD_SIZE])
 {
-   struct sp_sampler_varient *samp = sp_sampler_varient(tgsi_sampler);
+   struct sp_sampler_variant *samp = sp_sampler_variant(tgsi_sampler);
    const struct pipe_resource *texture = samp->texture;
    int level0;
    float lambda;
@@ -1508,6 +1547,10 @@ mip_filter_linear_2d_linear_repeat_POT(
          }
       }
    }
+
+   if (DEBUG_TEX) {
+      print_sample(__FUNCTION__, rgba);
+   }
 }
 
 
@@ -1524,7 +1567,7 @@ sample_compare(struct tgsi_sampler *tgsi_sampler,
                enum tgsi_sampler_control control,
                float rgba[NUM_CHANNELS][QUAD_SIZE])
 {
-   struct sp_sampler_varient *samp = sp_sampler_varient(tgsi_sampler);
+   struct sp_sampler_variant *samp = sp_sampler_variant(tgsi_sampler);
    const struct pipe_sampler_state *sampler = samp->sampler;
    int j, k0, k1, k2, k3;
    float val;
@@ -1611,7 +1654,7 @@ sample_cube(struct tgsi_sampler *tgsi_sampler,
             enum tgsi_sampler_control control,
             float rgba[NUM_CHANNELS][QUAD_SIZE])
 {
-   struct sp_sampler_varient *samp = sp_sampler_varient(tgsi_sampler);
+   struct sp_sampler_variant *samp = sp_sampler_variant(tgsi_sampler);
    unsigned j;
    float ssss[4], tttt[4];
 
@@ -1685,6 +1728,86 @@ sample_cube(struct tgsi_sampler *tgsi_sampler,
    samp->compare(tgsi_sampler, ssss, tttt, NULL, c0, control, rgba);
 }
 
+
+static void
+sample_swizzle(struct tgsi_sampler *tgsi_sampler,
+               const float s[QUAD_SIZE],
+               const float t[QUAD_SIZE],
+               const float p[QUAD_SIZE],
+               const float c0[QUAD_SIZE],
+               enum tgsi_sampler_control control,
+               float rgba[NUM_CHANNELS][QUAD_SIZE])
+{
+   struct sp_sampler_variant *samp = sp_sampler_variant(tgsi_sampler);
+   float rgba_temp[NUM_CHANNELS][QUAD_SIZE];
+   const unsigned swizzle_r = samp->key.bits.swizzle_r;
+   const unsigned swizzle_g = samp->key.bits.swizzle_g;
+   const unsigned swizzle_b = samp->key.bits.swizzle_b;
+   const unsigned swizzle_a = samp->key.bits.swizzle_a;
+   unsigned j;
+
+   samp->sample_target(tgsi_sampler, s, t, p, c0, control, rgba_temp);
+
+   switch (swizzle_r) {
+   case PIPE_SWIZZLE_ZERO:
+      for (j = 0; j < 4; j++)
+         rgba[0][j] = 0.0f;
+      break;
+   case PIPE_SWIZZLE_ONE:
+      for (j = 0; j < 4; j++)
+         rgba[0][j] = 1.0f;
+      break;
+   default:
+      assert(swizzle_r < 4);
+      for (j = 0; j < 4; j++)
+         rgba[0][j] = rgba_temp[swizzle_r][j];
+   }
+
+   switch (swizzle_g) {
+   case PIPE_SWIZZLE_ZERO:
+      for (j = 0; j < 4; j++)
+         rgba[1][j] = 0.0f;
+      break;
+   case PIPE_SWIZZLE_ONE:
+      for (j = 0; j < 4; j++)
+         rgba[1][j] = 1.0f;
+      break;
+   default:
+      assert(swizzle_g < 4);
+      for (j = 0; j < 4; j++)
+         rgba[1][j] = rgba_temp[swizzle_g][j];
+   }
+
+   switch (swizzle_b) {
+   case PIPE_SWIZZLE_ZERO:
+      for (j = 0; j < 4; j++)
+         rgba[2][j] = 0.0f;
+      break;
+   case PIPE_SWIZZLE_ONE:
+      for (j = 0; j < 4; j++)
+         rgba[2][j] = 1.0f;
+      break;
+   default:
+      assert(swizzle_b < 4);
+      for (j = 0; j < 4; j++)
+         rgba[2][j] = rgba_temp[swizzle_b][j];
+   }
+
+   switch (swizzle_a) {
+   case PIPE_SWIZZLE_ZERO:
+      for (j = 0; j < 4; j++)
+         rgba[3][j] = 0.0f;
+      break;
+   case PIPE_SWIZZLE_ONE:
+      for (j = 0; j < 4; j++)
+         rgba[3][j] = 1.0f;
+      break;
+   default:
+      assert(swizzle_a < 4);
+      for (j = 0; j < 4; j++)
+         rgba[3][j] = rgba_temp[swizzle_a][j];
+   }
+}
 
 
 static wrap_nearest_func
@@ -1785,6 +1908,7 @@ get_lambda_func(const union sp_sampler_key key)
    case PIPE_TEXTURE_1D:
       return compute_lambda_1d;
    case PIPE_TEXTURE_2D:
+   case PIPE_TEXTURE_RECT:
    case PIPE_TEXTURE_CUBE:
       return compute_lambda_2d;
    case PIPE_TEXTURE_3D:
@@ -1809,6 +1933,7 @@ get_img_filter(const union sp_sampler_key key,
          return img_filter_1d_linear;
       break;
    case PIPE_TEXTURE_2D:
+   case PIPE_TEXTURE_RECT:
       /* Try for fast path:
        */
       if (key.bits.is_pot &&
@@ -1862,10 +1987,10 @@ get_img_filter(const union sp_sampler_key key,
 
 
 /**
- * Bind the given texture object and texture cache to the sampler varient.
+ * Bind the given texture object and texture cache to the sampler variant.
  */
 void
-sp_sampler_varient_bind_texture( struct sp_sampler_varient *samp,
+sp_sampler_variant_bind_texture( struct sp_sampler_variant *samp,
                                  struct softpipe_tex_tile_cache *tex_cache,
                                  const struct pipe_resource *texture )
 {
@@ -1880,20 +2005,20 @@ sp_sampler_varient_bind_texture( struct sp_sampler_varient *samp,
 
 
 void
-sp_sampler_varient_destroy( struct sp_sampler_varient *samp )
+sp_sampler_variant_destroy( struct sp_sampler_variant *samp )
 {
    FREE(samp);
 }
 
 
 /**
- * Create a sampler varient for a given set of non-orthogonal state.
+ * Create a sampler variant for a given set of non-orthogonal state.
  */
-struct sp_sampler_varient *
-sp_create_sampler_varient( const struct pipe_sampler_state *sampler,
+struct sp_sampler_variant *
+sp_create_sampler_variant( const struct pipe_sampler_state *sampler,
                            const union sp_sampler_key key )
 {
-   struct sp_sampler_varient *samp = CALLOC_STRUCT(sp_sampler_varient);
+   struct sp_sampler_variant *samp = CALLOC_STRUCT(sp_sampler_variant);
    if (!samp)
       return NULL;
 
@@ -1968,7 +2093,7 @@ sp_create_sampler_varient( const struct pipe_sampler_state *sampler,
    }
    
    if (key.bits.target == PIPE_TEXTURE_CUBE) {
-      samp->base.get_samples = sample_cube;
+      samp->sample_target = sample_cube;
    }
    else {
       samp->faces[0] = 0;
@@ -1979,7 +2104,17 @@ sp_create_sampler_varient( const struct pipe_sampler_state *sampler,
       /* Skip cube face determination by promoting the compare
        * function pointer:
        */
-      samp->base.get_samples = samp->compare;
+      samp->sample_target = samp->compare;
+   }
+
+   if (key.bits.swizzle_r != PIPE_SWIZZLE_RED ||
+       key.bits.swizzle_g != PIPE_SWIZZLE_GREEN ||
+       key.bits.swizzle_b != PIPE_SWIZZLE_BLUE ||
+       key.bits.swizzle_a != PIPE_SWIZZLE_ALPHA) {
+      samp->base.get_samples = sample_swizzle;
+   }
+   else {
+      samp->base.get_samples = samp->sample_target;
    }
 
    return samp;

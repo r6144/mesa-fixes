@@ -11,7 +11,12 @@ PIPE_DRIVERS = \
 	$(TOP)/src/gallium/drivers/svga/libsvga.a
 
 C_SOURCES = \
+	target.c \
+	vmw_powf.c \
 	$(COMMON_GALLIUM_SOURCES)
+
+DRIVER_DEFINES = \
+	-DGALLIUM_RBUG -DGALLIUM_TRACE
 
 include ../Makefile.dri
 

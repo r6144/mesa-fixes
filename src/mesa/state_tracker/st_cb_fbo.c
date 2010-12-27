@@ -52,6 +52,7 @@
 
 #include "util/u_format.h"
 #include "util/u_inlines.h"
+#include "util/u_surface.h"
 
 
 /**
@@ -60,19 +61,21 @@
  * during window resize.
  */
 static GLboolean
-st_renderbuffer_alloc_storage(GLcontext * ctx, struct gl_renderbuffer *rb,
+st_renderbuffer_alloc_storage(struct gl_context * ctx, struct gl_renderbuffer *rb,
                               GLenum internalFormat,
                               GLuint width, GLuint height)
 {
    struct st_context *st = st_context(ctx);
+   struct pipe_context *pipe = st->pipe;
    struct pipe_screen *screen = st->pipe->screen;
    struct st_renderbuffer *strb = st_renderbuffer(rb);
    enum pipe_format format;
+   struct pipe_surface surf_tmpl;
 
    if (strb->format != PIPE_FORMAT_NONE)
       format = strb->format;
    else
-      format = st_choose_renderbuffer_format(screen, internalFormat);
+      format = st_choose_renderbuffer_format(screen, internalFormat, rb->NumSamples);
       
    /* init renderbuffer fields */
    strb->Base.Width  = width;
@@ -108,11 +111,12 @@ st_renderbuffer_alloc_storage(GLcontext * ctx, struct gl_renderbuffer *rb,
       /* Setup new texture template.
        */
       memset(&template, 0, sizeof(template));
-      template.target = PIPE_TEXTURE_2D;
+      template.target = st->internal_target;
       template.format = format;
       template.width0 = width;
       template.height0 = height;
       template.depth0 = 1;
+      template.array_size = 1;
       template.last_level = 0;
       template.nr_samples = rb->NumSamples;
       if (util_format_is_depth_or_stencil(format)) {
@@ -120,7 +124,7 @@ st_renderbuffer_alloc_storage(GLcontext * ctx, struct gl_renderbuffer *rb,
       }
       else {
          template.bind = (PIPE_BIND_DISPLAY_TARGET |
-			  PIPE_BIND_RENDER_TARGET);
+                          PIPE_BIND_RENDER_TARGET);
       }
 
       strb->texture = screen->resource_create(screen, &template);
@@ -128,10 +132,11 @@ st_renderbuffer_alloc_storage(GLcontext * ctx, struct gl_renderbuffer *rb,
       if (!strb->texture) 
          return FALSE;
 
-      strb->surface = screen->get_tex_surface(screen,
-                                              strb->texture,
-                                              0, 0, 0,
-                                              template.bind);
+      memset(&surf_tmpl, 0, sizeof(surf_tmpl));
+      u_surface_default_template(&surf_tmpl, strb->texture, template.bind);
+      strb->surface = pipe->create_surface(pipe,
+                                           strb->texture,
+                                           &surf_tmpl);
       if (strb->surface) {
          assert(strb->surface->texture);
          assert(strb->surface->format);
@@ -164,7 +169,7 @@ st_renderbuffer_delete(struct gl_renderbuffer *rb)
  * gl_renderbuffer::GetPointer()
  */
 static void *
-null_get_pointer(GLcontext * ctx, struct gl_renderbuffer *rb,
+null_get_pointer(struct gl_context * ctx, struct gl_renderbuffer *rb,
                  GLint x, GLint y)
 {
    /* By returning NULL we force all software rendering to go through
@@ -181,7 +186,7 @@ null_get_pointer(GLcontext * ctx, struct gl_renderbuffer *rb,
  * Called via ctx->Driver.NewFramebuffer()
  */
 static struct gl_framebuffer *
-st_new_framebuffer(GLcontext *ctx, GLuint name)
+st_new_framebuffer(struct gl_context *ctx, GLuint name)
 {
    /* XXX not sure we need to subclass gl_framebuffer for pipe */
    return _mesa_new_framebuffer(ctx, name);
@@ -192,7 +197,7 @@ st_new_framebuffer(GLcontext *ctx, GLuint name)
  * Called via ctx->Driver.NewRenderbuffer()
  */
 static struct gl_renderbuffer *
-st_new_renderbuffer(GLcontext *ctx, GLuint name)
+st_new_renderbuffer(struct gl_context *ctx, GLuint name)
 {
    struct st_renderbuffer *strb = ST_CALLOC_STRUCT(st_renderbuffer);
    if (strb) {
@@ -260,6 +265,18 @@ st_new_renderbuffer_fb(enum pipe_format format, int samples, boolean sw)
    case PIPE_FORMAT_R16G16B16A16_SNORM:
       strb->Base.InternalFormat = GL_RGBA16;
       break;
+   case PIPE_FORMAT_R8_UNORM:
+      strb->Base.InternalFormat = GL_R8;
+      break;
+   case PIPE_FORMAT_R8G8_UNORM:
+      strb->Base.InternalFormat = GL_RG8;
+      break;
+   case PIPE_FORMAT_R16_UNORM:
+      strb->Base.InternalFormat = GL_R16;
+      break;
+   case PIPE_FORMAT_R16G16_UNORM:
+      strb->Base.InternalFormat = GL_RG16;
+      break;
    default:
       _mesa_problem(NULL,
 		    "Unexpected format in st_new_renderbuffer_fb");
@@ -285,7 +302,7 @@ st_new_renderbuffer_fb(enum pipe_format format, int samples, boolean sw)
  * Called via ctx->Driver.BindFramebufferEXT().
  */
 static void
-st_bind_framebuffer(GLcontext *ctx, GLenum target,
+st_bind_framebuffer(struct gl_context *ctx, GLenum target,
                     struct gl_framebuffer *fb, struct gl_framebuffer *fbread)
 {
 
@@ -295,7 +312,7 @@ st_bind_framebuffer(GLcontext *ctx, GLenum target,
  * Called by ctx->Driver.FramebufferRenderbuffer
  */
 static void
-st_framebuffer_renderbuffer(GLcontext *ctx, 
+st_framebuffer_renderbuffer(struct gl_context *ctx, 
                             struct gl_framebuffer *fb,
                             GLenum attachment,
                             struct gl_renderbuffer *rb)
@@ -309,18 +326,18 @@ st_framebuffer_renderbuffer(GLcontext *ctx,
  * Called by ctx->Driver.RenderTexture
  */
 static void
-st_render_texture(GLcontext *ctx,
+st_render_texture(struct gl_context *ctx,
                   struct gl_framebuffer *fb,
                   struct gl_renderbuffer_attachment *att)
 {
    struct st_context *st = st_context(ctx);
    struct pipe_context *pipe = st->pipe;
-   struct pipe_screen *screen = pipe->screen;
    struct st_renderbuffer *strb;
    struct gl_renderbuffer *rb;
    struct pipe_resource *pt = st_get_texobj_resource(att->Texture);
    struct st_texture_object *stObj;
    const struct gl_texture_image *texImage;
+   struct pipe_surface surf_tmpl;
 
    /* When would this fail?  Perhaps assert? */
    if (!pt) 
@@ -369,12 +386,15 @@ st_render_texture(GLcontext *ctx,
    assert(strb->rtt_level <= strb->texture->last_level);
 
    /* new surface for rendering into the texture */
-   strb->surface = screen->get_tex_surface(screen,
-                                           strb->texture,
-                                           strb->rtt_face,
-                                           strb->rtt_level,
-                                           strb->rtt_slice,
-                                           PIPE_BIND_RENDER_TARGET);
+   memset(&surf_tmpl, 0, sizeof(surf_tmpl));
+   surf_tmpl.format = strb->texture->format;
+   surf_tmpl.usage = PIPE_BIND_RENDER_TARGET;
+   surf_tmpl.u.tex.level = strb->rtt_level;
+   surf_tmpl.u.tex.first_layer = strb->rtt_face + strb->rtt_slice;
+   surf_tmpl.u.tex.last_layer = strb->rtt_face + strb->rtt_slice;
+   strb->surface = pipe->create_surface(pipe,
+                                        strb->texture,
+                                        &surf_tmpl);
 
    strb->format = pt->format;
 
@@ -399,7 +419,7 @@ st_render_texture(GLcontext *ctx,
  * Called via ctx->Driver.FinishRenderTexture.
  */
 static void
-st_finish_render_texture(GLcontext *ctx,
+st_finish_render_texture(struct gl_context *ctx,
                          struct gl_renderbuffer_attachment *att)
 {
    struct st_context *st = st_context(ctx);
@@ -442,9 +462,34 @@ st_validate_attachment(struct pipe_screen *screen,
       return GL_FALSE;
 
    return screen->is_format_supported(screen, stObj->pt->format,
-				      PIPE_TEXTURE_2D, bindings, 0);
+                                      PIPE_TEXTURE_2D,
+                                      stObj->pt->nr_samples, bindings, 0);
 }
 
+
+/**
+ * Check if two renderbuffer attachments name a combined depth/stencil
+ * renderbuffer.
+ */
+GLboolean
+st_is_depth_stencil_combined(const struct gl_renderbuffer_attachment *depth,
+                             const struct gl_renderbuffer_attachment *stencil)
+{
+   assert(depth && stencil);
+
+   if (depth->Type == stencil->Type) {
+      if (depth->Type == GL_RENDERBUFFER_EXT &&
+          depth->Renderbuffer == stencil->Renderbuffer)
+         return GL_TRUE;
+
+      if (depth->Type == GL_TEXTURE &&
+          depth->Texture == stencil->Texture)
+         return GL_TRUE;
+   }
+
+   return GL_FALSE;
+}
+ 
 
 /**
  * Check that the framebuffer configuration is valid in terms of what
@@ -453,29 +498,41 @@ st_validate_attachment(struct pipe_screen *screen,
  * For Gallium we only supports combined Z+stencil, not separate buffers.
  */
 static void
-st_validate_framebuffer(GLcontext *ctx, struct gl_framebuffer *fb)
+st_validate_framebuffer(struct gl_context *ctx, struct gl_framebuffer *fb)
 {
    struct st_context *st = st_context(ctx);
    struct pipe_screen *screen = st->pipe->screen;
-   const struct gl_renderbuffer *depthRb =
-      fb->Attachment[BUFFER_DEPTH].Renderbuffer;
-   const struct gl_renderbuffer *stencilRb =
-      fb->Attachment[BUFFER_STENCIL].Renderbuffer;
+   const struct gl_renderbuffer_attachment *depth =
+         &fb->Attachment[BUFFER_DEPTH];
+   const struct gl_renderbuffer_attachment *stencil =
+         &fb->Attachment[BUFFER_STENCIL];
    GLuint i;
 
-   if (stencilRb && depthRb && stencilRb != depthRb) {
+   if (depth->Type && stencil->Type && depth->Type != stencil->Type) {
+      fb->_Status = GL_FRAMEBUFFER_UNSUPPORTED_EXT;
+      return;
+   }
+   if (depth->Type == GL_RENDERBUFFER_EXT &&
+       stencil->Type == GL_RENDERBUFFER_EXT &&
+       depth->Renderbuffer != stencil->Renderbuffer) {
+      fb->_Status = GL_FRAMEBUFFER_UNSUPPORTED_EXT;
+      return;
+   }
+   if (depth->Type == GL_TEXTURE &&
+       stencil->Type == GL_TEXTURE &&
+       depth->Texture != stencil->Texture) {
       fb->_Status = GL_FRAMEBUFFER_UNSUPPORTED_EXT;
       return;
    }
 
    if (!st_validate_attachment(screen,
-			       &fb->Attachment[BUFFER_DEPTH],
+                               depth,
 			       PIPE_BIND_DEPTH_STENCIL)) {
       fb->_Status = GL_FRAMEBUFFER_UNSUPPORTED_EXT;
       return;
    }
    if (!st_validate_attachment(screen,
-			       &fb->Attachment[BUFFER_STENCIL],
+                               stencil,
 			       PIPE_BIND_DEPTH_STENCIL)) {
       fb->_Status = GL_FRAMEBUFFER_UNSUPPORTED_EXT;
       return;
@@ -495,10 +552,10 @@ st_validate_framebuffer(GLcontext *ctx, struct gl_framebuffer *fb)
  * Called via glDrawBuffer.
  */
 static void
-st_DrawBuffers(GLcontext *ctx, GLsizei count, const GLenum *buffers)
+st_DrawBuffers(struct gl_context *ctx, GLsizei count, const GLenum *buffers)
 {
    struct st_context *st = st_context(ctx);
-   GLframebuffer *fb = ctx->DrawBuffer;
+   struct gl_framebuffer *fb = ctx->DrawBuffer;
    GLuint i;
 
    (void) count;
@@ -516,10 +573,10 @@ st_DrawBuffers(GLcontext *ctx, GLsizei count, const GLenum *buffers)
  * Called via glReadBuffer.
  */
 static void
-st_ReadBuffer(GLcontext *ctx, GLenum buffer)
+st_ReadBuffer(struct gl_context *ctx, GLenum buffer)
 {
    struct st_context *st = st_context(ctx);
-   GLframebuffer *fb = ctx->ReadBuffer;
+   struct gl_framebuffer *fb = ctx->ReadBuffer;
 
    (void) buffer;
 
@@ -530,6 +587,7 @@ st_ReadBuffer(GLcontext *ctx, GLenum buffer)
 
 void st_init_fbo_functions(struct dd_function_table *functions)
 {
+#if FEATURE_EXT_framebuffer_object
    functions->NewFramebuffer = st_new_framebuffer;
    functions->NewRenderbuffer = st_new_renderbuffer;
    functions->BindFramebuffer = st_bind_framebuffer;
@@ -537,6 +595,7 @@ void st_init_fbo_functions(struct dd_function_table *functions)
    functions->RenderTexture = st_render_texture;
    functions->FinishRenderTexture = st_finish_render_texture;
    functions->ValidateFramebuffer = st_validate_framebuffer;
+#endif
    /* no longer needed by core Mesa, drivers handle resizes...
    functions->ResizeBuffers = st_resize_buffers;
    */
@@ -545,6 +604,7 @@ void st_init_fbo_functions(struct dd_function_table *functions)
    functions->ReadBuffer = st_ReadBuffer;
 }
 
+/* XXX unused ? */
 struct pipe_sampler_view *
 st_get_renderbuffer_sampler_view(struct st_renderbuffer *rb,
                                  struct pipe_context *pipe)

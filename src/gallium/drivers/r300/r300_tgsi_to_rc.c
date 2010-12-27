@@ -57,7 +57,7 @@ static unsigned translate_opcode(unsigned opcode)
      /* case TGSI_OPCODE_DP2A: return RC_OPCODE_DP2A; */
                                         /* gap */
         case TGSI_OPCODE_FRC: return RC_OPCODE_FRC;
-     /* case TGSI_OPCODE_CLAMP: return RC_OPCODE_CLAMP; */
+        case TGSI_OPCODE_CLAMP: return RC_OPCODE_CLAMP;
         case TGSI_OPCODE_FLR: return RC_OPCODE_FLR;
      /* case TGSI_OPCODE_ROUND: return RC_OPCODE_ROUND; */
         case TGSI_OPCODE_EX2: return RC_OPCODE_EX2;
@@ -71,7 +71,7 @@ static unsigned translate_opcode(unsigned opcode)
         case TGSI_OPCODE_COS: return RC_OPCODE_COS;
         case TGSI_OPCODE_DDX: return RC_OPCODE_DDX;
         case TGSI_OPCODE_DDY: return RC_OPCODE_DDY;
-     /* case TGSI_OPCODE_KILP: return RC_OPCODE_KILP; */
+        case TGSI_OPCODE_KILP: return RC_OPCODE_KILP;
      /* case TGSI_OPCODE_PK2H: return RC_OPCODE_PK2H; */
      /* case TGSI_OPCODE_PK2US: return RC_OPCODE_PK2US; */
      /* case TGSI_OPCODE_PK4B: return RC_OPCODE_PK4B; */
@@ -97,20 +97,20 @@ static unsigned translate_opcode(unsigned opcode)
      /* case TGSI_OPCODE_BRA: return RC_OPCODE_BRA; */
      /* case TGSI_OPCODE_CAL: return RC_OPCODE_CAL; */
      /* case TGSI_OPCODE_RET: return RC_OPCODE_RET; */
-     /* case TGSI_OPCODE_SSG: return RC_OPCODE_SSG; */
+        case TGSI_OPCODE_SSG: return RC_OPCODE_SSG;
         case TGSI_OPCODE_CMP: return RC_OPCODE_CMP;
         case TGSI_OPCODE_SCS: return RC_OPCODE_SCS;
         case TGSI_OPCODE_TXB: return RC_OPCODE_TXB;
      /* case TGSI_OPCODE_NRM: return RC_OPCODE_NRM; */
      /* case TGSI_OPCODE_DIV: return RC_OPCODE_DIV; */
-     /* case TGSI_OPCODE_DP2: return RC_OPCODE_DP2; */
+        case TGSI_OPCODE_DP2: return RC_OPCODE_DP2;
         case TGSI_OPCODE_TXL: return RC_OPCODE_TXL;
-     /* case TGSI_OPCODE_BRK: return RC_OPCODE_BRK; */
+        case TGSI_OPCODE_BRK: return RC_OPCODE_BRK;
         case TGSI_OPCODE_IF: return RC_OPCODE_IF;
-     /* case TGSI_OPCODE_LOOP: return RC_OPCODE_LOOP; */
+        case TGSI_OPCODE_BGNLOOP: return RC_OPCODE_BGNLOOP;
         case TGSI_OPCODE_ELSE: return RC_OPCODE_ELSE;
         case TGSI_OPCODE_ENDIF: return RC_OPCODE_ENDIF;
-     /* case TGSI_OPCODE_ENDLOOP: return RC_OPCODE_ENDLOOP; */
+        case TGSI_OPCODE_ENDLOOP: return RC_OPCODE_ENDLOOP;
      /* case TGSI_OPCODE_PUSHA: return RC_OPCODE_PUSHA; */
      /* case TGSI_OPCODE_POPA: return RC_OPCODE_POPA; */
         case TGSI_OPCODE_CEIL: return RC_OPCODE_CEIL;
@@ -126,7 +126,7 @@ static unsigned translate_opcode(unsigned opcode)
      /* case TGSI_OPCODE_SAD: return RC_OPCODE_SAD; */
      /* case TGSI_OPCODE_TXF: return RC_OPCODE_TXF; */
      /* case TGSI_OPCODE_TXQ: return RC_OPCODE_TXQ; */
-     /* case TGSI_OPCODE_CONT: return RC_OPCODE_CONT; */
+        case TGSI_OPCODE_CONT: return RC_OPCODE_CONT;
      /* case TGSI_OPCODE_EMIT: return RC_OPCODE_EMIT; */
      /* case TGSI_OPCODE_ENDPRIM: return RC_OPCODE_ENDPRIM; */
      /* case TGSI_OPCODE_BGNLOOP2: return RC_OPCODE_BGNLOOP2; */
@@ -363,10 +363,7 @@ void r300_tgsi_to_rc(struct tgsi_to_rc * ttr,
                 break;
             case TGSI_TOKEN_TYPE_INSTRUCTION:
                 inst = &parser.FullToken.FullInstruction;
-                /* This hack with the RET opcode woudn't work with
-                 * conditionals. */
-                if (inst->Instruction.Opcode == TGSI_OPCODE_END ||
-                    inst->Instruction.Opcode == TGSI_OPCODE_RET) {
+                if (inst->Instruction.Opcode == TGSI_OPCODE_END) {
                     break;
                 }
 

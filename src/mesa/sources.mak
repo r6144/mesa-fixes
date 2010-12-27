@@ -12,6 +12,8 @@ MAIN_SOURCES = \
 	main/api_noop.c \
 	main/api_validate.c \
 	main/accum.c \
+	main/arbprogram.c \
+	main/atifragshader.c \
 	main/attrib.c \
 	main/arrayobj.c \
 	main/blend.c \
@@ -55,8 +57,11 @@ MAIN_SOURCES = \
 	main/mipmap.c \
 	main/mm.c \
 	main/multisample.c \
+	main/nvprogram.c \
+	main/pack.c \
 	main/pixel.c \
 	main/pixelstore.c \
+	main/pixeltransfer.c \
 	main/points.c \
 	main/polygon.c \
 	main/queryobj.c \
@@ -66,7 +71,8 @@ MAIN_SOURCES = \
 	main/remap.c \
 	main/renderbuffer.c \
 	main/scissor.c \
-	main/shaders.c \
+	main/shaderapi.c \
+	main/shaderobj.c \
 	main/shared.c \
 	main/state.c \
 	main/stencil.c \
@@ -88,6 +94,7 @@ MAIN_SOURCES = \
 	main/texstate.c \
 	main/texstore.c \
 	main/transformfeedback.c \
+	main/uniforms.c \
 	main/varray.c \
 	main/version.c \
 	main/viewport.c \
@@ -149,7 +156,6 @@ TNL_SOURCES = \
 	tnl/t_vb_texgen.c \
 	tnl/t_vb_texmat.c \
 	tnl/t_vb_vertex.c \
-	tnl/t_vb_cull.c \
 	tnl/t_vb_fog.c \
 	tnl/t_vb_light.c \
 	tnl/t_vb_normals.c \
@@ -182,6 +188,7 @@ STATETRACKER_SOURCES = \
 	state_tracker/st_atom_constbuf.c \
 	state_tracker/st_atom_depth.c \
 	state_tracker/st_atom_framebuffer.c \
+	state_tracker/st_atom_msaa.c \
 	state_tracker/st_atom_pixeltransfer.c \
 	state_tracker/st_atom_sampler.c \
 	state_tracker/st_atom_scissor.c \
@@ -208,6 +215,7 @@ STATETRACKER_SOURCES = \
 	state_tracker/st_cb_readpixels.c \
 	state_tracker/st_cb_strings.c \
 	state_tracker/st_cb_texture.c \
+	state_tracker/st_cb_viewport.c \
 	state_tracker/st_cb_xformfb.c \
 	state_tracker/st_context.c \
 	state_tracker/st_debug.c \
@@ -221,52 +229,32 @@ STATETRACKER_SOURCES = \
 	state_tracker/st_program.c \
 	state_tracker/st_texture.c
 
-SHADER_SOURCES = \
-	shader/arbprogparse.c \
-	shader/arbprogram.c \
-	shader/atifragshader.c \
-	shader/hash_table.c \
-	shader/lex.yy.c \
-	shader/nvfragparse.c \
-	shader/nvprogram.c \
-	shader/nvvertparse.c \
-	shader/program.c \
-	shader/program_parse.tab.c \
-	shader/program_parse_extra.c \
-	shader/prog_cache.c \
-	shader/prog_execute.c \
-	shader/prog_instruction.c \
-	shader/prog_noise.c \
-	shader/prog_optimize.c \
-	shader/prog_parameter.c \
-	shader/prog_parameter_layout.c \
-	shader/prog_print.c \
-	shader/prog_statevars.c \
-	shader/prog_uniform.c \
-	shader/programopt.c \
-	shader/symbol_table.c \
-	shader/shader_api.c
+PROGRAM_SOURCES = \
+	program/arbprogparse.c \
+	program/hash_table.c \
+	program/lex.yy.c \
+	program/nvfragparse.c \
+	program/nvvertparse.c \
+	program/program.c \
+	program/program_parse.tab.c \
+	program/program_parse_extra.c \
+	program/prog_cache.c \
+	program/prog_execute.c \
+	program/prog_instruction.c \
+	program/prog_noise.c \
+	program/prog_optimize.c \
+	program/prog_parameter.c \
+	program/prog_parameter_layout.c \
+	program/prog_print.c \
+	program/prog_statevars.c \
+	program/prog_uniform.c \
+	program/programopt.c \
+	program/register_allocate.c \
+	program/symbol_table.c
 
-SLANG_SOURCES =	\
-	shader/slang/slang_builtin.c	\
-	shader/slang/slang_codegen.c	\
-	shader/slang/slang_compile.c	\
-	shader/slang/slang_compile_function.c	\
-	shader/slang/slang_compile_operation.c	\
-	shader/slang/slang_compile_struct.c	\
-	shader/slang/slang_compile_variable.c	\
-	shader/slang/slang_emit.c	\
-	shader/slang/slang_ir.c	\
-	shader/slang/slang_label.c	\
-	shader/slang/slang_link.c	\
-	shader/slang/slang_log.c	\
-	shader/slang/slang_mem.c	\
-	shader/slang/slang_print.c	\
-	shader/slang/slang_simplify.c	\
-	shader/slang/slang_storage.c	\
-	shader/slang/slang_typeinfo.c	\
-	shader/slang/slang_vartable.c	\
-	shader/slang/slang_utility.c
+SHADER_CXX_SOURCES = \
+	program/ir_to_mesa.cpp \
+	program/sampler.cpp
 
 ASM_C_SOURCES =	\
 	x86/common_x86.c \
@@ -317,12 +305,14 @@ MESA_SOURCES = \
 	$(MATH_XFORM_SOURCES)	\
 	$(VBO_SOURCES)		\
 	$(TNL_SOURCES)		\
-	$(SHADER_SOURCES)	\
+	$(PROGRAM_SOURCES)	\
 	$(SWRAST_SOURCES)	\
 	$(SWRAST_SETUP_SOURCES)	\
 	$(COMMON_DRIVER_SOURCES)\
-	$(ASM_C_SOURCES)	\
-	$(SLANG_SOURCES)
+	$(ASM_C_SOURCES)
+
+MESA_CXX_SOURCES = \
+	 $(SHADER_CXX_SOURCES)
 
 # Sources for building Gallium drivers
 MESA_GALLIUM_SOURCES = \
@@ -330,14 +320,17 @@ MESA_GALLIUM_SOURCES = \
 	$(MATH_SOURCES)		\
 	$(VBO_SOURCES)		\
 	$(STATETRACKER_SOURCES)	\
-	$(SHADER_SOURCES)	\
+	$(PROGRAM_SOURCES)	\
 	ppc/common_ppc.c	\
-	x86/common_x86.c	\
-	$(SLANG_SOURCES)
+	x86/common_x86.c
+
+MESA_GALLIUM_CXX_SOURCES = \
+	 $(SHADER_CXX_SOURCES)
 
 # All the core C sources, for dependency checking
 ALL_SOURCES = \
 	$(MESA_SOURCES)		\
+	$(MESA_CXX_SOURCES)	\
 	$(MESA_ASM_SOURCES)	\
 	$(STATETRACKER_SOURCES)
 
@@ -346,10 +339,12 @@ ALL_SOURCES = \
 
 MESA_OBJECTS = \
 	$(MESA_SOURCES:.c=.o) \
+	$(MESA_CXX_SOURCES:.cpp=.o) \
 	$(MESA_ASM_SOURCES:.S=.o)
 
 MESA_GALLIUM_OBJECTS = \
 	$(MESA_GALLIUM_SOURCES:.c=.o) \
+	$(MESA_GALLIUM_CXX_SOURCES:.cpp=.o) \
 	$(MESA_ASM_SOURCES:.S=.o)
 
 
@@ -359,14 +354,14 @@ COMMON_DRIVER_OBJECTS = $(COMMON_DRIVER_SOURCES:.c=.o)
 ### Other archives/libraries
 
 GLSL_LIBS = \
-	$(TOP)/src/glsl/pp/libglslpp.a \
-	$(TOP)/src/glsl/cl/libglslcl.a
+	$(TOP)/src/glsl/libglsl.a
 
 
 ### Include directories
 
 INCLUDE_DIRS = \
 	-I$(TOP)/include \
+	-I$(TOP)/src/glsl \
 	-I$(TOP)/src/mesa \
 	-I$(TOP)/src/mapi \
 	-I$(TOP)/src/gallium/include \

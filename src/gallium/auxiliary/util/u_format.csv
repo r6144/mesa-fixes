@@ -76,6 +76,7 @@ PIPE_FORMAT_B4G4R4X4_UNORM        , plain, 1, 1, un4 , un4 , un4 , x4  , zyx1, r
 PIPE_FORMAT_B5G6R5_UNORM          , plain, 1, 1, un5 , un6 , un5 ,     , zyx1, rgb
 PIPE_FORMAT_R10G10B10A2_UNORM     , plain, 1, 1, un10, un10, un10, un2 , xyzw, rgb
 PIPE_FORMAT_B10G10R10A2_UNORM     , plain, 1, 1, un10, un10, un10, un2 , zyxw, rgb
+PIPE_FORMAT_B2G3R3_UNORM          , plain, 1, 1, un2 , un3 , un3 ,     , zyx1, rgb
 
 # Luminance/Intensity/Alpha formats
 PIPE_FORMAT_L8_UNORM              , plain, 1, 1, un8 ,     ,     ,     , xxx1, rgb
@@ -84,6 +85,9 @@ PIPE_FORMAT_I8_UNORM              , plain, 1, 1, un8 ,     ,     ,     , xxxx, r
 PIPE_FORMAT_L4A4_UNORM            , plain, 1, 1, un4 , un4 ,     ,     , xxxy, rgb
 PIPE_FORMAT_L8A8_UNORM            , plain, 1, 1, un8 , un8 ,     ,     , xxxy, rgb
 PIPE_FORMAT_L16_UNORM             , plain, 1, 1, un16,     ,     ,     , xxx1, rgb
+PIPE_FORMAT_A16_UNORM             , plain, 1, 1, un16,     ,     ,     , 000x, rgb
+PIPE_FORMAT_I16_UNORM             , plain, 1, 1, un16,     ,     ,     , xxxx, rgb
+PIPE_FORMAT_L16A16_UNORM          , plain, 1, 1, un16, un16,     ,     , xxxy, rgb
 
 # SRGB formats
 PIPE_FORMAT_L8_SRGB               , plain, 1, 1, un8 ,     ,     ,     , xxx1, srgb 
@@ -109,9 +113,12 @@ PIPE_FORMAT_Z32_UNORM               , plain, 1, 1, un32,     ,     ,     , x___,
 PIPE_FORMAT_Z32_FLOAT               , plain, 1, 1, f32 ,     ,     ,     , x___, zs
 PIPE_FORMAT_Z24_UNORM_S8_USCALED    , plain, 1, 1, un24, u8  ,     ,     , xy__, zs
 PIPE_FORMAT_S8_USCALED_Z24_UNORM    , plain, 1, 1, u8 ,  un24,     ,     , yx__, zs
+PIPE_FORMAT_X24S8_USCALED           , plain, 1, 1, x24,  u8  ,     ,     , _y__, zs
+PIPE_FORMAT_S8X24_USCALED           , plain, 1, 1, u8  , x24 ,     ,     , _x__, zs
 PIPE_FORMAT_Z24X8_UNORM             , plain, 1, 1, un24, x8  ,     ,     , x___, zs
 PIPE_FORMAT_X8Z24_UNORM             , plain, 1, 1, x8  , un24,     ,     , y___, zs
 PIPE_FORMAT_Z32_FLOAT_S8X24_USCALED , plain, 1, 1, f32,  u8  , x24 ,     , xy__, zs
+PIPE_FORMAT_X32_S8X24_USCALED       , plain, 1, 1, x32,  u8  , x24 ,     , _y__, zs
 
 # YUV formats
 # http://www.fourcc.org/yuv.php#UYVY

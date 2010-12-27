@@ -56,17 +56,12 @@
 /* util_make_[fragment|vertex]_passthrough_shader */
 #include "util/u_simple_shaders.h"
 
-/* softpipe software driver */
-#include "softpipe/sp_public.h"
-
+/* sw_screen_create: to get a software pipe driver */
+#include "target-helpers/inline_sw_helper.h"
+/* debug_screen_wrap: to wrap with debug pipe drivers */
+#include "target-helpers/inline_debug_helper.h"
 /* null software winsys */
 #include "sw/null/null_sw_winsys.h"
-
-/* traceing support see src/gallium/drivers/trace/README for more info. */
-#if USE_TRACE
-#include "trace/tr_screen.h"
-#include "trace/tr_context.h"
-#endif
 
 struct program
 {
@@ -92,11 +87,13 @@ struct program
 
 static void init_prog(struct program *p)
 {
+	struct pipe_surface surf_tmpl;
 	/* create the software rasterizer */
-	p->screen = softpipe_create_screen(null_sw_create());
-#if USE_TRACE
-	p->screen = trace_screen_create(p->screen);
-#endif
+	p->screen = sw_screen_create(null_sw_create());
+	/* wrap the screen with any debugger */
+	p->screen = debug_screen_wrap(p->screen);
+
+	/* create the pipe driver context and cso context */
 	p->pipe = p->screen->context_create(p->screen, NULL);
 	p->cso = cso_create_context(p->pipe);
 
@@ -136,6 +133,7 @@ static void init_prog(struct program *p)
 		tmplt.width0 = WIDTH;
 		tmplt.height0 = HEIGHT;
 		tmplt.depth0 = 1;
+		tmplt.array_size = 1;
 		tmplt.last_level = 0;
 		tmplt.bind = PIPE_BIND_RENDER_TARGET;
 
@@ -151,16 +149,20 @@ static void init_prog(struct program *p)
 
 	/* rasterizer */
 	memset(&p->rasterizer, 0, sizeof(p->rasterizer));
-	p->rasterizer.front_winding = PIPE_WINDING_CW;
-	p->rasterizer.cull_mode = PIPE_WINDING_NONE;
+	p->rasterizer.cull_face = PIPE_FACE_NONE;
 	p->rasterizer.gl_rasterization_rules = 1;
 
+	surf_tmpl.format = templat.format;
+	surf_tmpl.usage = PIPE_BIND_RENDER_TARGET;
+	surf_tmpl.u.tex.level = 0;
+	surf_tmpl.u.tex.first_layer = 0;
+	surf_tmpl.u.tex.last_layer = 0;
 	/* drawing destination */
 	memset(&p->framebuffer, 0, sizeof(p->framebuffer));
 	p->framebuffer.width = WIDTH;
 	p->framebuffer.height = HEIGHT;
 	p->framebuffer.nr_cbufs = 1;
-	p->framebuffer.cbufs[0] = p->screen->get_tex_surface(p->screen, p->target, 0, 0, 0, PIPE_BIND_RENDER_TARGET);
+	p->framebuffer.cbufs[0] = p->pipe->create_surface(p->pipe, p->target, &surf_tmpl);
 
 	/* viewport, depth isn't really needed */
 	{

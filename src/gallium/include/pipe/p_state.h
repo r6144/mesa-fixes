@@ -43,7 +43,6 @@
 #include "p_compiler.h"
 #include "p_defines.h"
 #include "p_format.h"
-#include "p_screen.h"
 
 
 #ifdef __cplusplus
@@ -60,9 +59,11 @@ extern "C" {
 #define PIPE_MAX_CONSTANT_BUFFERS 32
 #define PIPE_MAX_SAMPLERS         16
 #define PIPE_MAX_VERTEX_SAMPLERS  16
-#define PIPE_MAX_SHADER_INPUTS    16
-#define PIPE_MAX_SHADER_OUTPUTS   16
+#define PIPE_MAX_GEOMETRY_SAMPLERS  16
+#define PIPE_MAX_SHADER_INPUTS    32
+#define PIPE_MAX_SHADER_OUTPUTS   32
 #define PIPE_MAX_TEXTURE_LEVELS   16
+#define PIPE_MAX_SO_BUFFERS        4
 
 
 struct pipe_reference
@@ -79,12 +80,13 @@ struct pipe_rasterizer_state
 {
    unsigned flatshade:1;
    unsigned light_twoside:1;
-   unsigned front_winding:2;  /**< PIPE_WINDING_x */
-   unsigned cull_mode:2;      /**< PIPE_WINDING_x */
-   unsigned fill_cw:2;        /**< PIPE_POLYGON_MODE_x */
-   unsigned fill_ccw:2;       /**< PIPE_POLYGON_MODE_x */
-   unsigned offset_cw:1;
-   unsigned offset_ccw:1;
+   unsigned front_ccw:1;
+   unsigned cull_face:2;      /**< PIPE_FACE_x */
+   unsigned fill_front:2;     /**< PIPE_POLYGON_MODE_x */
+   unsigned fill_back:2;      /**< PIPE_POLYGON_MODE_x */
+   unsigned offset_point:1;
+   unsigned offset_line:1;
+   unsigned offset_tri:1;
    unsigned scissor:1;
    unsigned poly_smooth:1;
    unsigned poly_stipple_enable:1;
@@ -152,6 +154,7 @@ struct pipe_clip_state
 {
    float ucp[PIPE_MAX_CLIP_PLANES][4];
    unsigned nr;
+   unsigned depth_clamp:1;
 };
 
 
@@ -218,6 +221,8 @@ struct pipe_blend_state
    unsigned logicop_enable:1;
    unsigned logicop_func:4;      /**< PIPE_LOGICOP_x */
    unsigned dither:1;
+   unsigned alpha_to_coverage:1;
+   unsigned alpha_to_one:1;
    struct pipe_rt_blend_state rt[PIPE_MAX_COLOR_BUFS];
 };
 
@@ -266,25 +271,33 @@ struct pipe_sampler_state
 
 
 /**
- * 2D surface.  This is basically a view into a memory buffer.
- * May be a renderbuffer, texture mipmap level, etc.
+ * A view into a texture that can be bound to a color render target /
+ * depth stencil attachment point.
  */
 struct pipe_surface
 {
    struct pipe_reference reference;
    struct pipe_resource *texture; /**< resource into which this is a view  */
+   struct pipe_context *context; /**< context this view belongs to */
    enum pipe_format format;
 
+   /* XXX width/height should be removed */
    unsigned width;               /**< logical width in pixels */
    unsigned height;              /**< logical height in pixels */
 
-   unsigned layout;              /**< PIPE_SURFACE_LAYOUT_x */
-   unsigned offset;              /**< offset from start of buffer, in bytes */
    unsigned usage;               /**< bitmask of PIPE_BIND_x */
 
-   unsigned zslice;
-   unsigned face;
-   unsigned level;
+   union {
+      struct {
+         unsigned level;
+         unsigned first_layer:16;
+         unsigned last_layer:16;
+      } tex;
+      struct {
+         unsigned first_element;
+         unsigned last_element;
+      } buf;
+   } u;
 };
 
 
@@ -297,8 +310,18 @@ struct pipe_sampler_view
    enum pipe_format format;      /**< typed PIPE_FORMAT_x */
    struct pipe_resource *texture; /**< texture into which this is a view  */
    struct pipe_context *context; /**< context this view belongs to */
-   unsigned first_level:8;       /**< first mipmap level */
-   unsigned last_level:8;        /**< last mipmap level */
+   union {
+      struct {
+         unsigned first_layer:16;     /**< first layer to use for array textures */
+         unsigned last_layer:16;      /**< last layer to use for array textures */
+         unsigned first_level:8;      /**< first mipmap level to use */
+         unsigned last_level:8;       /**< last mipmap level to use */
+      } tex;
+      struct {
+         unsigned first_element;
+         unsigned last_element;
+      } buf;
+   } u;
    unsigned swizzle_r:3;         /**< PIPE_SWIZZLE_x for red component */
    unsigned swizzle_g:3;         /**< PIPE_SWIZZLE_x for green component */
    unsigned swizzle_b:3;         /**< PIPE_SWIZZLE_x for blue component */
@@ -333,23 +356,30 @@ struct pipe_resource
    unsigned width0;
    unsigned height0;
    unsigned depth0;
+   unsigned array_size;
 
    unsigned last_level:8;    /**< Index of last mipmap level present/defined */
    unsigned nr_samples:8;    /**< for multisampled surfaces, nr of samples */
    unsigned usage:8;         /**< PIPE_USAGE_x (not a bitmask) */
 
-   unsigned bind;	     /**< bitmask of PIPE_BIND_x */
-   unsigned flags;	     /**< bitmask of PIPE_RESOURCE_FLAG_x */
+   unsigned bind;            /**< bitmask of PIPE_BIND_x */
+   unsigned flags;           /**< bitmask of PIPE_RESOURCE_FLAG_x */
 };
 
-
-/**
- * Extra indexing info for (cube) texture resources.
- */
-struct pipe_subresource
+struct pipe_stream_output_state
 {
-   unsigned face:16;
-   unsigned level:16;
+   /**< number of the output buffer to insert each element into */
+   int output_buffer[PIPE_MAX_SHADER_OUTPUTS];
+   /**< which register to grab each output from */
+   int register_index[PIPE_MAX_SHADER_OUTPUTS];
+   /**< TGSI_WRITEMASK signifying which components to output */
+   ubyte register_mask[PIPE_MAX_SHADER_OUTPUTS];
+   /**< number of outputs */
+   int num_outputs;
+
+   /**< stride for an entire vertex, only used if all output_buffers
+    * are 0 */
+   unsigned stride;
 };
 
 
@@ -359,11 +389,11 @@ struct pipe_subresource
 struct pipe_transfer
 {
    struct pipe_resource *resource; /**< resource to transfer to/from  */
-   struct pipe_subresource sr;
+   unsigned level;
    enum pipe_transfer_usage usage;
    struct pipe_box box;
    unsigned stride;
-   unsigned slice_stride;
+   unsigned layer_stride;
    void *data;
 };
 
@@ -399,9 +429,50 @@ struct pipe_vertex_element
    /** Which vertex_buffer (as given to pipe->set_vertex_buffer()) does
     * this attribute live in?
     */
-   unsigned vertex_buffer_index:8;
+   unsigned vertex_buffer_index;
  
    enum pipe_format src_format;
+};
+
+
+/**
+ * An index buffer.  When an index buffer is bound, all indices to vertices
+ * will be looked up in the buffer.
+ */
+struct pipe_index_buffer
+{
+   unsigned index_size;  /**< size of an index, in bytes */
+   unsigned offset;  /**< offset to start of data in buffer, in bytes */
+   struct pipe_resource *buffer; /**< the actual buffer */
+};
+
+
+/**
+ * Information to describe a draw_vbo call.
+ */
+struct pipe_draw_info
+{
+   boolean indexed;  /**< use index buffer */
+
+   unsigned mode;  /**< the mode of the primitive */
+   unsigned start;  /**< the index of the first vertex */
+   unsigned count;  /**< number of vertices */
+
+   unsigned start_instance; /**< first instance id */
+   unsigned instance_count; /**< number of instances */
+
+   /**
+    * For indexed drawing, these fields apply after index lookup.
+    */
+   int index_bias; /**< a bias to be added to each index */
+   unsigned min_index; /**< the min index */
+   unsigned max_index; /**< the max index */
+
+   /**
+    * Primitive restart enable/index (only applies to indexed drawing)
+    */
+   boolean primitive_restart;
+   unsigned restart_index;
 };
 
 

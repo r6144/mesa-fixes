@@ -111,6 +111,7 @@ struct_factories = {
     #"pipe_texture": gallium.Texture,
     'pipe_subresource': gallium.pipe_subresource,
     'pipe_box': gallium.pipe_box,
+    'pipe_draw_info': gallium.pipe_draw_info,
 }
 
 
@@ -230,8 +231,8 @@ class Screen(Object):
         context = self.real.context_create()
         return Context(self.interpreter, context)
     
-    def is_format_supported(self, format, target, bind, geom_flags):
-        return self.real.is_format_supported(format, target, bind, geom_flags)
+    def is_format_supported(self, format, target, sample_count, bind, geom_flags):
+        return self.real.is_format_supported(format, target, sample_count, bind, geom_flags)
     
     def resource_create(self, templat):
         return self.real.resource_create(
@@ -249,14 +250,6 @@ class Screen(Object):
 
     def texture_release(self, surface):
         pass
-
-    def get_tex_surface(self, texture, face, level, zslice, usage):
-        if texture is None:
-            return None
-        return texture.get_surface(face, level, zslice)
-    
-    def tex_surface_destroy(self, surface):
-        self.interpreter.unregister_object(surface)
 
     def tex_surface_release(self, surface):
         pass
@@ -281,7 +274,7 @@ class Screen(Object):
     def fence_reference(self, dst, src):
         pass
     
-    def flush_frontbuffer(self, surface):
+    def flush_frontbuffer(self, resource):
         pass
 
 
@@ -533,43 +526,31 @@ class Context(Object):
 
         return minindex + ibias, maxindex + ibias
 
-    def draw_arrays(self, mode, start, count):
-        self.dump_vertices(start, count)
-            
-        self.real.draw_arrays(mode, start, count)
-        self._set_dirty()
-    
-    def draw_elements(self, indexBuffer, indexSize, indexBias, mode, start, count):
-        if self.interpreter.verbosity(2):
-            minindex, maxindex = self.dump_indices(indexBuffer, indexSize, indexBias, start, count)
-            self.dump_vertices(minindex, maxindex - minindex)
+    def set_index_buffer(self, ib):
+        if ib:
+            self.real.set_index_buffer(ib.index_size, ib.offset, ib.buffer)
+        else:
+            self.real.set_index_buffer(0, 0, None)
 
-        self.real.draw_elements(indexBuffer, indexSize, indexBias, mode, start, count)
-        self._set_dirty()
-        
-    def draw_range_elements(self, indexBuffer, indexSize, indexBias, minIndex, maxIndex, mode, start, count):
+    def draw_vbo(self, info):
         if self.interpreter.verbosity(2):
-            minindex, maxindex = self.dump_indices(indexBuffer, indexSize, indexBias, start, count)
-            minindex = min(minindex, minIndex)
-            maxindex = min(maxindex, maxIndex)
-            self.dump_vertices(minindex, maxindex - minindex)
+            if 0:
+                minindex, maxindex = self.dump_indices(indexBuffer, indexSize, indexBias, start, count)
 
-        self.real.draw_range_elements(indexBuffer, indexSize, indexBias, minIndex, maxIndex, mode, start, count)
+            self.dump_vertices(info.minindex, info.maxindex + 1 - info.minindex)
+
+        self.real.draw_vbo(info)
         self._set_dirty()
-        
-    def surface_copy(self, dest, destx, desty, src, srcx, srcy, width, height):
-        if dest is not None and src is not None:
+
+    def resource_copy_region(self, dst, subdst, dstx, dsty, dstz, src, subsrc, srcx, srcy, srcz, width, height):
+        if dst is not None and src is not None:
             if self.interpreter.options.all:
-                self.interpreter.present(self.real, src, 'surface_copy_src', srcx, srcy, width, height)
-            self.real.surface_copy(dest, destx, desty, src, srcx, srcy, width, height)
-            if dest in self.cbufs:
-                self._set_dirty()
-                flags = gallium.PIPE_FLUSH_FRAME
-            else:
-                flags = 0
+                self.interpreter.present(self.real, src, 'resource_copy_src', srcx, srcy, width, height)
+            self.real.resource_copy_region(dst, subdst, dstx, dsty, dstx, src, subsrc, srcx, srcy, srcz, width, height)
+            flags = 0
             self.flush(flags)
             if self.interpreter.options.all:
-                self.interpreter.present(self.real, dest, 'surface_copy_dest', destx, desty, width, height)
+                self.interpreter.present(self.real, dst, 'resource_copy_dst', dstx, dsty, width, height)
 
     def is_resource_referenced(self, texture, face, level):
         #return self.real.is_resource_referenced(format, texture, face, level)
@@ -592,7 +573,7 @@ class Context(Object):
         if transfer and usage & gallium.PIPE_TRANSFER_READ:
             if self.interpreter.options.all:
                 surface = texture.get_surface(sr.face, sr.level, box.z)
-                self.interpreter.present(self.real, transfer.surface, 'transf_read', box.x, box.y, box.w, box.h)
+                self.interpreter.present(self.real, transfer.surface, 'transf_read', box.x, box.y, box.width, box.height)
         return transfer
     
     def tex_transfer_destroy(self, transfer):
@@ -600,6 +581,10 @@ class Context(Object):
 
     def transfer_inline_write(self, resource, sr, usage, box, stride, slice_stride, data):
         self.real.transfer_inline_write(resource, sr, usage, box, data, stride, slice_stride)
+        if self.interpreter.options.all:
+            for z in range(box.z, box.z + box.depth):
+                surface = resource.get_surface(sr.face, sr.level, box.z)
+                self.interpreter.present(self.real, surface, 'transf_inline_write%u' % z, box.x, box.y, box.width, box.height)
 
     def _set_dirty(self):
         if self.interpreter.options.step:
@@ -621,6 +606,15 @@ class Context(Object):
             _rgba[i] = rgba[i]
         self.real.clear(buffers, _rgba, depth, stencil)
         
+    def clear_render_target(self, dst, rgba, dstx, dsty, width, height):
+        _rgba = gallium.FloatArray(4)
+        for i in range(4):
+            _rgba[i] = rgba[i]
+        self.real.clear_render_target(dst, _rgba, dstx, dsty, width, height)
+
+    def clear_depth_stencil(self, dst, clear_flags, depth, stencil, dstx, dsty, width, height):
+        self.real.clear_depth_stencil(dst, clear_flags, depth, stencil, dstx, dsty, width, height)
+
     def _present(self):
         self.real.flush()
     
@@ -629,7 +623,13 @@ class Context(Object):
         if self.zsbuf:
             if self.interpreter.options.all:
                 self.interpreter.present(self.real, self.zsbuf, "zsbuf")
-    
+    def create_surface(self, texture, level, layer, usage):
+        if texture is None:
+            return None
+        return texture.get_surface(level, layer)
+
+    def surface_destroy(self, surface):
+        self.interpreter.unregister_object(surface)
 
 class Interpreter(parser.TraceDumper):
     

@@ -46,6 +46,7 @@
 #include "util/u_math.h"
 #include "util/u_debug.h"
 #include "util/u_format.h"
+#include "util/u_box.h"
 #include "util/u_surface.h"
 
 #define DEBUG_PRINT 0
@@ -189,8 +190,8 @@ ExaDownloadFromScreen(PixmapPtr pPix, int x,  int y, int w,  int h, char *dst,
     if (!priv || !priv->tex)
 	return FALSE;
 
-    transfer = pipe_get_transfer(exa->pipe, priv->tex, 0, 0, 0,
-					   PIPE_TRANSFER_READ, x, y, w, h);
+    transfer = pipe_get_transfer(exa->pipe, priv->tex, 0, 0,
+                                 PIPE_TRANSFER_READ, x, y, w, h);
     if (!transfer)
 	return FALSE;
 
@@ -223,8 +224,8 @@ ExaUploadToScreen(PixmapPtr pPix, int x, int y, int w, int h, char *src,
     if (!priv || !priv->tex)
 	return FALSE;
 
-    transfer = pipe_get_transfer(exa->pipe, priv->tex, 0, 0, 0,
-					   PIPE_TRANSFER_WRITE, x, y, w, h);
+    transfer = pipe_get_transfer(exa->pipe, priv->tex, 0, 0,
+                                 PIPE_TRANSFER_WRITE, x, y, w, h);
     if (!transfer)
 	return FALSE;
 
@@ -266,7 +267,7 @@ ExaPrepareAccess(PixmapPtr pPix, int index)
         assert(pPix->drawable.height <= priv->tex->height0);
 
 	priv->map_transfer =
-	   pipe_get_transfer(exa->pipe, priv->tex, 0, 0, 0,
+	   pipe_get_transfer(exa->pipe, priv->tex, 0, 0,
 #ifdef EXA_MIXED_PIXMAPS
 					PIPE_TRANSFER_MAP_DIRECTLY |
 #endif
@@ -347,7 +348,7 @@ ExaPrepareSolid(PixmapPtr pPixmap, int alu, Pixel planeMask, Pixel fg)
 	XORG_FALLBACK("not GXcopy");
 
     if (!exa->scrn->is_format_supported(exa->scrn, priv->tex->format,
-                                        priv->tex->target,
+                                        priv->tex->target, 0,
                                         PIPE_BIND_RENDER_TARGET, 0)) {
 	XORG_FALLBACK("format %s", util_format_name(priv->tex->format));
     }
@@ -428,41 +429,29 @@ ExaPrepareCopy(PixmapPtr pSrcPixmap, PixmapPtr pDstPixmap, int xdir,
 	XORG_FALLBACK("alu not GXcopy");
 
     if (!exa->scrn->is_format_supported(exa->scrn, priv->tex->format,
-                                        priv->tex->target,
+                                        priv->tex->target, 0,
                                         PIPE_BIND_RENDER_TARGET, 0))
 	XORG_FALLBACK("pDst format %s", util_format_name(priv->tex->format));
 
     if (!exa->scrn->is_format_supported(exa->scrn, src_priv->tex->format,
-                                        src_priv->tex->target,
+                                        src_priv->tex->target, 0,
                                         PIPE_BIND_SAMPLER_VIEW, 0))
 	XORG_FALLBACK("pSrc format %s", util_format_name(src_priv->tex->format));
 
     exa->copy.src = src_priv;
     exa->copy.dst = priv;
 
-    /* For same-surface copies, the pipe->surface_copy path is clearly
-     * superior, providing it is implemented.  In other cases it's not
-     * clear what the better path would be, and eventually we'd
-     * probably want to gather timings and choose dynamically.
+    /* XXX this used to use resource_copy_region for same-surface copies,
+     * but they were redefined to not allow overlaps (some of the util code
+     * always assumed this anyway).
+     * Drivers should implement accelerated resource_copy_region or it will
+     * be slow - disable for now.
      */
-    if (exa->pipe->surface_copy &&
-        exa->copy.src == exa->copy.dst) {
-
+    if (0 && exa->copy.src != exa->copy.dst) {
        exa->copy.use_surface_copy = TRUE;
-       
-       exa->copy.src_surface =
-          exa->scrn->get_tex_surface( exa->scrn,
-                                      exa->copy.src->tex,
-                                      0, 0, 0,
-                                      PIPE_BIND_BLIT_SOURCE);
-
-       exa->copy.dst_surface =
-          exa->scrn->get_tex_surface( exa->scrn, 
-                                      exa->copy.dst->tex,
-                                      0, 0, 0, 
-                                      PIPE_BIND_BLIT_DESTINATION );
     }
     else {
+       struct pipe_surface surf_tmpl;
        exa->copy.use_surface_copy = FALSE;
 
        if (exa->copy.dst == exa->copy.src)
@@ -472,11 +461,13 @@ ExaPrepareCopy(PixmapPtr pSrcPixmap, PixmapPtr pDstPixmap, int xdir,
           pipe_resource_reference(&exa->copy.src_texture,
                                  exa->copy.src->tex);
 
+       memset(&surf_tmpl, 0, sizeof(surf_tmpl));
+       u_surface_default_template(&surf_tmpl, exa->copy.dst->tex,
+                                  PIPE_BIND_RENDER_TARGET);
        exa->copy.dst_surface =
-          exa->scrn->get_tex_surface(exa->scrn,
-                                     exa->copy.dst->tex,
-                                     0, 0, 0,
-                                     PIPE_BIND_BLIT_DESTINATION);
+          exa->pipe->create_surface(exa->pipe,
+                                    exa->copy.dst->tex,
+                                    &surf_tmpl);
 
 
        renderer_copy_prepare(exa->renderer, 
@@ -506,14 +497,14 @@ ExaCopy(PixmapPtr pDstPixmap, int srcX, int srcY, int dstX, int dstY,
    (void) priv;
 
    if (exa->copy.use_surface_copy) {
-      /* XXX: consider exposing >1 box in surface_copy interface.
-       */
-      exa->pipe->surface_copy( exa->pipe,
-                             exa->copy.dst_surface,
-                             dstX, dstY,
-                             exa->copy.src_surface,
-                             srcX, srcY,
-                             width, height );
+      struct pipe_box src_box;
+      u_box_2d(srcX, srcY, width, height, &src_box);
+      exa->pipe->resource_copy_region( exa->pipe,
+                                       exa->copy.dst->tex,
+                                       0,
+                                       dstX, dstY, 0,
+                                       exa->copy.src->tex,
+                                       0, &src_box);
    }
    else {
       renderer_copy_pixmap(exa->renderer, 
@@ -540,7 +531,6 @@ ExaDoneCopy(PixmapPtr pPixmap)
 
    exa->copy.src = NULL;
    exa->copy.dst = NULL;
-   pipe_surface_reference(&exa->copy.src_surface, NULL);
    pipe_surface_reference(&exa->copy.dst_surface, NULL);
    pipe_resource_reference(&exa->copy.src_texture, NULL);
 }
@@ -639,7 +629,7 @@ ExaPrepareComposite(int op, PicturePtr pSrcPicture,
       XORG_FALLBACK("pDst %s", !priv ? "!priv" : "!priv->tex");
 
    if (!exa->scrn->is_format_supported(exa->scrn, priv->tex->format,
-                                       priv->tex->target,
+                                       priv->tex->target, 0,
                                        PIPE_BIND_RENDER_TARGET, 0))
       XORG_FALLBACK("pDst format: %s", util_format_name(priv->tex->format));
 
@@ -654,7 +644,7 @@ ExaPrepareComposite(int op, PicturePtr pSrcPicture,
          XORG_FALLBACK("pSrc %s", !priv ? "!priv" : "!priv->tex");
 
       if (!exa->scrn->is_format_supported(exa->scrn, priv->tex->format,
-                                          priv->tex->target,
+                                          priv->tex->target, 0,
                                           PIPE_BIND_SAMPLER_VIEW, 0))
          XORG_FALLBACK("pSrc format: %s", util_format_name(priv->tex->format));
 
@@ -671,7 +661,7 @@ ExaPrepareComposite(int op, PicturePtr pSrcPicture,
          XORG_FALLBACK("pMask %s", !priv ? "!priv" : "!priv->tex");
 
       if (!exa->scrn->is_format_supported(exa->scrn, priv->tex->format,
-                                          priv->tex->target,
+                                          priv->tex->target, 0,
                                           PIPE_BIND_SAMPLER_VIEW, 0))
          XORG_FALLBACK("pMask format: %s", util_format_name(priv->tex->format));
 
@@ -730,7 +720,7 @@ ExaCreatePixmap(ScreenPtr pScreen, int size, int align)
 {
     struct exa_pixmap_priv *priv;
 
-    priv = xcalloc(1, sizeof(struct exa_pixmap_priv));
+    priv = calloc(1, sizeof(struct exa_pixmap_priv));
     if (!priv)
 	return NULL;
 
@@ -747,7 +737,7 @@ ExaDestroyPixmap(ScreenPtr pScreen, void *dPriv)
 
     pipe_resource_reference(&priv->tex, NULL);
 
-    xfree(priv);
+    free(priv);
 }
 
 static Bool
@@ -884,29 +874,21 @@ ExaModifyPixmapHeader(PixmapPtr pPixmap, int width, int height,
         }
 
 	template.depth0 = 1;
+	template.array_size = 1;
 	template.last_level = 0;
 	template.bind = PIPE_BIND_RENDER_TARGET | priv->flags;
 	priv->tex_flags = priv->flags;
 	texture = exa->scrn->resource_create(exa->scrn, &template);
 
 	if (priv->tex) {
-	    struct pipe_surface *dst_surf;
-	    struct pipe_surface *src_surf;
-
-	    dst_surf = exa->scrn->get_tex_surface(
-		exa->scrn, texture, 0, 0, 0, PIPE_BIND_BLIT_DESTINATION);
-	    src_surf = xorg_gpu_surface(exa->pipe->screen, priv);
-            if (exa->pipe->surface_copy) {
-               exa->pipe->surface_copy(exa->pipe, dst_surf, 0, 0, src_surf,
-                                       0, 0, min(width, texture->width0),
-                                       min(height, texture->height0));
-            } else {
-               util_surface_copy(exa->pipe, FALSE, dst_surf, 0, 0, src_surf,
-                                 0, 0, min(width, texture->width0),
-                                 min(height, texture->height0));
-            }
-	    exa->scrn->tex_surface_destroy(dst_surf);
-	    exa->scrn->tex_surface_destroy(src_surf);
+            struct pipe_box src_box;
+            u_box_origin_2d(min(width, texture->width0),
+                            min(height, texture->height0),
+                            &src_box);
+            exa->pipe->resource_copy_region(exa->pipe, texture,
+                                            0, 0, 0, 0,
+                                            priv->tex,
+                                            0, &src_box);
 	}
 
 	pipe_resource_reference(&priv->tex, texture);
@@ -962,6 +944,7 @@ xorg_exa_create_root_texture(ScrnInfoPtr pScrn,
     template.width0 = width;
     template.height0 = height;
     template.depth0 = 1;
+    template.array_size = 1;
     template.last_level = 0;
     template.bind |= PIPE_BIND_RENDER_TARGET;
     template.bind |= PIPE_BIND_SCANOUT;
@@ -990,7 +973,7 @@ xorg_exa_close(ScrnInfoPtr pScrn)
    ms->ctx = NULL;
 
    exaDriverFini(pScrn->pScreen);
-   xfree(exa);
+   free(exa);
    ms->exa = NULL;
 }
 
@@ -1000,8 +983,9 @@ xorg_exa_init(ScrnInfoPtr pScrn, Bool accel)
    modesettingPtr ms = modesettingPTR(pScrn);
    struct exa_context *exa;
    ExaDriverPtr pExa;
+   CustomizerPtr cust = ms->cust;
 
-   exa = xcalloc(1, sizeof(struct exa_context));
+   exa = calloc(1, sizeof(struct exa_context));
    if (!exa)
       return NULL;
 
@@ -1061,6 +1045,8 @@ xorg_exa_init(ScrnInfoPtr pScrn, Bool accel)
 
    /* Share context with DRI */
    ms->ctx = exa->pipe;
+   if (cust && cust->winsys_context_throttle)
+       cust->winsys_context_throttle(cust, ms->ctx, THROTTLE_RENDER);
 
    exa->renderer = renderer_create(exa->pipe);
    exa->accel = accel;
@@ -1069,19 +1055,20 @@ xorg_exa_init(ScrnInfoPtr pScrn, Bool accel)
 
 out_err:
    xorg_exa_close(pScrn);
+   free(exa);
 
    return NULL;
 }
 
 struct pipe_surface *
-xorg_gpu_surface(struct pipe_screen *scrn, struct exa_pixmap_priv *priv)
+xorg_gpu_surface(struct pipe_context *pipe, struct exa_pixmap_priv *priv)
 {
-   
-   /* seems to get called both for blits and render target usage */
-   return scrn->get_tex_surface(scrn, priv->tex, 0, 0, 0,
-                                PIPE_BIND_BLIT_SOURCE |
-                                PIPE_BIND_BLIT_DESTINATION |
-                                PIPE_BIND_RENDER_TARGET);
+   struct pipe_surface surf_tmpl;
+   memset(&surf_tmpl, 0, sizeof(surf_tmpl));
+   u_surface_default_template(&surf_tmpl, priv->tex,
+                              PIPE_BIND_RENDER_TARGET);
+
+   return pipe->create_surface(pipe, priv->tex, &surf_tmpl);
 
 }
 

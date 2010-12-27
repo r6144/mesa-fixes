@@ -50,7 +50,13 @@ struct r300_fragment_shader_code {
     struct r300_fragment_program_external_state compare_state;
     struct rX00_fragment_program_code code;
 
+    unsigned cb_code_size;
+    uint32_t *cb_code;
+
     struct r300_fragment_shader_code* next;
+
+    boolean write_all;
+
 };
 
 struct r300_fragment_shader {
@@ -78,4 +84,10 @@ static INLINE boolean r300_fragment_shader_writes_depth(struct r300_fragment_sha
     return (fs->shader->code.writes_depth) ? TRUE : FALSE;
 }
 
+static INLINE boolean r300_fragment_shader_writes_all(struct r300_fragment_shader *fs)
+{
+    if (!fs)
+        return FALSE;
+    return (fs->shader->write_all) ? TRUE : FALSE;
+}
 #endif /* R300_FS_H */
