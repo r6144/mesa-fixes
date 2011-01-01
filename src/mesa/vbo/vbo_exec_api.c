@@ -925,13 +925,13 @@ void vbo_exec_FlushVertices( struct gl_context *ctx, GLuint flags )
 {
    struct vbo_exec_context *exec = &vbo_context(ctx)->exec;
 
+   if (0) printf("%s, flush_call_depth=%d\n", __FUNCTION__, exec->flush_call_depth);
+
 #ifdef DEBUG
    /* debug check: make sure we don't get called recursively */
    exec->flush_call_depth++;
    assert(exec->flush_call_depth == 1);
 #endif
-
-   if (0) printf("%s\n", __FUNCTION__);
 
    if (exec->ctx->Driver.CurrentExecPrimitive != PRIM_OUTSIDE_BEGIN_END) {
       if (0) printf("%s - inside begin/end\n", __FUNCTION__);
@@ -955,6 +955,7 @@ void vbo_exec_FlushVertices( struct gl_context *ctx, GLuint flags )
    exec->flush_call_depth--;
    assert(exec->flush_call_depth == 0);
 #endif
+   if (0) printf("%s - finished\n", __FUNCTION__);
 }
 
 
