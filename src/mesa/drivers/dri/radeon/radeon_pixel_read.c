@@ -211,11 +211,14 @@ do_blit_readpixels(struct gl_context * ctx,
 		if (0) usleep(1000000);
 		printf("read pixels: x=%d y=%d width=%u height=%u dst_rowstride=%u aligned_rowstride=%u\n",
 		       x, y, width, height, dst_rowstride, aligned_rowstride);
-		out_file = fopen("/tmp/readpix.out", "wb");
+		out_file = fopen("/tmp/readpix-1.out", "wb"); assert(out_file);
 		result = fwrite(dst_buffer->ptr, aligned_rowstride * height, 1, out_file); assert(result == 1);
 		fclose(out_file);
 		copy_rows(pixels, dst_rowstride, dst_buffer->ptr,
 			  aligned_rowstride, height, dst_rowstride);
+		out_file = fopen("/tmp/readpix-2.out", "wb"); assert(out_file);
+		result = fwrite(pixels, dst_rowstride * height, 1, out_file); assert(result == 1);
+		fclose(out_file);
 	    }
 	    /* Well, current libdrm's bo_map() still increases mapcount in case of failure, though this doesn't matter much now
 	       due to the lazy munmap... */
@@ -223,7 +226,7 @@ do_blit_readpixels(struct gl_context * ctx,
             radeon_bo_unref(dst_buffer);
         }
 
-        return GL_TRUE;
+        return GL_FALSE; /* GL_TRUE; compare with software results */
     }
     r600_verbose_blit = 0;
 
@@ -240,8 +243,13 @@ radeonReadPixels(struct gl_context * ctx,
                  const struct gl_pixelstore_attrib *pack, GLvoid * pixels)
 {
     radeonContextPtr radeon = RADEON_CONTEXT(ctx);
+    FILE *out_file;
+    int dst_rowstride;
+    int result;
+
     radeon_prepare_render(radeon);
 
+    printf("SkipPixels=%d, SkipRows=%d\n", pack->SkipPixels, pack->SkipRows);
     if (do_blit_readpixels(ctx, x, y, width, height, format, type, pack, pixels))
         return;
 
@@ -259,4 +267,11 @@ radeonReadPixels(struct gl_context * ctx,
         _mesa_update_state(ctx);
 
     _swrast_ReadPixels(ctx, x, y, width, height, format, type, pack, pixels);
+
+    dst_rowstride = _mesa_image_row_stride(pack, width, format, type);
+    printf("dst_rowstride=%d\n", dst_rowstride);
+    if (dst_rowstride < 0) dst_rowstride = -dst_rowstride;
+    out_file = fopen("/tmp/readpix-3.out", "wb"); assert(out_file);
+    result = fwrite(pixels, dst_rowstride * height, 1, out_file); assert(result == 1);
+    fclose(out_file);
 }
