@@ -37,6 +37,10 @@
 #include "radeon_debug.h"
 #include "radeon_mipmap_tree.h"
 
+#include <unistd.h>
+
+extern int r600_verbose_blit;
+
 static gl_format gl_format_and_type_to_mesa_format(GLenum format, GLenum type)
 {
     switch (format)
@@ -98,6 +102,7 @@ do_blit_readpixels(struct gl_context * ctx,
     struct radeon_bo *dst_buffer;
     GLint dst_x = 0, dst_y = 0;
     intptr_t dst_offset;
+    int result;
 
 #if 0
     return GL_FALSE; /* Works around the th125 problem including a crash in copy_rows() here; still present as of mesa-git in Dec 2010 */
@@ -157,6 +162,11 @@ do_blit_readpixels(struct gl_context * ctx,
         flip_y = !flip_y;
     }
 
+#if 0 /* This doesn't help either... */
+    radeonFlush(ctx);
+    result = radeon_bo_wait(rrb->bo); assert(result == 0);
+#endif
+    r600_verbose_blit = 1;
     if (radeon->vtbl.blit(ctx,
                           rrb->bo,
                           rrb->draw_offset,
@@ -178,22 +188,32 @@ do_blit_readpixels(struct gl_context * ctx,
                           height,
                           flip_y))
     {
+	r600_verbose_blit = 0;
         if (!_mesa_is_bufferobj(pack->BufferObj))
         {
-	    int result;
 	    /* NOTE: r600_blit() ends with a radeonFlush(), so the command buffer has already been submitted via DRM_RADEON_CS,
 	       and all the relevant buffer objects are now wait-able due to the radeon_bo_list_fence() call in radeon_cs_parser_fini().
 	       Looking at the kernel DRM driver, the GEM set_domain operation doesn't usually do anything.
 	       Since the buffer is in GTT, bo_wait() should be enough. */
 	    /* NOTE: A bo_wait() should be unnecessary in GEM if the buffer object is not already mapped, since radeon_bo_map()
 	       already waits in that case.  However, map_unmap_rb() does this, so we do this just to be safe. */
-	    result = radeon_bo_wait(dst_buffer); ASSERT(result == 0); /* NOTE: Rebuild with --enable-debug to enable assertions */
+	    /* NOTE: Rebuild with --enable-debug to enable assertions; otherwise both ASSERT and assert will be disabled */
+	    result = radeon_bo_wait(dst_buffer); assert(result == 0);
             result = radeon_bo_map(dst_buffer, 0);
 	    if (result) {
 		/* Since we have seen segfaults in copy_rows(), perhaps radeon_bo_map() could fail, but we can't reproduce this now. */
 		fprintf(stderr, "(%s) error(%d) mapping buffer.\n",
 			__FUNCTION__, result);
 	    } else {
+		/* This doesn't help either, even though the delay is noticeable.  th125's pictures remain garbled,
+		   so the problem isn't insufficient waiting. */
+		FILE *out_file;
+		if (0) usleep(1000000);
+		printf("read pixels: x=%d y=%d width=%u height=%u dst_rowstride=%u aligned_rowstride=%u\n",
+		       x, y, width, height, dst_rowstride, aligned_rowstride);
+		out_file = fopen("/tmp/readpix.out", "wb");
+		result = fwrite(dst_buffer->ptr, aligned_rowstride * height, 1, out_file); assert(result == 1);
+		fclose(out_file);
 		copy_rows(pixels, dst_rowstride, dst_buffer->ptr,
 			  aligned_rowstride, height, dst_rowstride);
 	    }
@@ -205,6 +225,7 @@ do_blit_readpixels(struct gl_context * ctx,
 
         return GL_TRUE;
     }
+    r600_verbose_blit = 0;
 
     if (!_mesa_is_bufferobj(pack->BufferObj))
         radeon_bo_unref(dst_buffer);

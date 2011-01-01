@@ -1568,6 +1568,7 @@ static GLboolean validate_buffers(context_t *rmesa,
     return GL_TRUE;
 }
 
+int r600_verbose_blit = 0;
 unsigned r600_blit(struct gl_context *ctx,
                    struct radeon_bo *src_bo,
                    intptr_t src_offset,
@@ -1603,13 +1604,13 @@ unsigned r600_blit(struct gl_context *ctx,
         return GL_FALSE;
     }
 
-    if (0) {
+    if (r600_verbose_blit) {
         fprintf(stderr, "src: width %d, height %d, pitch %d vs %d, format %s\n",
                 src_width, src_height, src_pitch,
                 _mesa_format_row_stride(src_mesaformat, src_width),
                 _mesa_get_format_name(src_mesaformat));
-        fprintf(stderr, "dst: width %d, height %d, pitch %d, format %s\n",
-                dst_width, dst_height,
+        fprintf(stderr, "dst: width %d, height %d, pitch %d vs %d, format %s\n",
+                dst_width, dst_height, dst_pitch,
                 _mesa_format_row_stride(dst_mesaformat, dst_width),
                 _mesa_get_format_name(dst_mesaformat));
     }
