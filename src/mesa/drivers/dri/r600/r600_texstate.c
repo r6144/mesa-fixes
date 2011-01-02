@@ -543,7 +543,10 @@ static GLboolean r600GetTexFormat(struct gl_texture_object *tObj, gl_format mesa
 	case MESA_FORMAT_Z32:
 	case MESA_FORMAT_S8:
 		if (0) printf("depth texture, format=%s\n", _mesa_get_format_name(mesa_format));
-#if 0
+#if 1 /* We consider all depth textures tiled because this is the format used in renderbuffers, and
+		 most depth textures are copied from a renderbuffer.  Even though the user might
+		 occasionally want to upload/download an untiled version, the tiling/untiling should be done
+		 as an unpacking/packing step. */
 		SETbit(t->SQ_TEX_RESOURCE0, TILE_TYPE_bit);
 		SETfield(t->SQ_TEX_RESOURCE0, ARRAY_1D_TILED_THIN1,
 			 SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_shift,
