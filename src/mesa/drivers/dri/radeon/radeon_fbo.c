@@ -134,7 +134,7 @@ radeon_alloc_renderbuffer_storage(struct gl_context * ctx, struct gl_renderbuffe
    case GL_STENCIL_INDEX8_EXT:
    case GL_STENCIL_INDEX16_EXT:
       /* alloc a depth+stencil buffer */
-      rb->Format = MESA_FORMAT_S8_Z24;
+      rb->Format = MESA_FORMAT_Z24_S8;
       rb->DataType = GL_UNSIGNED_INT_24_8_EXT;
       cpp = 4;
       break;
@@ -374,6 +374,7 @@ radeon_create_renderbuffer(gl_format format, __DRIdrawable *driDrawPriv)
             rrb->base._BaseFormat = GL_DEPTH_COMPONENT;
 	    break;
 	case MESA_FORMAT_S8_Z24:
+	case MESA_FORMAT_Z24_S8:
 	    rrb->base.DataType = GL_UNSIGNED_INT_24_8_EXT;
             rrb->base._BaseFormat = GL_DEPTH_STENCIL;
 	    break;
@@ -484,7 +485,11 @@ radeon_update_wrapper(struct gl_context *ctx, struct radeon_renderbuffer *rrb,
 			rrb->base.DataType = GL_UNSIGNED_INT;
 			break;
 		case MESA_FORMAT_S8_Z24:
+		case MESA_FORMAT_Z24_S8:
 			rrb->base.DataType = GL_UNSIGNED_INT_24_8_EXT;
+			break;
+	        default:
+			_mesa_problem(ctx, "Unexpected format in radeon_update_wrapper.");
 			break;
 	}
 		

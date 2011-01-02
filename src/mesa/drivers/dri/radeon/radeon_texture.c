@@ -1002,6 +1002,7 @@ unsigned radeonIsFormatRenderable(gl_format mesa_format)
 	{
 		case MESA_FORMAT_Z16:
 		case MESA_FORMAT_S8_Z24:
+	    case MESA_FORMAT_Z24_S8:
 			return 1;
 		default:
 			return 0;

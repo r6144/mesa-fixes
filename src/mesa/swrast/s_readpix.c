@@ -387,8 +387,9 @@ read_depth_stencil_pixels(struct gl_context *ctx,
    if (depthRb->_BaseFormat == GL_DEPTH_STENCIL_EXT &&
        stencilRb->_BaseFormat == GL_DEPTH_STENCIL_EXT &&
        depthRb == stencilRb &&
+       depthRb->Format == MESA_FORMAT_Z24_S8 && /* It can be internally (in unpacked form) S8_Z24, which is not directly copyable. */
        !scaleOrBias &&
-       !stencilTransfer && 0) { /* NOTE: Disabled for now because the combined buffer can be S8_Z24 or Z24_S8. (FIXME: how to check?) */
+       !stencilTransfer) {
       /* This is the ideal case.
        * Reading GL_DEPTH_STENCIL pixels from combined depth/stencil buffer.
        * Plus, no pixel transfer ops to worry about!

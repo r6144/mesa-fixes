@@ -985,6 +985,36 @@ do {									\
 #define TAG(x) radeon##x##_s8_z24
 #include "stenciltmp.h"
 
+/* z24_s8; i.e. we write/read one external z24_s8 value from a tiled z24_s8 renderbuffer.
+   FIXME: How is a z24_s8 renderbuffer organized?  We assume that it is internally the same as the tiled s8_z24 buffer,
+   and indeed shadowtex looks right. */
+#define VALUE_TYPE GLuint
+#if defined(RADEON_R600)
+#define WRITE_DEPTH( _x, _y, d )					\
+  do {									\
+    GLuint *_ptr = (GLuint*)r600_ptr_depth( rrb, _x + x_off, _y + y_off ); \
+    GLuint tmp = *_ptr;							\
+    tmp &= 0xff000000;							\
+    tmp |= ((d) >> 8) & 0x00ffffff;			\
+    *_ptr = tmp;							\
+    _ptr = (GLuint*)r600_ptr_stencil(rrb, _x + x_off, _y + y_off);	\
+    tmp = *_ptr;							\
+    tmp &= 0xffffff00;							\
+    tmp |= (d) & 0xff;						\
+    *_ptr = tmp;							\
+  } while (0)
+
+#define READ_DEPTH( d, _x, _y )			\
+  do { \
+    d = ((*(GLuint*)(r600_ptr_depth(rrb, _x + x_off, _y + y_off))) << 8) & 0xffffff00; \
+    d |= (*(GLuint*)(r600_ptr_stencil(rrb, _x + x_off, _y + y_off))) & 0x000000ff; \
+  }while(0)
+
+#define TAG(x) radeon##x##_z24_s8
+#include "depthtmp.h"
+
+#endif
+
 
 static void map_unmap_rb(struct gl_renderbuffer *rb, int flag)
 {
@@ -1147,6 +1177,9 @@ static void radeonSetSpanFunctions(struct radeon_renderbuffer *rrb)
 		radeonInitDepthPointers_z24(&rrb->base);
 	} else if (rrb->base.Format == MESA_FORMAT_S8_Z24) {
 		radeonInitDepthPointers_s8_z24(&rrb->base);
+	} else if (rrb->base.Format == MESA_FORMAT_Z24_S8) {
+	    fprintf(stderr, "WARNING: using untested z24_s8 span functions\n");
+		radeonInitDepthPointers_z24_s8(&rrb->base);
 	} else if (rrb->base.Format == MESA_FORMAT_S8) {
 		radeonInitStencilPointers_s8_z24(&rrb->base);
 	} else {
