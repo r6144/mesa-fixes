@@ -248,7 +248,8 @@ static radeon_mipmap_tree* radeon_miptree_create(radeonContextPtr rmesa,
                             0, mt->totalsize, 1024,
                             RADEON_GEM_DOMAIN_VRAM,
                             0);
-
+	/* FIXME: Should set tiling_flags according to tilebits (the kernel will then set the tiling flags automatically for us),
+	   but what should pitch be?  It is used in the surface register settings. */
 	return mt;
 }
 
@@ -594,6 +595,7 @@ int radeon_validate_texture_miptree(struct gl_context * ctx, struct gl_texture_o
 	if (!texObj->_Complete) {
 		return GL_FALSE;
 	}
+	/* FIXME: set tile_bits */
 
 	calculate_min_max_lod(&t->base, &t->minLod, &t->maxLod);
 
