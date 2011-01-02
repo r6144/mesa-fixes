@@ -95,7 +95,7 @@ do_blit_readpixels(struct gl_context * ctx,
     const struct radeon_renderbuffer *rrb = radeon_renderbuffer(ctx->ReadBuffer->_ColorReadBuffer);
     const GLboolean dst_is_bufferobj = _mesa_is_bufferobj(pack->BufferObj);
     const gl_format dst_format = gl_format_and_type_to_mesa_format(format, type);
-    const unsigned dst_bpp = _mesa_get_format_bytes(dst_format);
+    const unsigned dst_bpp = _mesa_bytes_per_pixel(format, type);
     unsigned dst_width, dst_rowstride, dst_imagesize, aligned_rowstride, flip_y;
     struct radeon_bo *dst_buffer;
     GLint dst_x = 0, dst_y = 0;
@@ -112,6 +112,7 @@ do_blit_readpixels(struct gl_context * ctx,
         !radeon->vtbl.check_blit(dst_format) || !radeon->vtbl.blit) {
         return GL_FALSE;
     }
+    assert(dst_bpp == _mesa_get_format_bytes(dst_format));
 
     if (ctx->_ImageTransferState || ctx->Color._LogicOpEnabled) {
         return GL_FALSE;
