@@ -93,16 +93,19 @@ static GLboolean
 do_blit_readpixels(struct gl_context * ctx,
                    GLint x, GLint y, GLsizei width, GLsizei height,
                    GLenum format, GLenum type,
-                   const struct gl_pixelstore_attrib *pack, GLvoid * pixels)
+                   const struct gl_pixelstore_attrib *pack, GLvoid * pixels0)
 {
     radeonContextPtr radeon = RADEON_CONTEXT(ctx);
     const struct radeon_renderbuffer *rrb = radeon_renderbuffer(ctx->ReadBuffer->_ColorReadBuffer);
+    const GLboolean dst_is_bufferobj = _mesa_is_bufferobj(pack->BufferObj);
     const gl_format dst_format = gl_format_and_type_to_mesa_format(format, type);
-    unsigned dst_rowstride, dst_imagesize, aligned_rowstride, flip_y;
+    const unsigned dst_bpp = _mesa_get_format_bytes(dst_format);
+    unsigned dst_width, dst_rowstride, dst_imagesize, aligned_rowstride, flip_y;
     struct radeon_bo *dst_buffer;
     GLint dst_x = 0, dst_y = 0;
     intptr_t dst_offset;
     int result;
+    GLvoid *pixels;
 
 #if 0
     return GL_FALSE; /* Works around the th125 problem including a crash in copy_rows() here; still present as of mesa-git in Dec 2010 */
@@ -121,30 +124,28 @@ do_blit_readpixels(struct gl_context * ctx,
         return GL_FALSE;
     }
 
-    if (pack->SwapBytes || pack->LsbFirst) {
+    if (pack->SwapBytes || pack->LsbFirst || pack->Invert) {
+	/* FIXME: If pack->Invert is set, the row stride would be negative */
         return GL_FALSE;
     }
 
-    if (pack->RowLength > 0) {
-        dst_rowstride = pack->RowLength;
-    } else {
-        dst_rowstride = width;
-    }
+    dst_width = (pack->RowLength > 0) ? pack->RowLength : width;
+    dst_rowstride = _mesa_image_row_stride(pack, width, format, type); assert((int) dst_rowstride >= 0); /* in bytes */
+    pixels = (char *) pixels0 + pack->SkipPixels * dst_bpp + pack->SkipRows * dst_rowstride;
 
     if (!_mesa_clip_copytexsubimage(ctx, &dst_x, &dst_y, &x, &y, &width, &height)) {
         return GL_TRUE;
     }
     assert(x >= 0 && y >= 0);
 
-    aligned_rowstride = get_texture_image_row_stride(radeon, dst_format, dst_rowstride, 0);
-    dst_rowstride *= _mesa_get_format_bytes(dst_format);
-    if (_mesa_is_bufferobj(pack->BufferObj) && aligned_rowstride != dst_rowstride)
-        return GL_FALSE;
+    aligned_rowstride = get_texture_image_row_stride(radeon, dst_format, dst_width, 0); /* for the hardware */
+    if (dst_is_bufferobj && aligned_rowstride != dst_rowstride)
+        return GL_FALSE; /* The destination PBO's row length is not sufficiently aligned for the hardware */
     dst_imagesize = get_texture_image_size(dst_format,
                                            aligned_rowstride,
                                            height, 1, 0);
 
-    if (!_mesa_is_bufferobj(pack->BufferObj))
+    if (! dst_is_bufferobj)
     {
         dst_buffer = radeon_bo_open(radeon->radeonScreen->bom, 0, dst_imagesize, 1024, RADEON_GEM_DOMAIN_GTT, 0);
         dst_offset = 0;
@@ -179,8 +180,8 @@ do_blit_readpixels(struct gl_context * ctx,
                           dst_buffer,
                           dst_offset,
                           dst_format,
-                          aligned_rowstride / _mesa_get_format_bytes(dst_format),
-                          width,
+                          aligned_rowstride / dst_bpp,
+                          width, /* for clipping */
                           height,
                           0, /* dst_x */
                           0, /* dst_y */
@@ -189,7 +190,7 @@ do_blit_readpixels(struct gl_context * ctx,
                           flip_y))
     {
 	r600_verbose_blit = 0;
-        if (!_mesa_is_bufferobj(pack->BufferObj))
+        if (! dst_is_bufferobj)
         {
 	    /* NOTE: r600_blit() ends with a radeonFlush(), so the command buffer has already been submitted via DRM_RADEON_CS,
 	       and all the relevant buffer objects are now wait-able due to the radeon_bo_list_fence() call in radeon_cs_parser_fini().
@@ -214,8 +215,7 @@ do_blit_readpixels(struct gl_context * ctx,
 		out_file = fopen("/tmp/readpix-1.out", "wb"); assert(out_file);
 		result = fwrite(dst_buffer->ptr, aligned_rowstride * height, 1, out_file); assert(result == 1);
 		fclose(out_file);
-		copy_rows(pixels, dst_rowstride, dst_buffer->ptr,
-			  aligned_rowstride, height, dst_rowstride);
+		copy_rows(pixels, dst_rowstride, dst_buffer->ptr, aligned_rowstride, height, dst_rowstride);
 		out_file = fopen("/tmp/readpix-2.out", "wb"); assert(out_file);
 		result = fwrite(pixels, dst_rowstride * height, 1, out_file); assert(result == 1);
 		fclose(out_file);
@@ -226,11 +226,11 @@ do_blit_readpixels(struct gl_context * ctx,
             radeon_bo_unref(dst_buffer);
         }
 
-        return GL_FALSE; /* GL_TRUE; compare with software results */
+        return GL_TRUE; /* Can return GL_FALSE to compare with software results */
     }
     r600_verbose_blit = 0;
 
-    if (!_mesa_is_bufferobj(pack->BufferObj))
+    if (! dst_is_bufferobj)
         radeon_bo_unref(dst_buffer);
 
     return GL_FALSE;
