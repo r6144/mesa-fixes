@@ -37,10 +37,6 @@
 #include "radeon_debug.h"
 #include "radeon_mipmap_tree.h"
 
-#include <unistd.h>
-
-extern int r600_verbose_blit;
-
 static gl_format gl_format_and_type_to_mesa_format(GLenum format, GLenum type)
 {
     switch (format)
@@ -107,9 +103,6 @@ do_blit_readpixels(struct gl_context * ctx,
     int result;
     GLvoid *pixels;
 
-#if 0
-    return GL_FALSE; /* Works around the th125 problem including a crash in copy_rows() here; still present as of mesa-git in Dec 2010 */
-#endif
     /* It's not worth if number of pixels to copy is really small */
     if (width * height < 100) {
         return GL_FALSE;
@@ -163,11 +156,6 @@ do_blit_readpixels(struct gl_context * ctx,
         flip_y = !flip_y;
     }
 
-#if 0 /* This doesn't help either... */
-    radeonFlush(ctx);
-    result = radeon_bo_wait(rrb->bo); assert(result == 0);
-#endif
-    r600_verbose_blit = 1;
     if (radeon->vtbl.blit(ctx,
                           rrb->bo,
                           rrb->draw_offset,
@@ -189,7 +177,6 @@ do_blit_readpixels(struct gl_context * ctx,
                           height,
                           flip_y))
     {
-	r600_verbose_blit = 0;
         if (! dst_is_bufferobj)
         {
 	    /* NOTE: r600_blit() ends with a radeonFlush(), so the command buffer has already been submitted via DRM_RADEON_CS,
@@ -197,28 +184,15 @@ do_blit_readpixels(struct gl_context * ctx,
 	       Looking at the kernel DRM driver, the GEM set_domain operation doesn't usually do anything.
 	       Since the buffer is in GTT, bo_wait() should be enough. */
 	    /* NOTE: A bo_wait() should be unnecessary in GEM if the buffer object is not already mapped, since radeon_bo_map()
-	       already waits in that case.  However, map_unmap_rb() does this, so we do this just to be safe. */
+	       already waits in that case. */
 	    /* NOTE: Rebuild with --enable-debug to enable assertions; otherwise both ASSERT and assert will be disabled */
-	    result = radeon_bo_wait(dst_buffer); assert(result == 0);
             result = radeon_bo_map(dst_buffer, 0);
 	    if (result) {
 		/* Since we have seen segfaults in copy_rows(), perhaps radeon_bo_map() could fail, but we can't reproduce this now. */
 		fprintf(stderr, "(%s) error(%d) mapping buffer.\n",
 			__FUNCTION__, result);
 	    } else {
-		/* This doesn't help either, even though the delay is noticeable.  th125's pictures remain garbled,
-		   so the problem isn't insufficient waiting. */
-		FILE *out_file;
-		if (0) usleep(1000000);
-		printf("read pixels: x=%d y=%d width=%u height=%u dst_rowstride=%u aligned_rowstride=%u\n",
-		       x, y, width, height, dst_rowstride, aligned_rowstride);
-		out_file = fopen("/tmp/readpix-1.out", "wb"); assert(out_file);
-		result = fwrite(dst_buffer->ptr, aligned_rowstride * height, 1, out_file); assert(result == 1);
-		fclose(out_file);
 		copy_rows(pixels, dst_rowstride, dst_buffer->ptr, aligned_rowstride, height, dst_rowstride);
-		out_file = fopen("/tmp/readpix-2.out", "wb"); assert(out_file);
-		result = fwrite(pixels, dst_rowstride * height, 1, out_file); assert(result == 1);
-		fclose(out_file);
 	    }
 	    /* Well, current libdrm's bo_map() still increases mapcount in case of failure, though this doesn't matter much now
 	       due to the lazy munmap... */
@@ -228,7 +202,6 @@ do_blit_readpixels(struct gl_context * ctx,
 
         return GL_TRUE; /* Can return GL_FALSE to compare with software results */
     }
-    r600_verbose_blit = 0;
 
     if (! dst_is_bufferobj)
         radeon_bo_unref(dst_buffer);
@@ -243,13 +216,9 @@ radeonReadPixels(struct gl_context * ctx,
                  const struct gl_pixelstore_attrib *pack, GLvoid * pixels)
 {
     radeonContextPtr radeon = RADEON_CONTEXT(ctx);
-    FILE *out_file;
-    int dst_rowstride;
-    int result;
 
     radeon_prepare_render(radeon);
 
-    printf("SkipPixels=%d, SkipRows=%d\n", pack->SkipPixels, pack->SkipRows);
     if (do_blit_readpixels(ctx, x, y, width, height, format, type, pack, pixels))
         return;
 
@@ -267,11 +236,4 @@ radeonReadPixels(struct gl_context * ctx,
         _mesa_update_state(ctx);
 
     _swrast_ReadPixels(ctx, x, y, width, height, format, type, pack, pixels);
-
-    dst_rowstride = _mesa_image_row_stride(pack, width, format, type);
-    printf("dst_rowstride=%d\n", dst_rowstride);
-    if (dst_rowstride < 0) dst_rowstride = -dst_rowstride;
-    out_file = fopen("/tmp/readpix-3.out", "wb"); assert(out_file);
-    result = fwrite(pixels, dst_rowstride * height, 1, out_file); assert(result == 1);
-    fclose(out_file);
 }
