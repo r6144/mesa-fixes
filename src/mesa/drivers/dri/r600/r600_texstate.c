@@ -543,10 +543,12 @@ static GLboolean r600GetTexFormat(struct gl_texture_object *tObj, gl_format mesa
 	case MESA_FORMAT_Z32:
 	case MESA_FORMAT_S8:
 		if (0) printf("depth texture, format=%s\n", _mesa_get_format_name(mesa_format));
+#if 0
 		SETbit(t->SQ_TEX_RESOURCE0, TILE_TYPE_bit);
 		SETfield(t->SQ_TEX_RESOURCE0, ARRAY_1D_TILED_THIN1,
 			 SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_shift,
 			 SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_mask);
+#endif
 		switch (mesa_format) {
 		case MESA_FORMAT_Z16:
 			SETfield(t->SQ_TEX_RESOURCE1, FMT_16,

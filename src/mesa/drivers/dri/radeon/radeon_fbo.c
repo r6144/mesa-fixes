@@ -152,7 +152,9 @@ radeon_alloc_renderbuffer_storage(struct gl_context * ctx, struct gl_renderbuffe
       break;
    case GL_DEPTH_STENCIL_EXT:
    case GL_DEPTH24_STENCIL8_EXT:
-      rb->Format = MESA_FORMAT_S8_Z24;
+      /* We make rb->Format match rb->DataType so that e.g. glReadPixels() will return pixels in the correct format.
+	 See also renderbuffer.c:_mesa_soft_renderbuffer_storage(). */
+      rb->Format = MESA_FORMAT_Z24_S8;
       rb->DataType = GL_UNSIGNED_INT_24_8_EXT;
       cpp = 4;
       break;
