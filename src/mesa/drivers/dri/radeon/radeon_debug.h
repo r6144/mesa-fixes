@@ -48,7 +48,7 @@ typedef enum radeon_debug_levels {
  */
 #ifndef RADEON_DEBUG_LEVEL
 # ifdef DEBUG
-#  define RADEON_DEBUG_LEVEL RADEON_TRACE
+#  define RADEON_DEBUG_LEVEL RADEON_VERBOSE
 # else
 #  define RADEON_DEBUG_LEVEL RADEON_VERBOSE
 # endif

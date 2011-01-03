@@ -82,7 +82,8 @@ unsigned r600_check_blit(gl_format mesa_format)
 
     /* ??? */
 #if 0
-    /* not sure blit to depth works or not yet */
+    /* not sure blit to depth works or not yet; currently in shadowtex, this gives an untiled depth texture in software-mode,
+       but when accelerated the result looks strange.  Note that the blitter seems to handle tiling just fine. */
     if (_mesa_get_format_bits(mesa_format, GL_DEPTH_BITS) > 0)
 	    return 0;
 #endif
