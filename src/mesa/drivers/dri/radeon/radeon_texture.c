@@ -690,7 +690,10 @@ static void radeon_store_teximage(struct gl_context* ctx, int dims,
 			"%s(%p, tex %p, image %p) compressed %d\n",
 			__func__, ctx, texObj, texImage, compressed);
 
-	if (image->mt) {
+	/* FIXME: In order to support texture tiling, we must perform tiling here in software or hardware as an unpacking step.
+	   In addition, when creating the texture image, the FetchTexel functions should be defined appropriately (see main/texfetch*)
+	   for use in software rendering. */
+	if (image->mt) { /* Already validated, e.g. for hardware rendering */
 		dstRowStride = image->mt->levels[image->mtlevel].rowstride;
 	} else if (t->bo) {
 		/* TFP case */
