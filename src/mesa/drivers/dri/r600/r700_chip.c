@@ -38,6 +38,7 @@
 #include "r700_vertprog.h"
 
 #include "radeon_mipmap_tree.h"
+#include <assert.h>
 
 static void r700SendTexState(struct gl_context *ctx, struct radeon_state_atom *atom)
 {
@@ -586,17 +587,19 @@ static void r700SetDepthTarget(context_t *context)
 
     if(4 == rrb->cpp)
     {
+	assert(rrb->base.Format == MESA_FORMAT_S8_Z24);
         SETfield(r700->DB_DEPTH_INFO.u32All, DEPTH_8_24,
                  DB_DEPTH_INFO__FORMAT_shift, DB_DEPTH_INFO__FORMAT_mask);
     }
     else
     {
+	assert(rrb->base.Format == MESA_FORMAT_Z16);
         SETfield(r700->DB_DEPTH_INFO.u32All, DEPTH_16,
-                     DB_DEPTH_INFO__FORMAT_shift, DB_DEPTH_INFO__FORMAT_mask);
+		 DB_DEPTH_INFO__FORMAT_shift, DB_DEPTH_INFO__FORMAT_mask);
     }
     SETfield(r700->DB_DEPTH_INFO.u32All, ARRAY_1D_TILED_THIN1,
              DB_DEPTH_INFO__ARRAY_MODE_shift, DB_DEPTH_INFO__ARRAY_MODE_mask);
-    /* r700->DB_PREFETCH_LIMIT.bits.DEPTH_HEIGHT_TILE_MAX = (context->currentDraw->h >> 3) - 1; */ /* z buffer sie may much bigger than what need, so use actual used h. */
+    /* r700->DB_PREFETCH_LIMIT.bits.DEPTH_HEIGHT_TILE_MAX = (context->currentDraw->h >> 3) - 1; */ /* z buffer size may much bigger than what need, so use actual used h. */
 }
 
 static void r700SendDepthTargetState(struct gl_context *ctx, struct radeon_state_atom *atom)

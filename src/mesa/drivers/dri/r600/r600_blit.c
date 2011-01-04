@@ -305,10 +305,8 @@ set_render_target(context_t *context, struct radeon_bo *bo, gl_format mesa_forma
     case MESA_FORMAT_Z24_S8:
             format = COLOR_24_8;
             comp_swap = SWAP_STD;
-#if 0
 	    SETfield(cb_color0_info, ARRAY_1D_TILED_THIN1,
 		     CB_COLOR0_INFO__ARRAY_MODE_shift, CB_COLOR0_INFO__ARRAY_MODE_mask);
-#endif
 	    CLEARbit(cb_color0_info, SOURCE_FORMAT_bit);
 	    SETfield(cb_color0_info, NUMBER_UNORM, NUMBER_TYPE_shift, NUMBER_TYPE_mask);
             break;

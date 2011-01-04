@@ -249,7 +249,11 @@ static radeon_mipmap_tree* radeon_miptree_create(radeonContextPtr rmesa,
                             RADEON_GEM_DOMAIN_VRAM,
                             0);
 	/* FIXME: Should set tiling_flags according to tilebits (the kernel will then set the tiling flags automatically for us),
-	   but what should pitch be?  It is used in the surface register settings. */
+	   but what should pitch be?  It is used in the surface register settings.  (Does this refer to hardware untiling?  Seems not,
+	   since the span renderer still has to take this into account.
+
+	   Note that any tiling flags should also be copied to bo->flags for use by the span functions (and possibly packing/unpacking).
+	*/
 	return mt;
 }
 

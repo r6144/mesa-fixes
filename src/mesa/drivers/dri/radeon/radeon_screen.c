@@ -1831,7 +1831,7 @@ radeonCreateBuffer( __DRIscreen *driScrnPriv,
     if (mesaVis->depthBits == 24) {
       if (mesaVis->stencilBits == 8) {
 	struct radeon_renderbuffer *depthStencilRb =
-           radeon_create_renderbuffer(MESA_FORMAT_Z24_S8, driDrawPriv);
+           radeon_create_renderbuffer(MESA_FORMAT_S8_Z24, driDrawPriv);
 	_mesa_add_renderbuffer(&rfb->base, BUFFER_DEPTH, &depthStencilRb->base);
 	_mesa_add_renderbuffer(&rfb->base, BUFFER_STENCIL, &depthStencilRb->base);
 	depthStencilRb->has_surface = screen->depthHasSurface;

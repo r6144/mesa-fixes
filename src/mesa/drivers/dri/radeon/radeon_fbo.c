@@ -134,7 +134,7 @@ radeon_alloc_renderbuffer_storage(struct gl_context * ctx, struct gl_renderbuffe
    case GL_STENCIL_INDEX8_EXT:
    case GL_STENCIL_INDEX16_EXT:
       /* alloc a depth+stencil buffer */
-      rb->Format = MESA_FORMAT_Z24_S8;
+      rb->Format = MESA_FORMAT_S8_Z24;
       rb->DataType = GL_UNSIGNED_INT_24_8_EXT;
       cpp = 4;
       break;
@@ -152,9 +152,23 @@ radeon_alloc_renderbuffer_storage(struct gl_context * ctx, struct gl_renderbuffe
       break;
    case GL_DEPTH_STENCIL_EXT:
    case GL_DEPTH24_STENCIL8_EXT:
-      /* We make rb->Format match rb->DataType so that e.g. glReadPixels() will return pixels in the correct format.
+      /* Note: This rb->Format does not match rb->DataType, which is effectively Z24_S8.  However,
+	 rb->Format is just the "unpacked" format used internally by OpenGL and corresponds to the
+	 tiled and separate-depth-stencil-in-tile format used in the hardware, while rb->DataType is
+	 the "packed" format visible by the application and corresponds to the untiled format.  The
+	 unpacking/packing steps should set up the blitter appropriately for this, and the span
+	 functions should also be aware of this.
+
+	 The hardware depth buffer is always tiled, separate-depth-stencil-in-tile S8_Z24 (see the
+	 DB_DEPTH_INFO constants), so Z24_S8 is not compatible with that usage scenario.
+
+	 In general, rb->Format (and other MESA_FORMAT_* stuff) refer to an unpacked format, while
+	 rb->DataType (and other GL_* types) refer to a packed format.  The blitter, which has to
+	 use the hardware's texturing operations to operate on packed buffers for packing/unpacking
+	 operations, is an obvious exception.
+
 	 See also renderbuffer.c:_mesa_soft_renderbuffer_storage(). */
-      rb->Format = MESA_FORMAT_Z24_S8;
+      rb->Format = MESA_FORMAT_S8_Z24;
       rb->DataType = GL_UNSIGNED_INT_24_8_EXT;
       cpp = 4;
       break;
