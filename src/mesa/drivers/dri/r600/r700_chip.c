@@ -585,6 +585,7 @@ static void r700SetDepthTarget(context_t *context)
     SETfield(r700->DB_DEPTH_SIZE.u32All, ( (nPitchInPixel * height)/64 )-1,
              SLICE_TILE_MAX_shift, SLICE_TILE_MAX_mask); /* size in pixel / 64 - 1 */
 
+	/* All types of depth buffers use square tiling (corresponding to a set TILE_TYPE_bit in texture options). */
     if(4 == rrb->cpp)
     {
 		unsigned fmt;

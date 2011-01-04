@@ -817,6 +817,8 @@ static void radeon_teximage(
 	}
 
 	/* Upload texture image; note that the spec allows pixels to be NULL */
+	/* NOTE: If a PBO is used, this simply calls the MapBuffer method to map the radeon_bo.  Should optimize this to use the hardware,
+	   especially when doing tiling. */
 	if (compressed) {
 		pixels = _mesa_validate_pbo_compressed_teximage(
 			ctx, imageSize, pixels, packing, "glCompressedTexImage");
