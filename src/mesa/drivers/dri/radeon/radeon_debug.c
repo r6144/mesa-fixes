@@ -31,9 +31,13 @@
 
 #include "radeon_debug.h"
 #include "radeon_common_context.h"
+#include "radeon_bocs_wrapper.h"
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <assert.h>
 
 static const struct dri_debug_control debug_control[] = {
 	{"fall", RADEON_FALLBACKS},
@@ -104,4 +108,24 @@ void _radeon_print(const radeon_debug_type_t type,
 	va_start( values, message );
 	vfprintf(stderr, message, values);
 	va_end( values );
+}
+
+/* Should probably yield the object in the format actually stored in memory, e.g. in tiled format if this is the case.
+   Usually you want to flush the command buffer before calling this. */
+void _radeon_bo_dump(struct radeon_bo *bo, const char *function, int line)
+{
+	static unsigned total_dump_num;
+	unsigned cur_dump_num = ++total_dump_num;
+	char fname[256];
+	int result;
+	FILE *out_file;
+
+	sprintf(fname, "/tmp/radeon_bo_dump_%u.out", cur_dump_num);
+	fprintf(stderr, "radeon_bo_dump() at %s:%d: dumping to %s\n", function, line, fname);
+	out_file = fopen(fname, "wb"); assert(out_file != NULL);
+	result = radeon_bo_wait(bo); assert(result == 0); /* In case the BO is already mapped */
+	result = radeon_bo_map(bo, 0); assert(result == 0);
+	result = fwrite(bo->ptr, bo->size, 1, out_file); assert(result == 1);
+	result = radeon_bo_unmap(bo); assert(result == 0);
+	fclose(out_file);
 }

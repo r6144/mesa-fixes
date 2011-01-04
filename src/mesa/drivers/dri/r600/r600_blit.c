@@ -1569,7 +1569,7 @@ static GLboolean validate_buffers(context_t *rmesa,
     return GL_TRUE;
 }
 
-int r600_verbose_blit = 0;
+int r600_verbose_blit = 1;
 unsigned r600_blit(struct gl_context *ctx,
                    struct radeon_bo *src_bo,
                    intptr_t src_offset,
@@ -1606,18 +1606,18 @@ unsigned r600_blit(struct gl_context *ctx,
     }
 
     if (r600_verbose_blit) {
-        fprintf(stderr, "src: width %d, height %d, pitch %d vs %d, format %s\n",
-                src_width, src_height, src_pitch,
-                _mesa_format_row_stride(src_mesaformat, src_width),
-                _mesa_get_format_name(src_mesaformat));
-        fprintf(stderr, "dst: width %d, height %d, pitch %d vs %d, format %s\n",
-                dst_width, dst_height, dst_pitch,
-                _mesa_format_row_stride(dst_mesaformat, dst_width),
+	/* Seems that the size of the copied region is w*h, with no stretching */
+        fprintf(stderr, "src: width %u, height %u, pitch %u, x %u, y %u, w %u, h %u, offset %lx, format %s, flip_y=%u\n",
+                src_width, src_height, src_pitch, src_x, src_y, w, h, (long) src_offset,
+                _mesa_get_format_name(src_mesaformat), flip_y);
+        fprintf(stderr, "dst: width %d, height %d, pitch %u, x %u, y %u, w %u, h %u, offset %lx, format %s\n",
+                dst_width, dst_height, dst_pitch, dst_x, dst_y, w, h, (long) dst_offset,
                 _mesa_get_format_name(dst_mesaformat));
     }
 
     /* Flush is needed to make sure that source buffer has correct data */
     radeonFlush(ctx);
+    radeon_bo_dump(src_bo);
 
     rcommonEnsureCmdBufSpace(&context->radeon, 311, __FUNCTION__);
 
@@ -1670,6 +1670,7 @@ unsigned r600_blit(struct gl_context *ctx,
     r700WaitForIdleClean(context);
 
     radeonFlush(ctx);
+    radeon_bo_dump(dst_bo);
 
     return GL_TRUE;
 }

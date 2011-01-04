@@ -31,6 +31,7 @@
 #define RADEON_DEBUG_H_INCLUDED
 
 #include <stdlib.h>
+#include "radeon_bocs_wrapper.h"
 
 typedef enum radeon_debug_levels {
 	RADEON_CRITICAL  = 0, /* Only errors */
@@ -170,5 +171,7 @@ static inline void radeon_debug_remove_indent(void)
                } \
        } while(0)
 
+#define radeon_bo_dump(bo) _radeon_bo_dump(bo, __FUNCTION__, __LINE__)
+void _radeon_bo_dump(struct radeon_bo *bo, const char *function, int line);
 
 #endif
