@@ -111,7 +111,7 @@ void _radeon_print(const radeon_debug_type_t type,
 }
 
 /* Should probably yield the object in the format actually stored in memory, e.g. in tiled format if this is the case.
-   Usually you want to flush the command buffer before calling this. */
+   Usually you want to flush the command buffer before calling this, or better, only use it between radeonSpanRenderStart()/Finish(). */
 void _radeon_bo_dump(struct radeon_bo *bo, const char *function, int line)
 {
 	static unsigned total_dump_num;
