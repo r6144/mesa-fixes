@@ -587,13 +587,14 @@ static void r700SetDepthTarget(context_t *context)
 
     if(4 == rrb->cpp)
     {
-	assert(rrb->base.Format == MESA_FORMAT_S8_Z24);
+		assert(rrb->base.Format == MESA_FORMAT_S8_Z24);
         SETfield(r700->DB_DEPTH_INFO.u32All, DEPTH_8_24,
                  DB_DEPTH_INFO__FORMAT_shift, DB_DEPTH_INFO__FORMAT_mask);
+		/* READ_SIZE and TILE_COMPACT appear to have no effect */
     }
     else
     {
-	assert(rrb->base.Format == MESA_FORMAT_Z16);
+		assert(rrb->base.Format == MESA_FORMAT_Z16);
         SETfield(r700->DB_DEPTH_INFO.u32All, DEPTH_16,
 		 DB_DEPTH_INFO__FORMAT_shift, DB_DEPTH_INFO__FORMAT_mask);
     }

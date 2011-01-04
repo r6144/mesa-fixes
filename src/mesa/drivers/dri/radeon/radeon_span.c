@@ -145,7 +145,7 @@ static inline GLint r600_1d_tile_helper(const struct radeon_renderbuffer * rrb,
     tile_column_index = x / tile_width;
     tile_offset = ((tile_row_index * tiles_per_row) + tile_column_index) * tile_bytes;
 
-    if (is_depth) {
+    if (is_depth) { /* Actually used when TILE_TYPE_bit is set */
 	    GLint pixel_offset = 0;
 
 	    pixel_number |= ((x >> 0) & 1) << 0; // pn[0] = x[0]
@@ -171,7 +171,7 @@ static inline GLint r600_1d_tile_helper(const struct radeon_renderbuffer * rrb,
 		    break;
 	    }
 	    element_offset = pixel_offset + (sample_number * element_bytes);
-    } else {
+    } else { /* When TILE_TYPE_bit is cleared */
 	    GLint sample_offset;
 
 	    switch (element_bytes) {

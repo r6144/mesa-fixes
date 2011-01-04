@@ -152,12 +152,13 @@ radeon_alloc_renderbuffer_storage(struct gl_context * ctx, struct gl_renderbuffe
       break;
    case GL_DEPTH_STENCIL_EXT:
    case GL_DEPTH24_STENCIL8_EXT:
-      /* Note: This rb->Format does not match rb->DataType, which is effectively Z24_S8.  However,
-	 rb->Format is just the "unpacked" format used internally by OpenGL and corresponds to the
-	 tiled and separate-depth-stencil-in-tile format used in the hardware, while rb->DataType is
-	 the "packed" format visible by the application and corresponds to the untiled format.  The
-	 unpacking/packing steps should set up the blitter appropriately for this, and the span
-	 functions should also be aware of this.
+      /* NOTE: S8_Z24 in untiled mode actually means one stencil byte followed by three
+	 little-endian depth bytes, which happens to match GL_UNSIGHED_INT_24_8 on little-endian
+	 machines.  Note that rb->Format is just the "unpacked" format used internally by OpenGL and
+	 corresponds to the tiled and separate-depth-stencil-in-tile format used in the hardware,
+	 while rb->DataType is the "packed" format visible by the application and corresponds to the
+	 untiled format.  The unpacking/packing steps should set up the blitter appropriately for
+	 this, and the span functions should also be aware of this.
 
 	 The hardware depth buffer is always tiled, separate-depth-stencil-in-tile S8_Z24 (see the
 	 DB_DEPTH_INFO constants), so Z24_S8 is not compatible with that usage scenario.
