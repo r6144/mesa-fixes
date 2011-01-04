@@ -297,7 +297,7 @@ set_render_target(context_t *context, struct radeon_bo *bo, gl_format mesa_forma
     case MESA_FORMAT_S8_Z24:
             format = COLOR_8_24;
             comp_swap = SWAP_STD;
-#if 0
+#if 1
 	    SETfield(cb_color0_info, ARRAY_1D_TILED_THIN1,
 		     CB_COLOR0_INFO__ARRAY_MODE_shift, CB_COLOR0_INFO__ARRAY_MODE_mask);
 #endif
