@@ -272,6 +272,7 @@ static void r700SetRenderTarget(context_t *context, int id)
     uint32_t format = COLOR_8_8_8_8, comp_swap = SWAP_ALT, number_type = NUMBER_UNORM;
     struct radeon_renderbuffer *rrb;
     unsigned int nPitchInPixel, height;
+    unsigned array_mode;
 
     rrb = radeon_get_colorbuffer(&context->radeon);
     if (!rrb || !rrb->bo) {
@@ -299,7 +300,12 @@ static void r700SetRenderTarget(context_t *context, int id)
     SETfield(r700->render_target[id].CB_COLOR0_SIZE.u32All, ( (nPitchInPixel * height)/64 )-1,
              SLICE_TILE_MAX_shift, SLICE_TILE_MAX_mask);
     SETfield(r700->render_target[id].CB_COLOR0_INFO.u32All, ENDIAN_NONE, ENDIAN_shift, ENDIAN_mask);
-    SETfield(r700->render_target[id].CB_COLOR0_INFO.u32All, ARRAY_LINEAR_GENERAL,
+
+    assert(! (rrb->bo->flags & RADEON_BO_FLAGS_MICRO_TILE_SQUARE));
+    if (rrb->bo->flags & RADEON_BO_FLAGS_MACRO_TILE) array_mode = ARRAY_2D_TILED_THIN1;
+    else if (rrb->bo->flags & RADEON_BO_FLAGS_MICRO_TILE) array_mode = ARRAY_1D_TILED_THIN1;
+    else array_mode = ARRAY_LINEAR_GENERAL;
+    SETfield(r700->render_target[id].CB_COLOR0_INFO.u32All, array_mode,
              CB_COLOR0_INFO__ARRAY_MODE_shift, CB_COLOR0_INFO__ARRAY_MODE_mask);
 
     switch (rrb->base.Format) {
@@ -484,32 +490,24 @@ static void r700SetRenderTarget(context_t *context, int id)
             format = COLOR_8_24;
             comp_swap = SWAP_STD;
 	    number_type = NUMBER_UNORM;
-	    SETfield(r700->render_target[id].CB_COLOR0_INFO.u32All, ARRAY_1D_TILED_THIN1,
-		     CB_COLOR0_INFO__ARRAY_MODE_shift, CB_COLOR0_INFO__ARRAY_MODE_mask);
 	    CLEARbit(r700->render_target[id].CB_COLOR0_INFO.u32All, SOURCE_FORMAT_bit);
             break;
     case MESA_FORMAT_Z24_S8:
             format = COLOR_24_8;
             comp_swap = SWAP_STD;
 	    number_type = NUMBER_UNORM;
-	    SETfield(r700->render_target[id].CB_COLOR0_INFO.u32All, ARRAY_1D_TILED_THIN1,
-		     CB_COLOR0_INFO__ARRAY_MODE_shift, CB_COLOR0_INFO__ARRAY_MODE_mask);
 	    CLEARbit(r700->render_target[id].CB_COLOR0_INFO.u32All, SOURCE_FORMAT_bit);
             break;
     case MESA_FORMAT_Z16:
             format = COLOR_16;
             comp_swap = SWAP_STD;
 	    number_type = NUMBER_UNORM;
-	    SETfield(r700->render_target[id].CB_COLOR0_INFO.u32All, ARRAY_1D_TILED_THIN1,
-		     CB_COLOR0_INFO__ARRAY_MODE_shift, CB_COLOR0_INFO__ARRAY_MODE_mask);
 	    CLEARbit(r700->render_target[id].CB_COLOR0_INFO.u32All, SOURCE_FORMAT_bit);
             break;
     case MESA_FORMAT_Z32:
             format = COLOR_32;
             comp_swap = SWAP_STD;
 	    number_type = NUMBER_UNORM;
-	    SETfield(r700->render_target[id].CB_COLOR0_INFO.u32All, ARRAY_1D_TILED_THIN1,
-		     CB_COLOR0_INFO__ARRAY_MODE_shift, CB_COLOR0_INFO__ARRAY_MODE_mask);
 	    CLEARbit(r700->render_target[id].CB_COLOR0_INFO.u32All, SOURCE_FORMAT_bit);
             break;
     case MESA_FORMAT_SARGB8:
@@ -556,6 +554,7 @@ static void r700SetDepthTarget(context_t *context)
 
     struct radeon_renderbuffer *rrb;
     unsigned int nPitchInPixel, height;
+    unsigned array_mode;
 
     rrb = radeon_get_depthbuffer(&context->radeon);
     if (!rrb)
@@ -585,27 +584,31 @@ static void r700SetDepthTarget(context_t *context)
     SETfield(r700->DB_DEPTH_SIZE.u32All, ( (nPitchInPixel * height)/64 )-1,
              SLICE_TILE_MAX_shift, SLICE_TILE_MAX_mask); /* size in pixel / 64 - 1 */
 
-	/* All types of depth buffers use square tiling (corresponding to a set TILE_TYPE_bit in texture options). */
+    /* All types of depth buffers use square tiling (corresponding to a set TILE_TYPE_bit in texture options).
+       Here when we say "square tiling", we also include DEPTH_8_24 and DEPTH_X8_24's separate-depth-and-stencil-in-each tile
+       mode, which seems impossible to emulate in texture options. */
     if(4 == rrb->cpp)
     {
-		unsigned fmt;
-		/* DEPTH_8_24 uses separate depth-and-stencil in each tile; the texture sampler cannot handle this yet.
-		   Unfortunately, DEPTH_X8_24 uses this format as well. */
-		switch (rrb->base.Format) {
-		case MESA_FORMAT_S8_Z24: fmt = DEPTH_8_24; break;
-		case MESA_FORMAT_X8_Z24: fmt = DEPTH_X8_24; break;
-		default: assert(0); break;
-		}
+	unsigned fmt;
+	/* DEPTH_8_24 uses separate depth-and-stencil in each tile; the texture sampler cannot handle this yet.
+	   Unfortunately, DEPTH_X8_24 uses this format as well. */
+	switch (rrb->base.Format) {
+	case MESA_FORMAT_S8_Z24: fmt = DEPTH_8_24; break;
+	case MESA_FORMAT_X8_Z24: fmt = DEPTH_X8_24; break;
+	default: assert(0); break;
+	}
         SETfield(r700->DB_DEPTH_INFO.u32All, fmt, DB_DEPTH_INFO__FORMAT_shift, DB_DEPTH_INFO__FORMAT_mask);
-		/* READ_SIZE and TILE_COMPACT appear to have no effect for the separate-depth-and-stencil-in-tiles problem,
-		   and as of Fedora 14 the kernel does not allow TILE_SURFACE_ENABLE_bit (depth/stencil htile?). */
+	/* READ_SIZE and TILE_COMPACT appear to have no effect for the separate-depth-and-stencil-in-tiles problem,
+	   and as of Fedora 14 the kernel does not allow TILE_SURFACE_ENABLE_bit (depth/stencil htile?). */
     }
     else
     {
-		assert(rrb->base.Format == MESA_FORMAT_Z16);
+	assert(rrb->base.Format == MESA_FORMAT_Z16);
         SETfield(r700->DB_DEPTH_INFO.u32All, DEPTH_16, DB_DEPTH_INFO__FORMAT_shift, DB_DEPTH_INFO__FORMAT_mask);
     }
-    SETfield(r700->DB_DEPTH_INFO.u32All, ARRAY_1D_TILED_THIN1,
+    assert(rrb->bo->flags & RADEON_BO_FLAGS_MICRO_TILE); assert(rrb->bo->flags & RADEON_BO_FLAGS_MICRO_TILE_SQUARE);
+    array_mode = (rrb->bo->flags & RADEON_BO_FLAGS_MACRO_TILE) ? ARRAY_2D_TILED_THIN1 : ARRAY_1D_TILED_THIN1;
+    SETfield(r700->DB_DEPTH_INFO.u32All, array_mode,
              DB_DEPTH_INFO__ARRAY_MODE_shift, DB_DEPTH_INFO__ARRAY_MODE_mask);
     /* r700->DB_PREFETCH_LIMIT.bits.DEPTH_HEIGHT_TILE_MAX = (context->currentDraw->h >> 3) - 1; */ /* z buffer size may much bigger than what need, so use actual used h. */
 }

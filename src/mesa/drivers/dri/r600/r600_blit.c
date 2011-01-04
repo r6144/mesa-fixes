@@ -31,6 +31,7 @@
 #include "r600_blit.h"
 #include "r600_blit_shaders.h"
 #include "r600_cmdbuf.h"
+#include <assert.h>
 
 /* common formats supported as both textures and render targets */
 unsigned r600_check_blit(gl_format mesa_format)
@@ -101,6 +102,8 @@ set_render_target(context_t *context, struct radeon_bo *bo, gl_format mesa_forma
     uint32_t cb_color0_base, cb_color0_size = 0, cb_color0_info = 0, cb_color0_view = 0;
     int id = 0;
     uint32_t comp_swap, format;
+    unsigned array_mode;
+
     BATCH_LOCALS(&context->radeon);
 
     cb_color0_base = dst_offset / 256;
@@ -111,7 +114,12 @@ set_render_target(context_t *context, struct radeon_bo *bo, gl_format mesa_forma
              SLICE_TILE_MAX_shift, SLICE_TILE_MAX_mask);
 
     SETfield(cb_color0_info, ENDIAN_NONE, ENDIAN_shift, ENDIAN_mask);
-    SETfield(cb_color0_info, ARRAY_LINEAR_GENERAL,
+    
+    assert(! (bo->flags & RADEON_BO_FLAGS_MICRO_TILE_SQUARE));
+    if (bo->flags & RADEON_BO_FLAGS_MACRO_TILE) array_mode = ARRAY_2D_TILED_THIN1;
+    else if (bo->flags & RADEON_BO_FLAGS_MICRO_TILE) array_mode = ARRAY_1D_TILED_THIN1;
+    else array_mode = ARRAY_LINEAR_GENERAL;
+    SETfield(cb_color0_info, array_mode,
              CB_COLOR0_INFO__ARRAY_MODE_shift, CB_COLOR0_INFO__ARRAY_MODE_mask);
 
     SETbit(cb_color0_info, BLEND_BYPASS_bit);
@@ -297,34 +305,24 @@ set_render_target(context_t *context, struct radeon_bo *bo, gl_format mesa_forma
     case MESA_FORMAT_S8_Z24:
             format = COLOR_8_24;
             comp_swap = SWAP_STD;
-#if 1
-	    SETfield(cb_color0_info, ARRAY_1D_TILED_THIN1,
-		     CB_COLOR0_INFO__ARRAY_MODE_shift, CB_COLOR0_INFO__ARRAY_MODE_mask);
-#endif
 	    CLEARbit(cb_color0_info, SOURCE_FORMAT_bit);
 	    SETfield(cb_color0_info, NUMBER_UNORM, NUMBER_TYPE_shift, NUMBER_TYPE_mask);
             break;
     case MESA_FORMAT_Z24_S8:
             format = COLOR_24_8;
             comp_swap = SWAP_STD;
-	    SETfield(cb_color0_info, ARRAY_1D_TILED_THIN1,
-		     CB_COLOR0_INFO__ARRAY_MODE_shift, CB_COLOR0_INFO__ARRAY_MODE_mask);
 	    CLEARbit(cb_color0_info, SOURCE_FORMAT_bit);
 	    SETfield(cb_color0_info, NUMBER_UNORM, NUMBER_TYPE_shift, NUMBER_TYPE_mask);
             break;
     case MESA_FORMAT_Z16:
             format = COLOR_16;
             comp_swap = SWAP_STD;
-	    SETfield(cb_color0_info, ARRAY_1D_TILED_THIN1,
-		     CB_COLOR0_INFO__ARRAY_MODE_shift, CB_COLOR0_INFO__ARRAY_MODE_mask);
 	    CLEARbit(cb_color0_info, SOURCE_FORMAT_bit);
 	    SETfield(cb_color0_info, NUMBER_UNORM, NUMBER_TYPE_shift, NUMBER_TYPE_mask);
             break;
     case MESA_FORMAT_Z32:
             format = COLOR_32;
             comp_swap = SWAP_STD;
-	    SETfield(cb_color0_info, ARRAY_1D_TILED_THIN1,
-		     CB_COLOR0_INFO__ARRAY_MODE_shift, CB_COLOR0_INFO__ARRAY_MODE_mask);
 	    CLEARbit(cb_color0_info, SOURCE_FORMAT_bit);
 	    SETfield(cb_color0_info, NUMBER_UNORM, NUMBER_TYPE_shift, NUMBER_TYPE_mask);
             break;
@@ -577,14 +575,21 @@ set_tex_resource(context_t * context,
 		 int TexelPitch, intptr_t src_offset)
 {
     uint32_t sq_tex_resource0, sq_tex_resource1, sq_tex_resource2, sq_tex_resource4, sq_tex_resource6;
+    unsigned array_mode;
 
     sq_tex_resource0 = sq_tex_resource1 = sq_tex_resource2 = sq_tex_resource4 = sq_tex_resource6 = 0;
     BATCH_LOCALS(&context->radeon);
 
     SETfield(sq_tex_resource0, SQ_TEX_DIM_2D, DIM_shift, DIM_mask);
-    SETfield(sq_tex_resource0, ARRAY_LINEAR_GENERAL,
-                 SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_shift,
-                 SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_mask);
+    if (bo->flags & RADEON_BO_FLAGS_MICRO_TILE_SQUARE) SETbit(sq_tex_resource0, TILE_TYPE_bit);
+    else CLEARbit(sq_tex_resource0, TILE_TYPE_bit);
+
+    if (bo->flags & RADEON_BO_FLAGS_MACRO_TILE) array_mode = ARRAY_2D_TILED_THIN1;
+    else if (bo->flags & RADEON_BO_FLAGS_MICRO_TILE) array_mode = ARRAY_1D_TILED_THIN1;
+    else array_mode = ARRAY_LINEAR_GENERAL;
+    SETfield(sq_tex_resource0, array_mode,
+	     SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_shift,
+	     SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_mask);
 
     switch (mesa_format) {
     case MESA_FORMAT_RGBA8888:
@@ -963,10 +968,6 @@ set_tex_resource(context_t * context,
 		     SQ_TEX_RESOURCE_WORD4_0__DST_SEL_W_shift, SQ_TEX_RESOURCE_WORD4_0__DST_SEL_W_mask);
 	    break;
     case MESA_FORMAT_Z16:
-	    SETbit(sq_tex_resource0, TILE_TYPE_bit);
-	    SETfield(sq_tex_resource0, ARRAY_1D_TILED_THIN1,
-		     SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_shift,
-		     SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_mask);
 	    SETfield(sq_tex_resource1, FMT_16,
 		     SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_shift, SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_mask);
 	    SETfield(sq_tex_resource4, SQ_SEL_X,
@@ -979,10 +980,6 @@ set_tex_resource(context_t * context,
 		     SQ_TEX_RESOURCE_WORD4_0__DST_SEL_W_shift, SQ_TEX_RESOURCE_WORD4_0__DST_SEL_W_mask);
 	    break;
     case MESA_FORMAT_X8_Z24:
-	    SETbit(sq_tex_resource0, TILE_TYPE_bit);
-	    SETfield(sq_tex_resource0, ARRAY_1D_TILED_THIN1,
-		     SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_shift,
-		     SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_mask);
 	    SETfield(sq_tex_resource1, FMT_8_24,
 		     SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_shift, SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_mask);
 	    SETfield(sq_tex_resource4, SQ_SEL_X,
@@ -995,10 +992,6 @@ set_tex_resource(context_t * context,
 		     SQ_TEX_RESOURCE_WORD4_0__DST_SEL_W_shift, SQ_TEX_RESOURCE_WORD4_0__DST_SEL_W_mask);
 	    break;
     case MESA_FORMAT_S8_Z24:
-	    SETbit(sq_tex_resource0, TILE_TYPE_bit);
-	    SETfield(sq_tex_resource0, ARRAY_1D_TILED_THIN1,
-		     SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_shift,
-		     SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_mask);
 	    SETfield(sq_tex_resource1, FMT_8_24,
 		     SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_shift, SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_mask);
 	    SETfield(sq_tex_resource4, SQ_SEL_X,
@@ -1011,10 +1004,6 @@ set_tex_resource(context_t * context,
 		     SQ_TEX_RESOURCE_WORD4_0__DST_SEL_W_shift, SQ_TEX_RESOURCE_WORD4_0__DST_SEL_W_mask);
 	    break;
     case MESA_FORMAT_Z24_S8:
-	    SETbit(sq_tex_resource0, TILE_TYPE_bit);
-	    SETfield(sq_tex_resource0, ARRAY_1D_TILED_THIN1,
-		     SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_shift,
-		     SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_mask);
 	    SETfield(sq_tex_resource1, FMT_24_8,
 		     SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_shift, SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_mask);
 	    SETfield(sq_tex_resource4, SQ_SEL_X,
@@ -1027,10 +1016,6 @@ set_tex_resource(context_t * context,
 		     SQ_TEX_RESOURCE_WORD4_0__DST_SEL_W_shift, SQ_TEX_RESOURCE_WORD4_0__DST_SEL_W_mask);
 	    break;
     case MESA_FORMAT_Z32:
-	    SETbit(sq_tex_resource0, TILE_TYPE_bit);
-	    SETfield(sq_tex_resource0, ARRAY_1D_TILED_THIN1,
-		     SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_shift,
-		     SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_mask);
 	    SETfield(sq_tex_resource1, FMT_32,
 		     SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_shift, SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_mask);
 	    SETfield(sq_tex_resource4, SQ_SEL_X,
@@ -1043,10 +1028,6 @@ set_tex_resource(context_t * context,
 		     SQ_TEX_RESOURCE_WORD4_0__DST_SEL_W_shift, SQ_TEX_RESOURCE_WORD4_0__DST_SEL_W_mask);
 	    break;
     case MESA_FORMAT_S8:
-	    SETbit(sq_tex_resource0, TILE_TYPE_bit);
-	    SETfield(sq_tex_resource0, ARRAY_1D_TILED_THIN1,
-		     SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_shift,
-		     SQ_TEX_RESOURCE_WORD0_0__TILE_MODE_mask);
 	    SETfield(sq_tex_resource1, FMT_8,
 		     SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_shift, SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_mask);
 	    SETfield(sq_tex_resource4, SQ_SEL_X,
@@ -1612,16 +1593,23 @@ unsigned r600_blit(struct gl_context *ctx,
 
     if (r600_verbose_blit) {
 	/* Seems that the size of the copied region is w*h, with no stretching */
-        fprintf(stderr, "src: width %u, height %u, pitch %u, x %u, y %u, w %u, h %u, offset %lx, format %s, flip_y=%u\n",
-                src_width, src_height, src_pitch, src_x, src_y, w, h, (long) src_offset,
+        fprintf(stderr, "src: width %u, height %u, pitch %u, tile 0x%x, x %u, y %u, w %u, h %u, offset %lx, format %s, flip_y=%u\n",
+                src_width, src_height, src_pitch, src_bo->flags, src_x, src_y, w, h, (long) src_offset,
                 _mesa_get_format_name(src_mesaformat), flip_y);
-        fprintf(stderr, "dst: width %d, height %d, pitch %u, x %u, y %u, w %u, h %u, offset %lx, format %s\n",
-                dst_width, dst_height, dst_pitch, dst_x, dst_y, w, h, (long) dst_offset,
+        fprintf(stderr, "dst: width %d, height %d, pitch %u, tile 0x%x, x %u, y %u, w %u, h %u, offset %lx, format %s\n",
+                dst_width, dst_height, dst_pitch, dst_bo->flags, dst_x, dst_y, w, h, (long) dst_offset,
                 _mesa_get_format_name(dst_mesaformat));
     }
 
     /* Flush is needed to make sure that source buffer has correct data */
     radeonFlush(ctx);
+
+    if ((src_bo->flags & RADEON_BO_FLAGS_MICRO_TILE_SQUARE)
+	&& (src_mesaformat == MESA_FORMAT_X8_Z24 || src_mesaformat == MESA_FORMAT_S8_Z24 || src_mesaformat == MESA_FORMAT_Z24_S8)) {
+	/* We need to undo the grouping of depth and stencil tiles first, as the texture sampler does not handle that part of tiling */
+	fprintf(stderr, "Warning: blitting not accelerated due to 8_24 square tiling\n");
+	return GL_FALSE;
+    }
     radeon_bo_dump(src_bo);
 
     rcommonEnsureCmdBufSpace(&context->radeon, 311, __FUNCTION__);

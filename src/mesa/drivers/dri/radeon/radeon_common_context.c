@@ -411,6 +411,7 @@ radeon_make_kernel_renderbuffer_current(radeonContextPtr radeon,
 						0,
 						RADEON_GEM_DOMAIN_VRAM,
 						0);
+			rb->bo->flags |= (RADEON_BO_FLAGS_MICRO_TILE | RADEON_BO_FLAGS_MICRO_TILE_SQUARE);
 		}
 		rb->cpp = radeon->radeonScreen->cpp;
 		rb->pitch = radeon->radeonScreen->depthPitch * rb->cpp;
@@ -478,6 +479,7 @@ radeon_make_renderbuffer_current(radeonContextPtr radeon,
 						4096,
 						RADEON_GEM_DOMAIN_VRAM,
 						0);
+			rb->bo->flags |= (RADEON_BO_FLAGS_MICRO_TILE | RADEON_BO_FLAGS_MICRO_TILE_SQUARE);
 		}
 		rb->cpp = radeon->radeonScreen->cpp;
 		rb->pitch = radeon->radeonScreen->depthPitch * rb->cpp;
@@ -739,6 +741,8 @@ radeon_update_renderbuffers(__DRIcontext *context, __DRIdrawable *drawable,
 					regname, buffers[i].name);
 				continue;
 			}
+			if (buffers[i].attachment == __DRI_BUFFER_DEPTH)
+				bo->flags |= (RADEON_BO_FLAGS_MICRO_TILE | RADEON_BO_FLAGS_MICRO_TILE_SQUARE);
 
 			ret = radeon_bo_get_tiling(bo, &tiling_flags, &pitch);
 			if (tiling_flags & RADEON_TILING_MACRO)

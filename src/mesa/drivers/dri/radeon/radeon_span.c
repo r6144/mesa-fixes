@@ -381,47 +381,37 @@ static inline GLint r600_2d_tile_helper(const struct radeon_renderbuffer * rrb,
 	return offset;
 }
 
-/* depth buffers */
-static GLubyte *r600_ptr_depth(const struct radeon_renderbuffer * rrb,
-			       GLint x, GLint y)
+/* is_stencil only matters for 8_24 square tiling */
+static inline GLubyte *r600_ptr_common(const struct radeon_renderbuffer * rrb,
+									   GLint x, GLint y, unsigned is_stencil)
 {
     GLubyte *ptr = rrb->bo->ptr;
     GLint offset;
-    if (rrb->bo->flags & RADEON_BO_FLAGS_MACRO_TILE)
-	    offset = r600_2d_tile_helper(rrb, x, y, 1, 0);
-    else
-	    offset = r600_1d_tile_helper(rrb, x, y, 1, 0);
+	unsigned flags = rrb->has_surface ? 0 : rrb->bo->flags; /* we see a linear buffer if a surface register is set */
+	unsigned is_square = (flags & RADEON_BO_FLAGS_MICRO_TILE_SQUARE) ? 1 : 0;
+    if (flags & RADEON_BO_FLAGS_MACRO_TILE)
+	    offset = r600_2d_tile_helper(rrb, x, y, is_square, is_stencil);
+    else if (flags & RADEON_BO_FLAGS_MICRO_TILE)
+	    offset = r600_1d_tile_helper(rrb, x, y, is_square, is_stencil);
+	else offset = x * rrb->cpp + y * rrb->pitch;
     return &ptr[offset];
+}
+
+static GLubyte *r600_ptr_depth(const struct radeon_renderbuffer * rrb, GLint x, GLint y)
+{
+	return r600_ptr_common(rrb, x, y, 0);
 }
 
 static GLubyte *r600_ptr_stencil(const struct radeon_renderbuffer * rrb,
 				 GLint x, GLint y)
 {
-    GLubyte *ptr = rrb->bo->ptr;
-    GLint offset;
-    if (rrb->bo->flags & RADEON_BO_FLAGS_MACRO_TILE)
-	    offset = r600_2d_tile_helper(rrb, x, y, 1, 1);
-    else
-	    offset = r600_1d_tile_helper(rrb, x, y, 1, 1);
-    return &ptr[offset];
+	return r600_ptr_common(rrb, x, y, 1);
 }
 
 static GLubyte *r600_ptr_color(const struct radeon_renderbuffer * rrb,
 			       GLint x, GLint y)
 {
-    GLubyte *ptr = rrb->bo->ptr;
-    uint32_t mask = RADEON_BO_FLAGS_MACRO_TILE | RADEON_BO_FLAGS_MICRO_TILE;
-    GLint offset;
-
-    if (rrb->has_surface || !(rrb->bo->flags & mask)) {
-        offset = x * rrb->cpp + y * rrb->pitch;
-    } else {
-	    if (rrb->bo->flags & RADEON_BO_FLAGS_MACRO_TILE)
-		    offset = r600_2d_tile_helper(rrb, x, y, 0, 0);
-	    else
-		    offset = r600_1d_tile_helper(rrb, x, y, 0, 0);
-    }
-    return &ptr[offset];
+	return r600_ptr_common(rrb, x, y, 0);
 }
 
 #else

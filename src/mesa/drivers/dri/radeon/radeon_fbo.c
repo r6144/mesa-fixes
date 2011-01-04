@@ -92,6 +92,7 @@ radeon_alloc_renderbuffer_storage(struct gl_context * ctx, struct gl_renderbuffe
   struct radeon_context *radeon = RADEON_CONTEXT(ctx);
   struct radeon_renderbuffer *rrb = radeon_renderbuffer(rb);
   GLboolean software_buffer = GL_FALSE;
+  GLboolean is_depth = GL_FALSE; /* Will this renderbuffer be used as a depth buffer? */
   int cpp;
 
   radeon_print(RADEON_TEXTURE, RADEON_TRACE,
@@ -136,11 +137,13 @@ radeon_alloc_renderbuffer_storage(struct gl_context * ctx, struct gl_renderbuffe
       /* alloc a depth+stencil buffer */
       rb->Format = MESA_FORMAT_S8_Z24;
       rb->DataType = GL_UNSIGNED_INT_24_8_EXT;
+      is_depth = GL_TRUE;
       cpp = 4;
       break;
    case GL_DEPTH_COMPONENT16:
       rb->Format = MESA_FORMAT_Z16;
       rb->DataType = GL_UNSIGNED_SHORT;
+      is_depth = GL_TRUE;
       cpp = 2;
       break;
    case GL_DEPTH_COMPONENT:
@@ -148,6 +151,7 @@ radeon_alloc_renderbuffer_storage(struct gl_context * ctx, struct gl_renderbuffe
    case GL_DEPTH_COMPONENT32:
       rb->Format = MESA_FORMAT_X8_Z24;
       rb->DataType = GL_UNSIGNED_INT;
+      is_depth = GL_TRUE;
       cpp = 4;
       break;
    case GL_DEPTH_STENCIL_EXT:
@@ -172,6 +176,7 @@ radeon_alloc_renderbuffer_storage(struct gl_context * ctx, struct gl_renderbuffe
 	 See also renderbuffer.c:_mesa_soft_renderbuffer_storage(). */
       rb->Format = MESA_FORMAT_S8_Z24;
       rb->DataType = GL_UNSIGNED_INT_24_8_EXT;
+      is_depth = GL_TRUE;
       cpp = 4;
       break;
    default:
@@ -194,24 +199,27 @@ radeon_alloc_renderbuffer_storage(struct gl_context * ctx, struct gl_renderbuffe
                                              width, height);
    }
    else {
-     uint32_t size;
-     uint32_t pitch = ((cpp * width + 63) & ~63) / cpp;
+       uint32_t size;
+       uint32_t pitch = ((cpp * width + 63) & ~63) / cpp;
 
-     if (RADEON_DEBUG & RADEON_MEMORY)
-	     fprintf(stderr,"Allocating %d x %d radeon RBO (pitch %d)\n", width,
-		     height, pitch);
+       if (RADEON_DEBUG & RADEON_MEMORY)
+	   fprintf(stderr,"Allocating %d x %d radeon RBO (pitch %d)\n", width,
+		   height, pitch);
 
-     size = pitch * height * cpp;
-     rrb->pitch = pitch * cpp;
-     rrb->cpp = cpp;
-     rrb->bo = radeon_bo_open(radeon->radeonScreen->bom,
-			      0,
-			      size,
-			      0,
-			      RADEON_GEM_DOMAIN_VRAM,
-			      0);
-     rb->Width = width;
-     rb->Height = height;
+       size = pitch * height * cpp;
+       rrb->pitch = pitch * cpp;
+       rrb->cpp = cpp;
+       rrb->bo = radeon_bo_open(radeon->radeonScreen->bom,
+				0,
+				size,
+				0,
+				RADEON_GEM_DOMAIN_VRAM,
+				0);
+       /* This makes it harder to do pack/unpack operations, but we can otherwise not use this as a depth buffer.
+	  Note that depth textures does not have to be tiled, although attaching a depth texture to an FBO would fail otherwise */
+       if (is_depth) rrb->bo->flags |= (RADEON_BO_FLAGS_MICRO_TILE | RADEON_BO_FLAGS_MICRO_TILE_SQUARE);
+       rb->Width = width;
+       rb->Height = height;
        return GL_TRUE;
    }    
    

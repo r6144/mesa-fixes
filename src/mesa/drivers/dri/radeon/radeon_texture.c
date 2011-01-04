@@ -45,7 +45,7 @@
 #include "radeon_common.h"
 
 #include "radeon_mipmap_tree.h"
-
+#include <assert.h>
 
 void copy_rows(void* dst, GLuint dststride, const void* src, GLuint srcstride,
 	GLuint numrows, GLuint rowsize)
@@ -693,6 +693,7 @@ static void radeon_store_teximage(struct gl_context* ctx, int dims,
 	/* FIXME: In order to support texture tiling, we must perform tiling here in software or hardware as an unpacking step.
 	   In addition, when creating the texture image, the FetchTexel functions should be defined appropriately (see main/texfetch*)
 	   for use in software rendering. */
+	assert(t->tile_bits == 0);
 	if (image->mt) { /* Already validated, e.g. for hardware rendering */
 		dstRowStride = image->mt->levels[image->mtlevel].rowstride;
 	} else if (t->bo) {

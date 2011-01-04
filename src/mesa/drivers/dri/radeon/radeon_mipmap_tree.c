@@ -30,6 +30,7 @@
 
 #include <errno.h>
 #include <unistd.h>
+#include <assert.h>
 
 #include "main/simple_list.h"
 #include "main/teximage.h"
@@ -87,6 +88,7 @@ unsigned get_texture_image_size(
 		/* Need to align height to tile height */
 		unsigned tileWidth, tileHeight;
 
+		assert(! (tiling & RADEON_BO_FLAGS_MACRO_TILE));
 		get_tile_size(format, &tileWidth, &tileHeight);
 		tileHeight--;
 
@@ -96,6 +98,7 @@ unsigned get_texture_image_size(
 	return rowStride * height * depth;
 }
 
+/* Under tiling, this is usable if we only deal with entire rows of tiles */
 unsigned get_texture_image_row_stride(radeonContextPtr rmesa, gl_format format, unsigned width, unsigned tiling)
 {
 	if (_mesa_is_format_compressed(format)) {
@@ -107,6 +110,7 @@ unsigned get_texture_image_row_stride(radeonContextPtr rmesa, gl_format format, 
 			row_align = rmesa->texture_rect_row_align - 1;
 		} else if (tiling) {
 			unsigned tileWidth, tileHeight;
+			assert(! (tiling & RADEON_BO_FLAGS_MACRO_TILE));
 			get_tile_size(format, &tileWidth, &tileHeight);
 			row_align = tileWidth * _mesa_get_format_bytes(format) - 1;
 		} else {
@@ -249,11 +253,13 @@ static radeon_mipmap_tree* radeon_miptree_create(radeonContextPtr rmesa,
                             RADEON_GEM_DOMAIN_VRAM,
                             0);
 	/* FIXME: Should set tiling_flags according to tilebits (the kernel will then set the tiling flags automatically for us),
-	   but what should pitch be?  It is used in the surface register settings.  (Does this refer to hardware untiling?  Seems not,
-	   since the span renderer still has to take this into account.
+	   but what should pitch be?  It is used in the surface register settings.  (If a renderbuffer has a surface register
+	   allocated, rrb->has_surface is set, then the hardware does all the tiling for us; see radeon_span.c.)
 
-	   Note that any tiling flags should also be copied to bo->flags for use by the span functions (and possibly packing/unpacking).
+	   Note that any tiling flags should also have corresponding bo->flags
+	   for use by the span functions (and possibly packing/unpacking).
 	*/
+	mt->bo->flags |= tilebits;
 	return mt;
 }
 
@@ -489,6 +495,8 @@ static void migrate_image_to_miptree(radeon_mipmap_tree *mt,
 		/* This condition should be removed, it's here to workaround
 		 * a segfault when mapping textures during software fallbacks.
 		 */
+	        /* FIXME: What about tiling? */
+	        assert(mt->tilebits == 0);
 		radeon_print(RADEON_FALLBACKS, RADEON_IMPORTANT,
 				"%s Trying to map texture in sowftware fallback.\n",
 				__func__);
@@ -599,7 +607,7 @@ int radeon_validate_texture_miptree(struct gl_context * ctx, struct gl_texture_o
 	if (!texObj->_Complete) {
 		return GL_FALSE;
 	}
-	/* FIXME: set tile_bits */
+	t->tile_bits = 0; /* FIXME: Should enable tiling in some cases */
 
 	calculate_min_max_lod(&t->base, &t->minLod, &t->maxLod);
 
