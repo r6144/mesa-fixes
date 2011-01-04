@@ -84,6 +84,9 @@ unsigned r600_check_blit(gl_format mesa_format)
 #if 0
     /* not sure blit to depth works or not yet; currently in shadowtex, this gives an untiled depth texture in software-mode,
        but when accelerated the result looks strange.  Note that the blitter seems to handle tiling just fine. */
+    /* More investigation of Z24_S8-to-Z24_S8 blitting, by disabling the tiling at the target,
+       suggests that the source texture is accessed in Z24_S8 tiling mode (), but it assumed that
+       depth and stencil are mixed rather than separated in each tile, and two of the three depth bytes have been lost. */
     if (_mesa_get_format_bits(mesa_format, GL_DEPTH_BITS) > 0)
 	    return 0;
 #endif
@@ -302,8 +305,10 @@ set_render_target(context_t *context, struct radeon_bo *bo, gl_format mesa_forma
     case MESA_FORMAT_Z24_S8:
             format = COLOR_24_8;
             comp_swap = SWAP_STD;
+#if 0
 	    SETfield(cb_color0_info, ARRAY_1D_TILED_THIN1,
 		     CB_COLOR0_INFO__ARRAY_MODE_shift, CB_COLOR0_INFO__ARRAY_MODE_mask);
+#endif
 	    CLEARbit(cb_color0_info, SOURCE_FORMAT_bit);
 	    SETfield(cb_color0_info, NUMBER_UNORM, NUMBER_TYPE_shift, NUMBER_TYPE_mask);
             break;
