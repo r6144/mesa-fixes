@@ -587,16 +587,22 @@ static void r700SetDepthTarget(context_t *context)
 
     if(4 == rrb->cpp)
     {
-		assert(rrb->base.Format == MESA_FORMAT_S8_Z24);
-        SETfield(r700->DB_DEPTH_INFO.u32All, DEPTH_8_24,
-                 DB_DEPTH_INFO__FORMAT_shift, DB_DEPTH_INFO__FORMAT_mask);
-		/* READ_SIZE and TILE_COMPACT appear to have no effect */
+		unsigned fmt;
+		/* DEPTH_8_24 uses separate depth-and-stencil in each tile; the texture sampler cannot handle this yet.
+		   Unfortunately, DEPTH_X8_24 uses this format as well. */
+		switch (rrb->base.Format) {
+		case MESA_FORMAT_S8_Z24: fmt = DEPTH_8_24; break;
+		case MESA_FORMAT_X8_Z24: fmt = DEPTH_X8_24; break;
+		default: assert(0); break;
+		}
+        SETfield(r700->DB_DEPTH_INFO.u32All, fmt, DB_DEPTH_INFO__FORMAT_shift, DB_DEPTH_INFO__FORMAT_mask);
+		/* READ_SIZE and TILE_COMPACT appear to have no effect for the separate-depth-and-stencil-in-tiles problem,
+		   and as of Fedora 14 the kernel does not allow TILE_SURFACE_ENABLE_bit (depth/stencil htile?). */
     }
     else
     {
 		assert(rrb->base.Format == MESA_FORMAT_Z16);
-        SETfield(r700->DB_DEPTH_INFO.u32All, DEPTH_16,
-		 DB_DEPTH_INFO__FORMAT_shift, DB_DEPTH_INFO__FORMAT_mask);
+        SETfield(r700->DB_DEPTH_INFO.u32All, DEPTH_16, DB_DEPTH_INFO__FORMAT_shift, DB_DEPTH_INFO__FORMAT_mask);
     }
     SETfield(r700->DB_DEPTH_INFO.u32All, ARRAY_1D_TILED_THIN1,
              DB_DEPTH_INFO__ARRAY_MODE_shift, DB_DEPTH_INFO__ARRAY_MODE_mask);
