@@ -51,6 +51,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "r700_vertprog.h"
 
 #include "evergreen_tex.h"
+#include <assert.h>
 
 void r600UpdateTextureState(struct gl_context * ctx);
 
@@ -98,6 +99,8 @@ static GLboolean r600GetTexFormat(struct gl_texture_object *tObj, gl_format mesa
 	SETfield(t->SQ_TEX_RESOURCE4, SQ_FORMAT_COMP_UNSIGNED,
 		 FORMAT_COMP_W_shift, FORMAT_COMP_W_mask);
 
+    assert(! ((t->tile_bits & RADEON_BO_FLAGS_MICRO_TILE_SQUARE)
+			  && (mesa_format == MESA_FORMAT_X8_Z24 || mesa_format == MESA_FORMAT_S8_Z24 || mesa_format == MESA_FORMAT_Z24_S8)));
 	if (t->tile_bits & RADEON_BO_FLAGS_MICRO_TILE_SQUARE) SETbit(t->SQ_TEX_RESOURCE0, TILE_TYPE_bit);
 	else CLEARbit(t->SQ_TEX_RESOURCE0, TILE_TYPE_bit);
 

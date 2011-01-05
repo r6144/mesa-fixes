@@ -1593,6 +1593,7 @@ unsigned r600_blit(struct gl_context *ctx,
 
     /* Flush is needed to make sure that source buffer has correct data */
     radeonFlush(ctx);
+    radeon_bo_dump(src_bo);
 
     if ((src_bo->flags & RADEON_BO_FLAGS_MICRO_TILE_SQUARE)
 	&& (src_mesaformat == MESA_FORMAT_X8_Z24 || src_mesaformat == MESA_FORMAT_S8_Z24 || src_mesaformat == MESA_FORMAT_Z24_S8)) {
@@ -1600,7 +1601,6 @@ unsigned r600_blit(struct gl_context *ctx,
 	fprintf(stderr, "Warning: blitting not accelerated due to 8_24 square tiling\n");
 	return GL_FALSE;
     }
-    radeon_bo_dump(src_bo);
 
     rcommonEnsureCmdBufSpace(&context->radeon, 311, __FUNCTION__);
 
