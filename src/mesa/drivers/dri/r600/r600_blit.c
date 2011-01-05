@@ -1549,7 +1549,7 @@ static GLboolean validate_buffers(context_t *rmesa,
     return GL_TRUE;
 }
 
-int r600_verbose_blit = 1;
+int r600_verbose_blit = 0;
 unsigned r600_blit(struct gl_context *ctx,
                    struct radeon_bo *src_bo,
                    intptr_t src_offset,

@@ -108,7 +108,10 @@ static gl_format gl_format_and_type_to_mesa_format(struct gl_context *ctx, GLenu
 		   dirty.  We should examine the blitter settings so that these bits get cleared.
 		   Note that this should only matter in packing (downloading) data, so e.g.
 		   radeonChooseTextureFormat() does not have to be changed.  glCopyTexImage()
-		   probably doesn't need change either, unless we are copying to a Z32 texture. */
+		   probably doesn't need change either, unless we are copying to a Z32 texture.
+
+		   Z32 seems to be unusable, as trying to use COLOR_32 during blitting apparently
+		   results in floating-point values being written. */
 	    }
 	    break;
         case GL_DEPTH_STENCIL_EXT:
