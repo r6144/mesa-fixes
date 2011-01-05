@@ -487,14 +487,14 @@ static void r700SetRenderTarget(context_t *context, int id)
             break;
     case MESA_FORMAT_Z24_X8:
     case MESA_FORMAT_Z24_S8:
-            format = COLOR_8_24;
+            format = COLOR_24_8;
             comp_swap = SWAP_STD;
 	    number_type = NUMBER_UNORM;
 	    CLEARbit(r700->render_target[id].CB_COLOR0_INFO.u32All, SOURCE_FORMAT_bit);
             break;
     case MESA_FORMAT_S8_Z24:
     case MESA_FORMAT_X8_Z24:
-            format = COLOR_24_8;
+            format = COLOR_8_24;
             comp_swap = SWAP_STD;
 	    number_type = NUMBER_UNORM;
 	    CLEARbit(r700->render_target[id].CB_COLOR0_INFO.u32All, SOURCE_FORMAT_bit);

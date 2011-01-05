@@ -37,8 +37,28 @@
 #include "radeon_debug.h"
 #include "radeon_mipmap_tree.h"
 
-static gl_format gl_format_and_type_to_mesa_format(GLenum format, GLenum type)
+/* This should be the mesa_format that, in untiled mode, matches the GL format */
+static gl_format gl_format_and_type_to_mesa_format(struct gl_context *ctx, GLenum format, GLenum type,
+						   const struct radeon_renderbuffer **prrb)
 {
+    struct gl_renderbuffer *depthRb, *stencilRb;
+
+    *prrb = NULL;
+    switch (format) {
+    case GL_RGB:
+    case GL_RGBA:
+    case GL_BGRA: *prrb = radeon_renderbuffer(ctx->ReadBuffer->_ColorReadBuffer); break;
+    case GL_DEPTH_COMPONENT:
+    case GL_DEPTH_STENCIL_EXT:
+	depthRb = ctx->ReadBuffer->Attachment[BUFFER_DEPTH].Renderbuffer;
+	stencilRb = ctx->ReadBuffer->Attachment[BUFFER_STENCIL].Renderbuffer;
+	if (format == GL_DEPTH_STENCIL_EXT && (depthRb == NULL || stencilRb == NULL || depthRb != stencilRb))
+	    fprintf(stderr, "do_blit_readpixels(): requesting GL_DEPTH_STENCIL_EXT but the renderbuffers are not shared.  "
+		    "Not accelerating.\n");
+	else *prrb = radeon_renderbuffer(depthRb);
+	break;
+    }
+	
     switch (format)
     {
         case GL_RGB:
@@ -77,9 +97,26 @@ static gl_format gl_format_and_type_to_mesa_format(GLenum format, GLenum type)
                 case GL_UNSIGNED_BYTE:
                 case GL_UNSIGNED_INT_8_8_8_8_REV:
                     return MESA_FORMAT_ARGB8888;
-
             }
             break;
+        case GL_DEPTH_COMPONENT:
+	    switch (type) {
+	    case GL_UNSIGNED_SHORT: return MESA_FORMAT_Z16;
+	    case GL_UNSIGNED_INT: return MESA_FORMAT_Z24_X8;
+		/* FIXME: Z24_X8 has the same dynamic range as Z32, but will we have garbage in the
+		   least-significant X bits?  This should not matter much in practice, but is quite
+		   dirty.  We should examine the blitter settings so that these bits get cleared.
+		   Note that this should only matter in packing (downloading) data, so e.g.
+		   radeonChooseTextureFormat() does not have to be changed.  glCopyTexImage()
+		   probably doesn't need change either, unless we are copying to a Z32 texture. */
+	    }
+	    break;
+        case GL_DEPTH_STENCIL_EXT:
+	    switch (type) {
+		/* GL_DEPTH_STENCIL_EXT allows no other datatype */
+	    case GL_UNSIGNED_INT_24_8_EXT: return MESA_FORMAT_Z24_S8;
+	    }
+	    break;
     }
 
     return MESA_FORMAT_NONE;
@@ -92,9 +129,9 @@ do_blit_readpixels(struct gl_context * ctx,
                    const struct gl_pixelstore_attrib *pack, GLvoid * pixels0)
 {
     radeonContextPtr radeon = RADEON_CONTEXT(ctx);
-    const struct radeon_renderbuffer *rrb = radeon_renderbuffer(ctx->ReadBuffer->_ColorReadBuffer);
+    const struct radeon_renderbuffer *rrb = NULL;
+    gl_format dst_format;
     const GLboolean dst_is_bufferobj = _mesa_is_bufferobj(pack->BufferObj);
-    const gl_format dst_format = gl_format_and_type_to_mesa_format(format, type);
     const unsigned dst_bpp = _mesa_bytes_per_pixel(format, type);
     unsigned dst_width, dst_rowstride, dst_imagesize, aligned_rowstride, flip_y;
     struct radeon_bo *dst_buffer;
@@ -108,8 +145,10 @@ do_blit_readpixels(struct gl_context * ctx,
         return GL_FALSE;
     }
 
-    if (dst_format == MESA_FORMAT_NONE ||
+    dst_format = gl_format_and_type_to_mesa_format(ctx, format, type, &rrb);
+    if (dst_format == MESA_FORMAT_NONE || rrb == NULL ||
         !radeon->vtbl.check_blit(dst_format) || !radeon->vtbl.blit) {
+	fprintf(stderr, "do_blit_readpixels(): unable to accelerate due to unsupported format 0x%x, type 0x%x\n", format, type);
         return GL_FALSE;
     }
     assert(dst_bpp == _mesa_get_format_bytes(dst_format));

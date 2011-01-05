@@ -294,14 +294,14 @@ set_render_target(context_t *context, struct radeon_bo *bo, gl_format mesa_forma
             break;
     case MESA_FORMAT_Z24_X8:
     case MESA_FORMAT_Z24_S8:
-            format = COLOR_8_24;
+            format = COLOR_24_8;
             comp_swap = SWAP_STD;
 	    CLEARbit(cb_color0_info, SOURCE_FORMAT_bit);
 	    SETfield(cb_color0_info, NUMBER_UNORM, NUMBER_TYPE_shift, NUMBER_TYPE_mask);
             break;
     case MESA_FORMAT_S8_Z24:
     case MESA_FORMAT_X8_Z24:
-            format = COLOR_24_8;
+            format = COLOR_8_24;
             comp_swap = SWAP_STD;
 	    CLEARbit(cb_color0_info, SOURCE_FORMAT_bit);
 	    SETfield(cb_color0_info, NUMBER_UNORM, NUMBER_TYPE_shift, NUMBER_TYPE_mask);
@@ -1549,7 +1549,7 @@ static GLboolean validate_buffers(context_t *rmesa,
     return GL_TRUE;
 }
 
-int r600_verbose_blit = 0;
+int r600_verbose_blit = 1;
 unsigned r600_blit(struct gl_context *ctx,
                    struct radeon_bo *src_bo,
                    intptr_t src_offset,
