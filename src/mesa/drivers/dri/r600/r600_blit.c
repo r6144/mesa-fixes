@@ -1549,7 +1549,7 @@ static GLboolean validate_buffers(context_t *rmesa,
     return GL_TRUE;
 }
 
-int r600_verbose_blit = 1;
+int r600_verbose_blit = 0;
 unsigned r600_blit(struct gl_context *ctx,
                    struct radeon_bo *src_bo,
                    intptr_t src_offset,
@@ -1597,7 +1597,7 @@ unsigned r600_blit(struct gl_context *ctx,
 
     /* Flush is needed to make sure that source buffer has correct data */
     radeonFlush(ctx);
-    radeon_bo_dump(src_bo);
+    if (r600_verbose_blit) radeon_bo_dump(src_bo);
 
     if ((src_bo->flags & RADEON_BO_FLAGS_MICRO_TILE_SQUARE)
 	&& (src_mesaformat == MESA_FORMAT_X8_Z24 || src_mesaformat == MESA_FORMAT_S8_Z24
@@ -1658,7 +1658,7 @@ unsigned r600_blit(struct gl_context *ctx,
     r700WaitForIdleClean(context);
 
     radeonFlush(ctx);
-    radeon_bo_dump(dst_bo);
+    if (r600_verbose_blit) radeon_bo_dump(dst_bo);
 
     return GL_TRUE;
 }
