@@ -971,7 +971,7 @@ set_tex_resource(context_t * context,
 	    SETfield(sq_tex_resource4, SQ_SEL_X,
 		     SQ_TEX_RESOURCE_WORD4_0__DST_SEL_W_shift, SQ_TEX_RESOURCE_WORD4_0__DST_SEL_W_mask);
 	    break;
-    case MESA_FORMAT_Z24_X8:
+    case MESA_FORMAT_X8_Z24:
 	/* FIXME: Why does Z24_X8 and Z24_S8 differ in this way? */
 	    SETfield(sq_tex_resource1, FMT_8_24,
 		     SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_shift, SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_mask);
@@ -984,7 +984,7 @@ set_tex_resource(context_t * context,
 	    SETfield(sq_tex_resource4, SQ_SEL_1,
 		     SQ_TEX_RESOURCE_WORD4_0__DST_SEL_W_shift, SQ_TEX_RESOURCE_WORD4_0__DST_SEL_W_mask);
 	    break;
-    case MESA_FORMAT_Z24_S8:
+    case MESA_FORMAT_S8_Z24:
 	    SETfield(sq_tex_resource1, FMT_8_24,
 		     SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_shift, SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_mask);
 	    SETfield(sq_tex_resource4, SQ_SEL_X,
@@ -996,8 +996,8 @@ set_tex_resource(context_t * context,
 	    SETfield(sq_tex_resource4, SQ_SEL_1,
 		     SQ_TEX_RESOURCE_WORD4_0__DST_SEL_W_shift, SQ_TEX_RESOURCE_WORD4_0__DST_SEL_W_mask);
 	    break;
-    case MESA_FORMAT_S8_Z24:
-    case MESA_FORMAT_X8_Z24:
+    case MESA_FORMAT_Z24_S8:
+    case MESA_FORMAT_Z24_X8:
 	    SETfield(sq_tex_resource1, FMT_24_8,
 		     SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_shift, SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_mask);
 	    SETfield(sq_tex_resource4, SQ_SEL_X,
