@@ -113,8 +113,11 @@ static GLubyte *r200_depth_4byte(const struct radeon_renderbuffer * rrb,
  * - 2D (akin to macro-tiled/micro-tiled on older asics)
  */
 #if defined(RADEON_R600)
+typedef enum comp_e { CompColor, CompDepth, CompStencil } Comp;
+
+/* NOTE: For Z24_X8, the offset for the depth component is the offset of the Z24_X8 32-bit integer */
 static inline GLint r600_1d_tile_helper(const struct radeon_renderbuffer * rrb,
-					GLint x, GLint y, GLint is_depth, GLint is_stencil)
+					GLint x, GLint y, GLint is_square, Comp comp)
 {
     GLint element_bytes = rrb->cpp;
     GLint num_samples = 1;
@@ -145,7 +148,7 @@ static inline GLint r600_1d_tile_helper(const struct radeon_renderbuffer * rrb,
     tile_column_index = x / tile_width;
     tile_offset = ((tile_row_index * tiles_per_row) + tile_column_index) * tile_bytes;
 
-    if (is_depth) { /* Actually used when TILE_TYPE_bit is set */
+    if (is_square) { /* Actually used when TILE_TYPE_bit is set */
 	    GLint pixel_offset = 0;
 
 	    pixel_number |= ((x >> 0) & 1) << 0; // pn[0] = x[0]
@@ -158,16 +161,16 @@ static inline GLint r600_1d_tile_helper(const struct radeon_renderbuffer * rrb,
 	    case 2:
 		    pixel_offset = pixel_number * element_bytes * num_samples;
 		    break;
-	    case 4:
+	    case 4: /* Must be Z24_S8 or Z24_X8 */
 		    /* stencil and depth data are stored separately within a tile.
 		     * stencil is stored in a contiguous tile before the depth tile.
 		     * stencil element is 1 byte, depth element is 3 bytes.
 		     * stencil tile is 64 bytes.
 		     */
-		    if (is_stencil)
+		    if (comp != CompDepth)
 			    pixel_offset = pixel_number * 1 * num_samples;
 		    else
-			    pixel_offset = (pixel_number * 3 * num_samples) + 64;
+			    pixel_offset = (pixel_number * 3 * num_samples) + 63; /* the actual 24-bit depth start one byte later */
 		    break;
 	    }
 	    element_offset = pixel_offset + (sample_number * element_bytes);
@@ -217,7 +220,7 @@ static inline GLint r600_log2(GLint n)
 }
 
 static inline GLint r600_2d_tile_helper(const struct radeon_renderbuffer * rrb,
-					GLint x, GLint y, GLint is_depth, GLint is_stencil)
+					GLint x, GLint y, GLint is_square, Comp comp)
 {
 	GLint group_bytes = rrb->group_bytes;
 	GLint num_channels = rrb->num_channels;
@@ -313,7 +316,7 @@ static inline GLint r600_2d_tile_helper(const struct radeon_renderbuffer * rrb,
 	macro_tile_column_index = (x / tile_width) / macro_tile_width;
 	macro_tile_offset = ((macro_tile_row_index * macro_tiles_per_row) + macro_tile_column_index) * macro_tile_bytes;
 
-	if (is_depth) {
+	if (is_square) {
 		GLint pixel_offset = 0;
 
 		pixel_number |= ((x >> 0) & 1) << 0; // pn[0] = x[0]
@@ -332,10 +335,10 @@ static inline GLint r600_2d_tile_helper(const struct radeon_renderbuffer * rrb,
 			 * stencil element is 1 byte, depth element is 3 bytes.
 			 * stencil tile is 64 bytes.
 			 */
-			if (is_stencil)
+			if (comp != CompDepth)
 				pixel_offset = pixel_number * 1 * num_samples;
 			else
-				pixel_offset = (pixel_number * 3 * num_samples) + 64;
+				pixel_offset = (pixel_number * 3 * num_samples) + 63;
 			break;
 		}
 		element_offset = pixel_offset + (sample_number * element_bytes);
@@ -383,35 +386,33 @@ static inline GLint r600_2d_tile_helper(const struct radeon_renderbuffer * rrb,
 
 /* is_stencil only matters for 8_24 square tiling */
 static inline GLubyte *r600_ptr_common(const struct radeon_renderbuffer * rrb,
-									   GLint x, GLint y, unsigned is_stencil)
+									   GLint x, GLint y, Comp comp)
 {
     GLubyte *ptr = rrb->bo->ptr;
     GLint offset;
 	unsigned flags = rrb->has_surface ? 0 : rrb->bo->flags; /* we see a linear buffer if a surface register is set */
 	unsigned is_square = (flags & RADEON_BO_FLAGS_MICRO_TILE_SQUARE) ? 1 : 0;
     if (flags & RADEON_BO_FLAGS_MACRO_TILE)
-	    offset = r600_2d_tile_helper(rrb, x, y, is_square, is_stencil);
+	    offset = r600_2d_tile_helper(rrb, x, y, is_square, comp);
     else if (flags & RADEON_BO_FLAGS_MICRO_TILE)
-	    offset = r600_1d_tile_helper(rrb, x, y, is_square, is_stencil);
+	    offset = r600_1d_tile_helper(rrb, x, y, is_square, comp);
 	else offset = x * rrb->cpp + y * rrb->pitch;
     return &ptr[offset];
 }
 
 static GLubyte *r600_ptr_depth(const struct radeon_renderbuffer * rrb, GLint x, GLint y)
 {
-	return r600_ptr_common(rrb, x, y, 0);
+	return r600_ptr_common(rrb, x, y, CompDepth);
 }
 
-static GLubyte *r600_ptr_stencil(const struct radeon_renderbuffer * rrb,
-				 GLint x, GLint y)
+static GLubyte *r600_ptr_stencil(const struct radeon_renderbuffer * rrb, GLint x, GLint y)
 {
-	return r600_ptr_common(rrb, x, y, 1);
+	return r600_ptr_common(rrb, x, y, CompStencil);
 }
 
-static GLubyte *r600_ptr_color(const struct radeon_renderbuffer * rrb,
-			       GLint x, GLint y)
+static GLubyte *r600_ptr_color(const struct radeon_renderbuffer * rrb, GLint x, GLint y)
 {
-	return r600_ptr_common(rrb, x, y, 0);
+	return r600_ptr_common(rrb, x, y, CompColor);
 }
 
 #else
@@ -766,6 +767,15 @@ static GLubyte *radeon_ptr_2byte_8x2(const struct radeon_renderbuffer * rrb,
  *
  * Careful: It looks like the R300 uses ZZZS byte order while the R200
  * uses SZZZ for 24 bit depth, 8 bit stencil mode.
+ *
+ * NOTE: At least on the r600, the stencil byte is before the 3 depth
+ * bytes (corresponding to Z24_S8 on an little-endian system).  Even
+ * when the depth and stencil bytes are separated, at least one byte
+ * will precede the depth bytes; although the access will no longer be
+ * aligned, this does not matter much on x86, and making multiple
+ * 1-byte reads might be expensive in UC/WC memory.  On the other
+ * hand, after the 3 depth bytes there might not be anything, so
+ * out-of-bounds access must be prevented.
  */
 #define VALUE_TYPE GLuint
 
@@ -781,10 +791,10 @@ do {									\
 #elif defined(RADEON_R600)
 #define WRITE_DEPTH( _x, _y, d )					\
 do {									\
-   GLuint *_ptr = (GLuint*)r600_ptr_depth( rrb, _x + x_off, _y + y_off );		\
+   GLuint *_ptr = (GLuint*)(r600_ptr_depth( rrb, _x + x_off, _y + y_off )); \
    GLuint tmp = *_ptr;				\
-   tmp &= 0xff000000;							\
-   tmp |= (((d) >> 8) & 0x00ffffff);			\
+   tmp &= 0x000000ff;							\
+   tmp |= ((d) & 0xffffff00);			\
    *_ptr = tmp;					\
 } while (0)
 #elif defined(RADEON_R200)
@@ -815,7 +825,7 @@ do {									\
 #elif defined(RADEON_R600)
 #define READ_DEPTH( d, _x, _y )						\
   do {									\
-    d = (*(GLuint*)(r600_ptr_depth(rrb, _x + x_off, _y + y_off)) & 0x00ffffff) << 8; \
+    d = *(GLuint*)(r600_ptr_depth(rrb, _x + x_off, _y + y_off)) & 0xffffff00; \
   }while(0)
 #elif defined(RADEON_R200)
 #define READ_DEPTH( d, _x, _y )						\
@@ -852,8 +862,8 @@ do {									\
 do {									\
    GLuint *_ptr = (GLuint*)r600_ptr_depth( rrb, _x + x_off, _y + y_off );		\
    GLuint tmp = *_ptr;				\
-   tmp &= 0xff000000;							\
-   tmp |= (((d) >> 8) & 0xffffff);				\
+   tmp &= 0x000000ff;							\
+   tmp |= ((d) & 0xffffff00);				\
    *_ptr = tmp;					\
    _ptr = (GLuint*)r600_ptr_stencil(rrb, _x + x_off, _y + y_off);		\
    tmp = *_ptr;				\
@@ -884,7 +894,7 @@ do {									\
 #elif defined(RADEON_R600)
 #define READ_DEPTH( d, _x, _y )						\
   do { \
-    d = ((*(GLuint*)(r600_ptr_depth(rrb, _x + x_off, _y + y_off))) << 8) & 0xffffff00; \
+    d = (*(GLuint*)(r600_ptr_depth(rrb, _x + x_off, _y + y_off))) & 0xffffff00; \
     d |= (*(GLuint*)(r600_ptr_stencil(rrb, _x + x_off, _y + y_off))) & 0xff; \
   }while(0)
 #elif defined(RADEON_R200)
