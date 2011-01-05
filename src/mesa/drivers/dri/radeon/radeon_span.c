@@ -762,7 +762,7 @@ static GLubyte *radeon_ptr_2byte_8x2(const struct radeon_renderbuffer * rrb,
 #define TAG(x) radeon##x##_z16
 #include "depthtmp.h"
 
-/* 24 bit depth
+/* 24 bit depth; d should be Z24_X8 values
  *
  * Careful: It looks like the R300 uses ZZZS byte order while the R200
  * uses SZZZ for 24 bit depth, 8 bit stencil mode.
@@ -775,7 +775,7 @@ do {									\
    GLuint *_ptr = (GLuint*)radeon_ptr_4byte( rrb, _x + x_off, _y + y_off );		\
    GLuint tmp = LE32_TO_CPU(*_ptr);                                     \
    tmp &= 0x000000ff;							\
-   tmp |= ((d << 8) & 0xffffff00);					\
+   tmp |= ((d) & 0xffffff00);											\
    *_ptr = CPU_TO_LE32(tmp);                                            \
 } while (0)
 #elif defined(RADEON_R600)
@@ -784,7 +784,7 @@ do {									\
    GLuint *_ptr = (GLuint*)r600_ptr_depth( rrb, _x + x_off, _y + y_off );		\
    GLuint tmp = *_ptr;				\
    tmp &= 0xff000000;							\
-   tmp |= ((d) & 0x00ffffff);					\
+   tmp |= (((d) >> 8) & 0x00ffffff);			\
    *_ptr = tmp;					\
 } while (0)
 #elif defined(RADEON_R200)
@@ -793,7 +793,7 @@ do {									\
    GLuint *_ptr = (GLuint*)r200_depth_4byte( rrb, _x + x_off, _y + y_off );		\
    GLuint tmp = LE32_TO_CPU(*_ptr);                                     \
    tmp &= 0xff000000;							\
-   tmp |= ((d) & 0x00ffffff);						\
+   tmp |= (((d) >> 8) & 0x00ffffff);									\
    *_ptr = CPU_TO_LE32(tmp);                                            \
 } while (0)
 #else
@@ -802,7 +802,7 @@ do {									\
    GLuint *_ptr = (GLuint*)radeon_ptr_4byte( rrb, _x + x_off, _y + y_off );	\
    GLuint tmp = LE32_TO_CPU(*_ptr);                                     \
    tmp &= 0xff000000;							\
-   tmp |= ((d) & 0x00ffffff);						\
+   tmp |= (((d) >> 8) & 0x00ffffff);									\
    *_ptr = CPU_TO_LE32(tmp);                                            \
 } while (0)
 #endif
@@ -810,24 +810,24 @@ do {									\
 #if defined(RADEON_R300)
 #define READ_DEPTH( d, _x, _y )						\
   do {									\
-    d = (LE32_TO_CPU(*(GLuint*)(radeon_ptr_4byte(rrb, _x + x_off, _y + y_off))) & 0xffffff00) >> 8; \
+    d = (LE32_TO_CPU(*(GLuint*)(radeon_ptr_4byte(rrb, _x + x_off, _y + y_off))) & 0xffffff00); \
   }while(0)
 #elif defined(RADEON_R600)
 #define READ_DEPTH( d, _x, _y )						\
   do {									\
-    d = (*(GLuint*)(r600_ptr_depth(rrb, _x + x_off, _y + y_off)) & 0x00ffffff); \
+    d = (*(GLuint*)(r600_ptr_depth(rrb, _x + x_off, _y + y_off)) & 0x00ffffff) << 8; \
   }while(0)
 #elif defined(RADEON_R200)
 #define READ_DEPTH( d, _x, _y )						\
   do {									\
-    d = LE32_TO_CPU(*(GLuint*)(r200_depth_4byte(rrb, _x + x_off, _y + y_off))) & 0x00ffffff; \
+	  d = (LE32_TO_CPU(*(GLuint*)(r200_depth_4byte(rrb, _x + x_off, _y + y_off))) & 0x00ffffff) << 8; \
   }while(0)
 #else
 #define READ_DEPTH( d, _x, _y )	\
-  d = LE32_TO_CPU(*(GLuint*)(radeon_ptr_4byte(rrb, _x + x_off,	_y + y_off))) & 0x00ffffff;
+	d = (LE32_TO_CPU(*(GLuint*)(radeon_ptr_4byte(rrb, _x + x_off,	_y + y_off))) & 0x00ffffff) << 8;
 #endif
 
-#define TAG(x) radeon##x##_z24
+#define TAG(x) radeon##x##_z24_x8
 #include "depthtmp.h"
 
 /* 24 bit depth, 8 bit stencil depthbuffer functions
@@ -836,7 +836,7 @@ do {									\
  * Careful: It looks like the R300 uses ZZZS byte order while the R200
  * uses SZZZ for 24 bit depth, 8 bit stencil mode.
  *
- * NOTE: Shouldn't "d" be GL_DEPTH_STENCIL with GL_UNSIGNED_INT_24_8 type, so the depth is always in the high 24 bits?
+ * NOTE: Should read from a Z24_S8 buffer to yield a Z24_S8 value. In other words, the depth is in the high 24 bits of "d".
  * Only the R600 case is fixed below.
  */
 #define VALUE_TYPE GLuint
@@ -898,7 +898,7 @@ do {									\
   } while (0)
 #endif
 
-#define TAG(x) radeon##x##_s8_z24
+#define TAG(x) radeon##x##_z24_s8
 #include "depthtmp.h"
 
 /* ================================================================
@@ -975,7 +975,7 @@ do {									\
 } while (0)
 #endif
 
-#define TAG(x) radeon##x##_s8_z24
+#define TAG(x) radeon##x##_z24_s8
 #include "stenciltmp.h"
 
 static void map_unmap_rb(struct gl_renderbuffer *rb, int flag)
@@ -1135,12 +1135,14 @@ static void radeonSetSpanFunctions(struct radeon_renderbuffer *rrb)
 		radeonInitPointers_ARGB1555_REV(&rrb->base);
 	} else if (rrb->base.Format == MESA_FORMAT_Z16) {
 		radeonInitDepthPointers_z16(&rrb->base);
-	} else if (rrb->base.Format == MESA_FORMAT_X8_Z24) {
-		radeonInitDepthPointers_z24(&rrb->base);
-	} else if (rrb->base.Format == MESA_FORMAT_S8_Z24) {
-		radeonInitDepthPointers_s8_z24(&rrb->base);
+	} else if (rrb->base.Format == MESA_FORMAT_Z24_X8) {
+		radeonInitDepthPointers_z24_x8(&rrb->base);
+	} else if (rrb->base.Format == MESA_FORMAT_Z24_S8) {
+		radeonInitDepthPointers_z24_s8(&rrb->base);
 	} else if (rrb->base.Format == MESA_FORMAT_S8) {
-		radeonInitStencilPointers_s8_z24(&rrb->base);
+		/* FIXME: Do we use MESA_FORMAT_S8 at all?  What's its format? */
+		fprintf(stderr, "radeonSetSpanFunctions: not sure about MESA_FORMAT_S8\n");
+		radeonInitStencilPointers_z24_s8(&rrb->base);
 	} else {
 		fprintf(stderr, "radeonSetSpanFunctions: bad format: 0x%04X\n", rrb->base.Format);
 	}

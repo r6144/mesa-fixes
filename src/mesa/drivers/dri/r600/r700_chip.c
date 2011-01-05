@@ -485,14 +485,15 @@ static void r700SetRenderTarget(context_t *context, int id)
 	    number_type = NUMBER_UNORM;
 	    CLEARbit(r700->render_target[id].CB_COLOR0_INFO.u32All, SOURCE_FORMAT_bit);
             break;
-    case MESA_FORMAT_X8_Z24:
-    case MESA_FORMAT_S8_Z24:
+    case MESA_FORMAT_Z24_X8:
+    case MESA_FORMAT_Z24_S8:
             format = COLOR_8_24;
             comp_swap = SWAP_STD;
 	    number_type = NUMBER_UNORM;
 	    CLEARbit(r700->render_target[id].CB_COLOR0_INFO.u32All, SOURCE_FORMAT_bit);
             break;
-    case MESA_FORMAT_Z24_S8:
+    case MESA_FORMAT_S8_Z24:
+    case MESA_FORMAT_X8_Z24:
             format = COLOR_24_8;
             comp_swap = SWAP_STD;
 	    number_type = NUMBER_UNORM;
@@ -593,8 +594,8 @@ static void r700SetDepthTarget(context_t *context)
 	/* DEPTH_8_24 uses separate depth-and-stencil in each tile; the texture sampler cannot handle this yet.
 	   Unfortunately, DEPTH_X8_24 uses this format as well. */
 	switch (rrb->base.Format) {
-	case MESA_FORMAT_S8_Z24: fmt = DEPTH_8_24; break;
-	case MESA_FORMAT_X8_Z24: fmt = DEPTH_X8_24; break;
+	case MESA_FORMAT_Z24_S8: fmt = DEPTH_8_24; break;
+	case MESA_FORMAT_Z24_X8: fmt = DEPTH_X8_24; break;
 	default: assert(0); break;
 	}
         SETfield(r700->DB_DEPTH_INFO.u32All, fmt, DB_DEPTH_INFO__FORMAT_shift, DB_DEPTH_INFO__FORMAT_mask);

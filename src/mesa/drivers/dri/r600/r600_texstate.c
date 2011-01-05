@@ -100,7 +100,8 @@ static GLboolean r600GetTexFormat(struct gl_texture_object *tObj, gl_format mesa
 		 FORMAT_COMP_W_shift, FORMAT_COMP_W_mask);
 
     assert(! ((t->tile_bits & RADEON_BO_FLAGS_MICRO_TILE_SQUARE)
-			  && (mesa_format == MESA_FORMAT_X8_Z24 || mesa_format == MESA_FORMAT_S8_Z24 || mesa_format == MESA_FORMAT_Z24_S8)));
+			  && (mesa_format == MESA_FORMAT_X8_Z24 || mesa_format == MESA_FORMAT_S8_Z24
+				  || mesa_format == MESA_FORMAT_Z24_X8 || mesa_format == MESA_FORMAT_Z24_S8)));
 	if (t->tile_bits & RADEON_BO_FLAGS_MICRO_TILE_SQUARE) SETbit(t->SQ_TEX_RESOURCE0, TILE_TYPE_bit);
 	else CLEARbit(t->SQ_TEX_RESOURCE0, TILE_TYPE_bit);
 
@@ -549,6 +550,7 @@ static GLboolean r600GetTexFormat(struct gl_texture_object *tObj, gl_format mesa
 	case MESA_FORMAT_X8_Z24:
 	case MESA_FORMAT_S8_Z24:
 	case MESA_FORMAT_Z24_S8:
+	case MESA_FORMAT_Z24_X8:
 	case MESA_FORMAT_Z32:
 	case MESA_FORMAT_S8:
 		switch (mesa_format) {
@@ -556,12 +558,13 @@ static GLboolean r600GetTexFormat(struct gl_texture_object *tObj, gl_format mesa
 			SETfield(t->SQ_TEX_RESOURCE1, FMT_16,
 				 SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_shift, SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_mask);
 			break;
-		case MESA_FORMAT_X8_Z24:
-		case MESA_FORMAT_S8_Z24:
+		case MESA_FORMAT_Z24_X8:
+		case MESA_FORMAT_Z24_S8:
 			SETfield(t->SQ_TEX_RESOURCE1, FMT_8_24,
 				 SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_shift, SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_mask);
 			break;
-		case MESA_FORMAT_Z24_S8:
+		case MESA_FORMAT_S8_Z24:
+		case MESA_FORMAT_X8_Z24:
 			SETfield(t->SQ_TEX_RESOURCE1, FMT_24_8,
 				 SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_shift, SQ_TEX_RESOURCE_WORD1_0__DATA_FORMAT_mask);
 			break;

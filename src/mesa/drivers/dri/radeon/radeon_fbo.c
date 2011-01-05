@@ -135,7 +135,7 @@ radeon_alloc_renderbuffer_storage(struct gl_context * ctx, struct gl_renderbuffe
    case GL_STENCIL_INDEX8_EXT:
    case GL_STENCIL_INDEX16_EXT:
       /* alloc a depth+stencil buffer */
-      rb->Format = MESA_FORMAT_S8_Z24;
+      rb->Format = MESA_FORMAT_Z24_S8;
       rb->DataType = GL_UNSIGNED_INT_24_8_EXT;
       is_depth = GL_TRUE;
       cpp = 4;
@@ -149,14 +149,14 @@ radeon_alloc_renderbuffer_storage(struct gl_context * ctx, struct gl_renderbuffe
       break;
    case GL_DEPTH_COMPONENT24:
    case GL_DEPTH_COMPONENT32:
-      rb->Format = MESA_FORMAT_X8_Z24;
+      rb->Format = MESA_FORMAT_Z24_X8;
       rb->DataType = GL_UNSIGNED_INT;
       is_depth = GL_TRUE;
       cpp = 4;
       break;
    case GL_DEPTH_STENCIL_EXT:
    case GL_DEPTH24_STENCIL8_EXT:
-      /* NOTE: Despite the conventions in gl_format, in the Radeon hardware documentation S8_Z24 in untiled mode
+      /* NOTE: Despite the conventions in gl_format, in the Radeon hardware documentation 8_24 in untiled mode
 	 actually means one stencil byte followed by three little-endian depth bytes, which happens
 	 to match GL_UNSIGHED_INT_24_8 on little-endian machines.  Note that rb->Format is just the
 	 "unpacked" format used internally by OpenGL and corresponds to the tiled and
@@ -165,16 +165,22 @@ radeon_alloc_renderbuffer_storage(struct gl_context * ctx, struct gl_renderbuffe
 	 unpacking/packing steps should set up the blitter appropriately for this, and the span
 	 functions should also be aware of this.
 
-	 The hardware depth buffer is always tiled, separate-depth-stencil-in-tile S8_Z24 (see the
-	 DB_DEPTH_INFO constants), so Z24_S8 is not compatible with that usage scenario.
+	 The hardware depth buffer is always tiled, separate-depth-stencil-in-tile 8_24 (see the
+	 DB_DEPTH_INFO constants), corresponding to MESA_FORMAT_Z24_S8.
 
 	 In general, rb->Format (and other MESA_FORMAT_* stuff) refer to an unpacked format, while
 	 rb->DataType (and other GL_* types) refer to a packed format.  The blitter, which has to
 	 use the hardware's texturing operations to operate on packed buffers for packing/unpacking
 	 operations, is an obvious exception.
 
+	 Although the internal format of framebuffers and textures with a given MESA_FORMAT_* can in principle be arbitrary
+	 as long as we define the span rendering and FetchTexel functions properly, the input accepted by these functions
+	 must have the format corresponding to this MESA_FORMAT.  Therefore, it is most convenient to have MESA_FORMAT_* agree
+	 with the internal (hardware) format of untiled buffers, since in this way the span and FetchTexel functions no longer
+	 needs to do anything in untiled mode.
+
 	 See also renderbuffer.c:_mesa_soft_renderbuffer_storage(). */
-      rb->Format = MESA_FORMAT_S8_Z24;
+      rb->Format = MESA_FORMAT_Z24_S8;
       rb->DataType = GL_UNSIGNED_INT_24_8_EXT;
       is_depth = GL_TRUE;
       cpp = 4;
@@ -394,6 +400,7 @@ radeon_create_renderbuffer(gl_format format, __DRIdrawable *driDrawPriv)
             rrb->base._BaseFormat = GL_DEPTH_COMPONENT;
 	    break;
 	case MESA_FORMAT_X8_Z24:
+	case MESA_FORMAT_Z24_X8:
 	    rrb->base.DataType = GL_UNSIGNED_INT;
             rrb->base._BaseFormat = GL_DEPTH_COMPONENT;
 	    break;
@@ -506,6 +513,7 @@ radeon_update_wrapper(struct gl_context *ctx, struct radeon_renderbuffer *rrb,
 			rrb->base.DataType = GL_UNSIGNED_SHORT;
 			break;
 		case MESA_FORMAT_X8_Z24:
+		case MESA_FORMAT_Z24_X8:
 			rrb->base.DataType = GL_UNSIGNED_INT;
 			break;
 		case MESA_FORMAT_S8_Z24:

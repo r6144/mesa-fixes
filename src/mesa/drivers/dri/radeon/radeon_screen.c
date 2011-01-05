@@ -1831,14 +1831,14 @@ radeonCreateBuffer( __DRIscreen *driScrnPriv,
     if (mesaVis->depthBits == 24) {
       if (mesaVis->stencilBits == 8) {
 	struct radeon_renderbuffer *depthStencilRb =
-           radeon_create_renderbuffer(MESA_FORMAT_S8_Z24, driDrawPriv);
+           radeon_create_renderbuffer(MESA_FORMAT_Z24_S8, driDrawPriv);
 	_mesa_add_renderbuffer(&rfb->base, BUFFER_DEPTH, &depthStencilRb->base);
 	_mesa_add_renderbuffer(&rfb->base, BUFFER_STENCIL, &depthStencilRb->base);
 	depthStencilRb->has_surface = screen->depthHasSurface;
       } else {
 	/* depth renderbuffer */
 	struct radeon_renderbuffer *depth =
-           radeon_create_renderbuffer(MESA_FORMAT_X8_Z24, driDrawPriv);
+           radeon_create_renderbuffer(MESA_FORMAT_Z24_X8, driDrawPriv);
 	_mesa_add_renderbuffer(&rfb->base, BUFFER_DEPTH, &depth->base);
 	depth->has_surface = screen->depthHasSurface;
       }

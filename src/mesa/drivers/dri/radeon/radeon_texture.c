@@ -530,7 +530,7 @@ gl_format radeonChooseTextureFormat(struct gl_context * ctx,
 	case GL_DEPTH_STENCIL_EXT:
 	case GL_DEPTH24_STENCIL8_EXT:
 		if (rmesa->radeonScreen->chip_family >= CHIP_FAMILY_RV515)
-			return MESA_FORMAT_S8_Z24;
+			return MESA_FORMAT_Z24_S8;
 		else
 			return MESA_FORMAT_Z16;
 #else
@@ -541,10 +541,10 @@ gl_format radeonChooseTextureFormat(struct gl_context * ctx,
 		return MESA_FORMAT_Z16;
 	case GL_DEPTH_COMPONENT24:
 	case GL_DEPTH_COMPONENT32:
-		return MESA_FORMAT_X8_Z24;
+		return MESA_FORMAT_Z24_X8;
 	case GL_DEPTH_STENCIL_EXT:
 	case GL_DEPTH24_STENCIL8_EXT:
-		return MESA_FORMAT_S8_Z24;
+		return MESA_FORMAT_Z24_S8;
 #endif
 
 	/* EXT_texture_sRGB */
@@ -1011,7 +1011,8 @@ unsigned radeonIsFormatRenderable(gl_format mesa_format)
 	switch (mesa_format)
 	{
 		case MESA_FORMAT_Z16:
-		case MESA_FORMAT_S8_Z24:
+		case MESA_FORMAT_Z24_S8:
+		case MESA_FORMAT_Z24_X8:
 			return 1;
 		default:
 			return 0;
