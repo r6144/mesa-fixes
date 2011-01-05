@@ -536,6 +536,7 @@ gl_format radeonChooseTextureFormat(struct gl_context * ctx,
 #else
 		/* Below are used by r600 */
 	case GL_DEPTH_COMPONENT:
+		return (type == GL_UNSIGNED_INT) ? MESA_FORMAT_X8_Z24 : MESA_FORMAT_Z16;
 	case GL_DEPTH_COMPONENT16:
 		return MESA_FORMAT_Z16;
 	case GL_DEPTH_COMPONENT24:

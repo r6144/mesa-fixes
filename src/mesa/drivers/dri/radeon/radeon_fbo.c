@@ -140,13 +140,13 @@ radeon_alloc_renderbuffer_storage(struct gl_context * ctx, struct gl_renderbuffe
       is_depth = GL_TRUE;
       cpp = 4;
       break;
+   case GL_DEPTH_COMPONENT:
    case GL_DEPTH_COMPONENT16:
       rb->Format = MESA_FORMAT_Z16;
       rb->DataType = GL_UNSIGNED_SHORT;
       is_depth = GL_TRUE;
       cpp = 2;
       break;
-   case GL_DEPTH_COMPONENT:
    case GL_DEPTH_COMPONENT24:
    case GL_DEPTH_COMPONENT32:
       rb->Format = MESA_FORMAT_X8_Z24;
