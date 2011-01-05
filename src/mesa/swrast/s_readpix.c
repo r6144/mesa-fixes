@@ -387,6 +387,7 @@ read_depth_stencil_pixels(struct gl_context *ctx,
    if (depthRb->_BaseFormat == GL_DEPTH_STENCIL_EXT &&
        stencilRb->_BaseFormat == GL_DEPTH_STENCIL_EXT &&
        depthRb == stencilRb &&
+       depthRb->Format == MESA_FORMAT_Z24_S8 && /* It can be internally (in unpacked form) S8_Z24, which is not directly copyable. */
        !scaleOrBias &&
        !stencilTransfer) {
       /* This is the ideal case.
