@@ -1340,6 +1340,7 @@ void r700SetScissor(context_t *context) //---------------
 	unsigned x1, y1, x2, y2;
 	int id = 0;
 	struct radeon_renderbuffer *rrb;
+	int dirty = 0;
 
 	rrb = radeon_get_colorbuffer(&context->radeon);
 	if (!rrb || !rrb->bo) {
@@ -1369,42 +1370,41 @@ void r700SetScissor(context_t *context) //---------------
 		}
 	}
 
-	R600_STATECHANGE(context, scissor);
-
 	/* screen */
-	SETbit(r700->PA_SC_SCREEN_SCISSOR_TL.u32All, WINDOW_OFFSET_DISABLE_bit);
-	SETfield(r700->PA_SC_SCREEN_SCISSOR_TL.u32All, x1,
+	dSETbit(dirty, r700->PA_SC_SCREEN_SCISSOR_TL.u32All, WINDOW_OFFSET_DISABLE_bit);
+	dSETfield(dirty, r700->PA_SC_SCREEN_SCISSOR_TL.u32All, x1,
 		 PA_SC_SCREEN_SCISSOR_TL__TL_X_shift, PA_SC_SCREEN_SCISSOR_TL__TL_X_mask);
-	SETfield(r700->PA_SC_SCREEN_SCISSOR_TL.u32All, y1,
+	dSETfield(dirty, r700->PA_SC_SCREEN_SCISSOR_TL.u32All, y1,
 		 PA_SC_SCREEN_SCISSOR_TL__TL_Y_shift, PA_SC_SCREEN_SCISSOR_TL__TL_Y_mask);
 
-	SETfield(r700->PA_SC_SCREEN_SCISSOR_BR.u32All, x2,
+	dSETfield(dirty, r700->PA_SC_SCREEN_SCISSOR_BR.u32All, x2,
 		 PA_SC_SCREEN_SCISSOR_BR__BR_X_shift, PA_SC_SCREEN_SCISSOR_BR__BR_X_mask);
-	SETfield(r700->PA_SC_SCREEN_SCISSOR_BR.u32All, y2,
+	dSETfield(dirty, r700->PA_SC_SCREEN_SCISSOR_BR.u32All, y2,
 		 PA_SC_SCREEN_SCISSOR_BR__BR_Y_shift, PA_SC_SCREEN_SCISSOR_BR__BR_Y_mask);
 
 	/* window */
-	SETbit(r700->PA_SC_WINDOW_SCISSOR_TL.u32All, WINDOW_OFFSET_DISABLE_bit);
-	SETfield(r700->PA_SC_WINDOW_SCISSOR_TL.u32All, x1,
+	dSETbit(dirty, r700->PA_SC_WINDOW_SCISSOR_TL.u32All, WINDOW_OFFSET_DISABLE_bit);
+	dSETfield(dirty, r700->PA_SC_WINDOW_SCISSOR_TL.u32All, x1,
 		 PA_SC_WINDOW_SCISSOR_TL__TL_X_shift, PA_SC_WINDOW_SCISSOR_TL__TL_X_mask);
-	SETfield(r700->PA_SC_WINDOW_SCISSOR_TL.u32All, y1,
+	dSETfield(dirty, r700->PA_SC_WINDOW_SCISSOR_TL.u32All, y1,
 		 PA_SC_WINDOW_SCISSOR_TL__TL_Y_shift, PA_SC_WINDOW_SCISSOR_TL__TL_Y_mask);
 
-	SETfield(r700->PA_SC_WINDOW_SCISSOR_BR.u32All, x2,
+	dSETfield(dirty, r700->PA_SC_WINDOW_SCISSOR_BR.u32All, x2,
 		 PA_SC_WINDOW_SCISSOR_BR__BR_X_shift, PA_SC_WINDOW_SCISSOR_BR__BR_X_mask);
-	SETfield(r700->PA_SC_WINDOW_SCISSOR_BR.u32All, y2,
+	dSETfield(dirty, r700->PA_SC_WINDOW_SCISSOR_BR.u32All, y2,
 		 PA_SC_WINDOW_SCISSOR_BR__BR_Y_shift, PA_SC_WINDOW_SCISSOR_BR__BR_Y_mask);
 
 
-	SETfield(r700->PA_SC_CLIPRECT_0_TL.u32All, x1,
+	dSETfield(dirty, r700->PA_SC_CLIPRECT_0_TL.u32All, x1,
 		 PA_SC_CLIPRECT_0_TL__TL_X_shift, PA_SC_CLIPRECT_0_TL__TL_X_mask);
-	SETfield(r700->PA_SC_CLIPRECT_0_TL.u32All, y1,
+	dSETfield(dirty, r700->PA_SC_CLIPRECT_0_TL.u32All, y1,
 		 PA_SC_CLIPRECT_0_TL__TL_Y_shift, PA_SC_CLIPRECT_0_TL__TL_Y_mask);
-	SETfield(r700->PA_SC_CLIPRECT_0_BR.u32All, x2,
+	dSETfield(dirty, r700->PA_SC_CLIPRECT_0_BR.u32All, x2,
 		 PA_SC_CLIPRECT_0_BR__BR_X_shift, PA_SC_CLIPRECT_0_BR__BR_X_mask);
-	SETfield(r700->PA_SC_CLIPRECT_0_BR.u32All, y2,
+	dSETfield(dirty, r700->PA_SC_CLIPRECT_0_BR.u32All, y2,
 		 PA_SC_CLIPRECT_0_BR__BR_Y_shift, PA_SC_CLIPRECT_0_BR__BR_Y_mask);
 
+	/* If cliprect 0 did not change, these won't either */
 	r700->PA_SC_CLIPRECT_1_TL.u32All = r700->PA_SC_CLIPRECT_0_TL.u32All;
 	r700->PA_SC_CLIPRECT_1_BR.u32All = r700->PA_SC_CLIPRECT_0_BR.u32All;
 	r700->PA_SC_CLIPRECT_2_TL.u32All = r700->PA_SC_CLIPRECT_0_TL.u32All;
@@ -1413,27 +1413,28 @@ void r700SetScissor(context_t *context) //---------------
 	r700->PA_SC_CLIPRECT_3_BR.u32All = r700->PA_SC_CLIPRECT_0_BR.u32All;
 
 	/* more....2d clip */
-	SETbit(r700->PA_SC_GENERIC_SCISSOR_TL.u32All, WINDOW_OFFSET_DISABLE_bit);
-	SETfield(r700->PA_SC_GENERIC_SCISSOR_TL.u32All, x1,
+	dSETbit(dirty, r700->PA_SC_GENERIC_SCISSOR_TL.u32All, WINDOW_OFFSET_DISABLE_bit);
+	dSETfield(dirty, r700->PA_SC_GENERIC_SCISSOR_TL.u32All, x1,
 		 PA_SC_GENERIC_SCISSOR_TL__TL_X_shift, PA_SC_GENERIC_SCISSOR_TL__TL_X_mask);
-	SETfield(r700->PA_SC_GENERIC_SCISSOR_TL.u32All, y1,
+	dSETfield(dirty, r700->PA_SC_GENERIC_SCISSOR_TL.u32All, y1,
 		 PA_SC_GENERIC_SCISSOR_TL__TL_Y_shift, PA_SC_GENERIC_SCISSOR_TL__TL_Y_mask);
-	SETfield(r700->PA_SC_GENERIC_SCISSOR_BR.u32All, x2,
+	dSETfield(dirty, r700->PA_SC_GENERIC_SCISSOR_BR.u32All, x2,
 		 PA_SC_GENERIC_SCISSOR_BR__BR_X_shift, PA_SC_GENERIC_SCISSOR_BR__BR_X_mask);
-	SETfield(r700->PA_SC_GENERIC_SCISSOR_BR.u32All, y2,
+	dSETfield(dirty, r700->PA_SC_GENERIC_SCISSOR_BR.u32All, y2,
 		 PA_SC_GENERIC_SCISSOR_BR__BR_Y_shift, PA_SC_GENERIC_SCISSOR_BR__BR_Y_mask);
 
-	SETbit(r700->viewport[id].PA_SC_VPORT_SCISSOR_0_TL.u32All, WINDOW_OFFSET_DISABLE_bit);
-	SETfield(r700->viewport[id].PA_SC_VPORT_SCISSOR_0_TL.u32All, x1,
+	dSETbit(dirty, r700->viewport[id].PA_SC_VPORT_SCISSOR_0_TL.u32All, WINDOW_OFFSET_DISABLE_bit);
+	dSETfield(dirty, r700->viewport[id].PA_SC_VPORT_SCISSOR_0_TL.u32All, x1,
 		 PA_SC_VPORT_SCISSOR_0_TL__TL_X_shift, PA_SC_VPORT_SCISSOR_0_TL__TL_X_mask);
-	SETfield(r700->viewport[id].PA_SC_VPORT_SCISSOR_0_TL.u32All, y1,
+	dSETfield(dirty, r700->viewport[id].PA_SC_VPORT_SCISSOR_0_TL.u32All, y1,
 		 PA_SC_VPORT_SCISSOR_0_TL__TL_Y_shift, PA_SC_VPORT_SCISSOR_0_TL__TL_Y_mask);
-	SETfield(r700->viewport[id].PA_SC_VPORT_SCISSOR_0_BR.u32All, x2,
+	dSETfield(dirty, r700->viewport[id].PA_SC_VPORT_SCISSOR_0_BR.u32All, x2,
 		 PA_SC_VPORT_SCISSOR_0_BR__BR_X_shift, PA_SC_VPORT_SCISSOR_0_BR__BR_X_mask);
-	SETfield(r700->viewport[id].PA_SC_VPORT_SCISSOR_0_BR.u32All, y2,
+	dSETfield(dirty, r700->viewport[id].PA_SC_VPORT_SCISSOR_0_BR.u32All, y2,
 		 PA_SC_VPORT_SCISSOR_0_BR__BR_Y_shift, PA_SC_VPORT_SCISSOR_0_BR__BR_Y_mask);
 
-	r700->viewport[id].enabled = GL_TRUE;
+	if (! r700->viewport[id].enabled) { r700->viewport[id].enabled = GL_TRUE; dirty = GL_TRUE; }
+	if (dirty) R600_STATECHANGE(context, scissor);
 }
 
 static void r700InitSQConfig(struct gl_context * ctx)

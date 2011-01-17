@@ -472,6 +472,8 @@ void r700SelectFragmentShader(struct gl_context *ctx)
     struct r700_fragment_program *fp = (struct r700_fragment_program *)
 	    (ctx->FragmentProgram._Current);
 	if (context->selected_fp != fp) {
+		/* NOTE: The application is supposed to select another shader before calling glDeleteProgram() on this one, so
+		   we are probably safe against dangling pointers. */
 		context->selected_fp = fp;
 		R600_STATECHANGE(context, ps);
 	}
