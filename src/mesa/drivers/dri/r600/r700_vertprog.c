@@ -399,33 +399,33 @@ void r700SelectVertexShader(struct gl_context *ctx)
     InputsRead = vpc->mesa_program.Base.InputsRead;
     if (vpc->mesa_program.IsPositionInvariant)
     {
-	InputsRead |= VERT_BIT_POS;
+		InputsRead |= VERT_BIT_POS;
     }
 
     for (vp = vpc->progs; vp; vp = vp->next)
     {
-	match = GL_TRUE;
-	for(i=0; i<context->nNumActiveAos; i++)
-	{
-		if (vp->aos_desc[i].size != context->stream_desc[i].size ||
-		    vp->aos_desc[i].format != context->stream_desc[i].format)
+		match = GL_TRUE;
+		for(i=0; i<context->nNumActiveAos; i++)
 		{
-			match = GL_FALSE;
-			break;
+			if (vp->aos_desc[i].size != context->stream_desc[i].size ||
+				vp->aos_desc[i].format != context->stream_desc[i].format)
+			{
+				match = GL_FALSE;
+				break;
+			}
 		}
-	}
-	if (match)
-	{
-		context->selected_vp = vp;
-		return;
-	}
+		if (match)
+		{
+			context->selected_vp = vp;
+			return;
+		}
     }
 
     vp = r700TranslateVertexShader(ctx, &(vpc->mesa_program));
     if(!vp)
     {
-	radeon_error("Failed to translate vertex shader. \n");
-	return;
+		radeon_error("Failed to translate vertex shader. \n");
+		return;
     }
     vp->next = vpc->progs;
     vpc->progs = vp;
@@ -605,6 +605,7 @@ GLboolean r700SetupVertexProgram(struct gl_context * ctx)
     struct gl_program_parameter_list *paramList;
     unsigned int unNumParamData;
     unsigned int ui;
+	int spi_dirty = 0;
 
     if(GL_FALSE == vp->loaded)
     {
@@ -662,8 +663,6 @@ GLboolean r700SetupVertexProgram(struct gl_context * ctx)
                  STACK_SIZE_shift, STACK_SIZE_mask);
     }
 
-    R600_STATECHANGE(context, spi);
-
     if(vp->mesa_program->Base.OutputsWritten & (1 << VERT_RESULT_PSIZ)) {
         R600_STATECHANGE(context, cl);
         SETbit(r700->PA_CL_VS_OUT_CNTL.u32All, USE_VTX_POINT_SIZE_bit);
@@ -674,16 +673,18 @@ GLboolean r700SetupVertexProgram(struct gl_context * ctx)
         CLEARbit(r700->PA_CL_VS_OUT_CNTL.u32All, VS_OUT_MISC_VEC_ENA_bit);
     }
 
-    SETfield(r700->SPI_VS_OUT_CONFIG.u32All,
+    /* spi */
+    dSETfield(spi_dirty, r700->SPI_VS_OUT_CONFIG.u32All,
 	     vp->r700Shader.nParamExports ? (vp->r700Shader.nParamExports - 1) : 0,
              VS_EXPORT_COUNT_shift, VS_EXPORT_COUNT_mask);
-    SETfield(r700->SPI_PS_IN_CONTROL_0.u32All, vp->r700Shader.nParamExports,
+    dSETfield(spi_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, vp->r700Shader.nParamExports,
              NUM_INTERP_shift, NUM_INTERP_mask);
 
     /*
-    SETbit(r700->SPI_PS_IN_CONTROL_0.u32All, PERSP_GRADIENT_ENA_bit);
-    CLEARbit(r700->SPI_PS_IN_CONTROL_0.u32All, LINEAR_GRADIENT_ENA_bit);
+    dSETbit(spi_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, PERSP_GRADIENT_ENA_bit);
+    dCLEARbit(spi_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, LINEAR_GRADIENT_ENA_bit);
     */
+	if (spi_dirty) R600_STATECHANGE(context, spi);
 
     /* sent out shader constants. */
     paramList = vp->mesa_program->Base.Parameters;

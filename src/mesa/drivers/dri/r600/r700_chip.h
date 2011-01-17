@@ -45,6 +45,16 @@
 
 #define GETbits(x, shift, mask)  ( ((x) & (mask)) >> (shift) )
 
+/* Have a look at all variables that may be related to the emitted state, especially relocated BOs! */
+
+/* These can be used for simple modifications, but may be pessimestic if the same variable is modified multiple times */
+#define dSETfield(dirty, x, val, shift, mask) do { unsigned orig = (x); SETfield(x, val, shift, mask); (dirty) = (dirty) || ((x) != (orig)); } while (0)
+#define dCLEARfield(dirty, x, mask) do { unsigned orig = (x); CLEARfield(x, mask); (dirty) = (dirty) || ((x) != (orig)); } while (0)
+#define dSETbit(dirty, x, bit) do { unsigned orig = (x); SETbit(x, bit); (dirty) = (dirty) || ((x) != (orig)); } while (0)
+#define dCLEARbit(dirty, x, bit) do { unsigned orig = (x); CLEARbit(x, bit); (dirty) = (dirty) || ((x) != (orig)); } while (0)
+
+/* If we start a new command buffer, the original r700->XXX values may be invalid, but we'd set all_dirty in that case anyway. */
+/* FIXME: Need to special-case registers like r700->vs.SQ_PGM_START_VS */
 #define SAVEREGU(name) const unsigned saved_##name = r700->name.u32All
 /* Wow.  C doesn't have the ||= operator (|= should work but might prevent optimization) */
 #define CHECKREGU(dirty, name) ((dirty) = (dirty) || (r700->name.u32All != saved_##name))
