@@ -60,6 +60,8 @@
 
 #define SAVEREGUvs(name) const unsigned saved_vs_##name = r700->vs.name.u32All
 #define CHECKREGUvs(dirty, name) ((dirty) = (dirty) || (r700->vs.name.u32All != saved_vs_##name))
+#define SAVEREGUps(name) const unsigned saved_ps_##name = r700->ps.name.u32All
+#define CHECKREGUps(dirty, name) ((dirty) = (dirty) || (r700->ps.name.u32All != saved_ps_##name))
 
 #define R700_TEXTURE_NUMBERUNITS 16
 #define R700_MAX_RENDER_TARGETS  8

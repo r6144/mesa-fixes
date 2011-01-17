@@ -471,27 +471,31 @@ void r700SelectFragmentShader(struct gl_context *ctx)
     context_t *context = R700_CONTEXT(ctx);
     struct r700_fragment_program *fp = (struct r700_fragment_program *)
 	    (ctx->FragmentProgram._Current);
+	if (context->selected_fp != fp) {
+		context->selected_fp = fp;
+		R600_STATECHANGE(context, ps);
+	}
     if (context->radeon.radeonScreen->chip_family < CHIP_FAMILY_RV770)
     {
 	    fp->r700AsmCode.bR6xx = 1;
     }
 
     if (GL_FALSE == fp->translated)
-	    r700TranslateFragmentShader(fp, &(fp->mesa_program), ctx); 
+	    r700TranslateFragmentShader(fp, &(fp->mesa_program), ctx);
 }
 
 void * r700GetActiveFpShaderBo(struct gl_context * ctx)
 {
-    struct r700_fragment_program *fp = (struct r700_fragment_program *)
-	                                   (ctx->FragmentProgram._Current);
+    context_t *context = R700_CONTEXT(ctx);
+    struct r700_fragment_program *fp = context->selected_fp;
 
     return fp->shaderbo;
 }
 
 void * r700GetActiveFpShaderConstBo(struct gl_context * ctx)
 {
-    struct r700_fragment_program *fp = (struct r700_fragment_program *)
-	                                   (ctx->FragmentProgram._Current);
+    context_t *context = R700_CONTEXT(ctx);
+    struct r700_fragment_program *fp = context->selected_fp;
 
     return fp->constbo0;
 }
@@ -500,8 +504,7 @@ GLboolean r700SetupFragmentProgram(struct gl_context * ctx)
 {
     context_t *context = R700_CONTEXT(ctx);
     R700_CHIP_CONTEXT *r700 = (R700_CHIP_CONTEXT*)(&context->hw);
-    struct r700_fragment_program *fp = (struct r700_fragment_program *)
-	                                   (ctx->FragmentProgram._Current);
+    struct r700_fragment_program *fp = context->selected_fp;
     r700_AssemblerBase         *pAsm = &(fp->r700AsmCode);
     struct gl_fragment_program *mesa_fp = &(fp->mesa_program);
     struct gl_program_parameter_list *paramList;
@@ -537,15 +540,17 @@ GLboolean r700SetupFragmentProgram(struct gl_context * ctx)
     (context->chipobj.MemUse)(context, fp->shadercode.buf->id);
     */
 
-    R600_STATECHANGE(context, ps);
-
+	/* ps */
+	int ps_dirty = 0;
+	SAVEREGUps(SQ_PGM_RESOURCES_PS);
+	SAVEREGUps(SQ_PGM_START_PS);
+	SAVEREGUps(SQ_PGM_EXPORTS_PS);
     r700->ps.SQ_PGM_RESOURCES_PS.u32All = 0;
     SETbit(r700->ps.SQ_PGM_RESOURCES_PS.u32All, PGM_RESOURCES__PRIME_CACHE_ON_DRAW_bit);
 
     r700->ps.SQ_PGM_START_PS.u32All = 0; /* set from buffer obj */
 
     /* spi */
-
     unNumOfReg = fp->r700Shader.nRegs + 1;
 
     ui = (r700->SPI_PS_IN_CONTROL_0.u32All & NUM_INTERP_mask) / (1 << NUM_INTERP_shift);
@@ -767,6 +772,11 @@ GLboolean r700SetupFragmentProgram(struct gl_context * ctx)
 	    R600_STATECHANGE(context, cb);
 	    r700->CB_SHADER_CONTROL.u32All = (1 << exportCount) - 1;
     }
+
+	CHECKREGUps(ps_dirty, SQ_PGM_RESOURCES_PS);
+	CHECKREGUps(ps_dirty, SQ_PGM_START_PS);
+	CHECKREGUps(ps_dirty, SQ_PGM_EXPORTS_PS);
+	if (ps_dirty) R600_STATECHANGE(context, ps);
 
     /* sent out shader constants. */
     paramList = fp->mesa_program.Base.Parameters;

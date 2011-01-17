@@ -169,6 +169,7 @@ struct r600_context {
     void * pChip;
 
 	struct r700_vertex_program *selected_vp;
+	struct r700_fragment_program *selected_fp;
 
 	/* Vertex buffers
 	 */
