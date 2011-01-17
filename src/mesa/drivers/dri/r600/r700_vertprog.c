@@ -414,11 +414,7 @@ void r700SelectVertexShader(struct gl_context *ctx)
 				break;
 			}
 		}
-		if (match)
-		{
-			context->selected_vp = vp;
-			return;
-		}
+		if (match) goto found;
     }
 
     vp = r700TranslateVertexShader(ctx, &(vpc->mesa_program));
@@ -428,8 +424,13 @@ void r700SelectVertexShader(struct gl_context *ctx)
 		return;
     }
     vp->next = vpc->progs;
+found:
     vpc->progs = vp;
-    context->selected_vp = vp;
+	if (context->selected_vp != vp) {
+		context->selected_vp = vp;
+		R600_STATECHANGE(context, vs);
+		R600_STATECHANGE(context, fs); /* The BO of the VS is emitted in VS and FS states */
+	}
     return;
 }
 
@@ -644,8 +645,11 @@ GLboolean r700SetupVertexProgram(struct gl_context * ctx)
     (context->chipobj.MemUse)(context, vp->shadercode.buf->id);
     */
 
-    R600_STATECHANGE(context, vs);
-    R600_STATECHANGE(context, fs); /* hack */
+	/* For vs and fs states; we have also monitored changes in the selected shader, which affects the BOs. */
+	int vs_dirty = 0;
+	SAVEREGUvs(SQ_PGM_RESOURCES_VS);
+	SAVEREGUvs(SQ_ALU_CONST_CACHE_VS_0);
+	SAVEREGUvs(SQ_PGM_START_VS);
 
     r700->vs.SQ_PGM_RESOURCES_VS.u32All = 0;
     SETbit(r700->vs.SQ_PGM_RESOURCES_VS.u32All, PGM_RESOURCES__PRIME_CACHE_ON_DRAW_bit);
@@ -662,7 +666,15 @@ GLboolean r700SetupVertexProgram(struct gl_context * ctx)
         SETfield(r700->vs.SQ_PGM_RESOURCES_VS.u32All, vp->r700Shader.uStackSize,
                  STACK_SIZE_shift, STACK_SIZE_mask);
     }
+	CHECKREGUvs(vs_dirty, SQ_PGM_RESOURCES_VS);
+	CHECKREGUvs(vs_dirty, SQ_ALU_CONST_CACHE_VS_0);
+	CHECKREGUvs(vs_dirty, SQ_PGM_START_VS);
+	if (vs_dirty) {
+		R600_STATECHANGE(context, vs);
+		R600_STATECHANGE(context, fs); /* hack */
+	}
 
+	/* cl */
     if(vp->mesa_program->Base.OutputsWritten & (1 << VERT_RESULT_PSIZ)) {
         R600_STATECHANGE(context, cl);
         SETbit(r700->PA_CL_VS_OUT_CNTL.u32All, USE_VTX_POINT_SIZE_bit);

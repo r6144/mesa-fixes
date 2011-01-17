@@ -54,10 +54,12 @@
 #define dCLEARbit(dirty, x, bit) do { unsigned orig = (x); CLEARbit(x, bit); (dirty) = (dirty) || ((x) != (orig)); } while (0)
 
 /* If we start a new command buffer, the original r700->XXX values may be invalid, but we'd set all_dirty in that case anyway. */
-/* FIXME: Need to special-case registers like r700->vs.SQ_PGM_START_VS */
 #define SAVEREGU(name) const unsigned saved_##name = r700->name.u32All
 /* Wow.  C doesn't have the ||= operator (|= should work but might prevent optimization) */
 #define CHECKREGU(dirty, name) ((dirty) = (dirty) || (r700->name.u32All != saved_##name))
+
+#define SAVEREGUvs(name) const unsigned saved_vs_##name = r700->vs.name.u32All
+#define CHECKREGUvs(dirty, name) ((dirty) = (dirty) || (r700->vs.name.u32All != saved_vs_##name))
 
 #define R700_TEXTURE_NUMBERUNITS 16
 #define R700_MAX_RENDER_TARGETS  8
