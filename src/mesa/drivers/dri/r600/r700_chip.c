@@ -977,16 +977,14 @@ static void r700SendUCPState(struct gl_context *ctx, struct radeon_state_atom *a
 	}
 }
 
-static void r700SendSPIState(struct gl_context *ctx, struct radeon_state_atom *atom)
+static void r700SendSPISemanticState(struct gl_context *ctx, struct radeon_state_atom *atom)
 {
 	context_t *context = R700_CONTEXT(ctx);
 	R700_CHIP_CONTEXT *r700 = R700_CONTEXT_STATES(context);
 	BATCH_LOCALS(&context->radeon);
-	unsigned int ui;
 	radeon_print(RADEON_STATE, RADEON_VERBOSE, "%s\n", __func__);
 
-	BEGIN_BATCH_NO_AUTOSTATE(59 + R700_MAX_SHADER_EXPORTS);
-
+	BEGIN_BATCH_NO_AUTOSTATE(34);
 	R600_OUT_BATCH_REGSEQ(SQ_VTX_SEMANTIC_0, 32);
 	R600_OUT_BATCH(r700->SQ_VTX_SEMANTIC_0.u32All);
 	R600_OUT_BATCH(r700->SQ_VTX_SEMANTIC_1.u32All);
@@ -1020,7 +1018,18 @@ static void r700SendSPIState(struct gl_context *ctx, struct radeon_state_atom *a
 	R600_OUT_BATCH(r700->SQ_VTX_SEMANTIC_29.u32All);
 	R600_OUT_BATCH(r700->SQ_VTX_SEMANTIC_30.u32All);
 	R600_OUT_BATCH(r700->SQ_VTX_SEMANTIC_31.u32All);
+	END_BATCH();
+	COMMIT_BATCH();
+}
 
+static void r700SendSPIVSOutState(struct gl_context *ctx, struct radeon_state_atom *atom)
+{
+	context_t *context = R700_CONTEXT(ctx);
+	R700_CHIP_CONTEXT *r700 = R700_CONTEXT_STATES(context);
+	BATCH_LOCALS(&context->radeon);
+	radeon_print(RADEON_STATE, RADEON_VERBOSE, "%s\n", __func__);
+
+	BEGIN_BATCH_NO_AUTOSTATE(12);
 	R600_OUT_BATCH_REGSEQ(SPI_VS_OUT_ID_0, 10);
 	R600_OUT_BATCH(r700->SPI_VS_OUT_ID_0.u32All);
 	R600_OUT_BATCH(r700->SPI_VS_OUT_ID_1.u32All);
@@ -1032,7 +1041,18 @@ static void r700SendSPIState(struct gl_context *ctx, struct radeon_state_atom *a
 	R600_OUT_BATCH(r700->SPI_VS_OUT_ID_7.u32All);
 	R600_OUT_BATCH(r700->SPI_VS_OUT_ID_8.u32All);
 	R600_OUT_BATCH(r700->SPI_VS_OUT_ID_9.u32All);
+	END_BATCH();
+	COMMIT_BATCH();
+}
 
+static void r700SendSPIMiscState(struct gl_context *ctx, struct radeon_state_atom *atom)
+{
+	context_t *context = R700_CONTEXT(ctx);
+	R700_CHIP_CONTEXT *r700 = R700_CONTEXT_STATES(context);
+	BATCH_LOCALS(&context->radeon);
+	radeon_print(RADEON_STATE, RADEON_VERBOSE, "%s\n", __func__);
+
+	BEGIN_BATCH_NO_AUTOSTATE(11);
 	R600_OUT_BATCH_REGSEQ(SPI_VS_OUT_CONFIG, 9);
 	R600_OUT_BATCH(r700->SPI_VS_OUT_CONFIG.u32All);
 	R600_OUT_BATCH(r700->SPI_THREAD_GROUPING.u32All);
@@ -1043,6 +1063,19 @@ static void r700SendSPIState(struct gl_context *ctx, struct radeon_state_atom *a
 	R600_OUT_BATCH(r700->SPI_FOG_CNTL.u32All);
 	R600_OUT_BATCH(r700->SPI_FOG_FUNC_SCALE.u32All);
 	R600_OUT_BATCH(r700->SPI_FOG_FUNC_BIAS.u32All);
+	END_BATCH();
+	COMMIT_BATCH();
+}
+
+static void r700SendSPIPSInputState(struct gl_context *ctx, struct radeon_state_atom *atom)
+{
+	context_t *context = R700_CONTEXT(ctx);
+	R700_CHIP_CONTEXT *r700 = R700_CONTEXT_STATES(context);
+	BATCH_LOCALS(&context->radeon);
+	unsigned int ui;
+	radeon_print(RADEON_STATE, RADEON_VERBOSE, "%s\n", __func__);
+
+	BEGIN_BATCH_NO_AUTOSTATE(2 + R700_MAX_SHADER_EXPORTS);
 
 	R600_OUT_BATCH_REGSEQ(SPI_PS_INPUT_CNTL_0, R700_MAX_SHADER_EXPORTS);
 	for(ui = 0; ui < R700_MAX_SHADER_EXPORTS; ui++)
@@ -1636,7 +1669,10 @@ void r600InitAtoms(context_t *context)
     ALLOC_STATE(blnd_clr, always, 6, r700SendCBBlendColorState);
     ALLOC_STATE(sx, always, 9, r700SendSXState);
     ALLOC_STATE(vgt, always, 41, r700SendVGTState);
-    ALLOC_STATE(spi, always, (59 + R700_MAX_SHADER_EXPORTS), r700SendSPIState);
+    ALLOC_STATE(spi_sem, always, 34, r700SendSPISemanticState);
+    ALLOC_STATE(spi_vs_out, always, 12, r700SendSPIVSOutState);
+    ALLOC_STATE(spi_misc, always, 11, r700SendSPIMiscState);
+    ALLOC_STATE(spi_ps_input, always, (2 + R700_MAX_SHADER_EXPORTS), r700SendSPIPSInputState);
     ALLOC_STATE(vpt, always, 16, r700SendViewportState);
     ALLOC_STATE(fs, always, 18, r700SendFSState);
     if(GL_TRUE == r700->bShaderUseMemConstant)

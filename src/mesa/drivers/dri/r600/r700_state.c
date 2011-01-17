@@ -162,7 +162,7 @@ static void r700InvalidateState(struct gl_context * ctx, GLuint new_state) //---
     r700UpdateStateParameters(ctx, new_state);
 
     R600_STATECHANGE(context, cl);
-    R600_STATECHANGE(context, spi);
+    R600_STATECHANGE(context, spi_misc);
 
     if(GL_TRUE == r700->bEnablePerspective)
     {
@@ -871,7 +871,7 @@ static void r700ShadeModel(struct gl_context * ctx, GLenum mode) //-------------
 	context_t *context = R700_CONTEXT(ctx);
 	R700_CHIP_CONTEXT *r700 = (R700_CHIP_CONTEXT*)(&context->hw);
 
-	R600_STATECHANGE(context, spi);
+	R600_STATECHANGE(context, spi_misc);
 
 	/* also need to set/clear FLAT_SHADE bit per param in SPI_PS_INPUT_CNTL_[0-31] */
 	switch (mode) {

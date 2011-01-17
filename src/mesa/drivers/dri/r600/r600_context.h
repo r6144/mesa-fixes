@@ -93,7 +93,7 @@ struct r600_hw_state {
 	struct radeon_state_atom cb_target;
 	struct radeon_state_atom sx;
 	struct radeon_state_atom vgt;
-	struct radeon_state_atom spi;
+	struct radeon_state_atom spi_sem, spi_vs_out, spi_misc, spi_ps_input;
 	struct radeon_state_atom vpt;
 
 	struct radeon_state_atom fs;
@@ -212,6 +212,7 @@ do {						\
 #define R600_STATECHANGE(r600, ATOM)			\
 do {							\
 	R600_NEWPRIM(r600);					\
+	if (! r600->atoms.ATOM.dirty) radeon_print(RADEON_STATE, RADEON_VERBOSE, "Atom %s dirtied in %s()\n", #ATOM, __FUNCTION__); \
 	r600->atoms.ATOM.dirty = GL_TRUE;					\
 	r600->radeon.hw.is_dirty = GL_TRUE;			\
 } while(0)

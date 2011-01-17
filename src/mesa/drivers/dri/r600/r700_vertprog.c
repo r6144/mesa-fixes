@@ -606,7 +606,7 @@ GLboolean r700SetupVertexProgram(struct gl_context * ctx)
     struct gl_program_parameter_list *paramList;
     unsigned int unNumParamData;
     unsigned int ui;
-	int spi_dirty = 0;
+	int spi_misc_dirty = 0;
 
     if(GL_FALSE == vp->loaded)
     {
@@ -686,17 +686,17 @@ GLboolean r700SetupVertexProgram(struct gl_context * ctx)
     }
 
     /* spi */
-    dSETfield(spi_dirty, r700->SPI_VS_OUT_CONFIG.u32All,
+    dSETfield(spi_misc_dirty, r700->SPI_VS_OUT_CONFIG.u32All,
 	     vp->r700Shader.nParamExports ? (vp->r700Shader.nParamExports - 1) : 0,
              VS_EXPORT_COUNT_shift, VS_EXPORT_COUNT_mask);
-    dSETfield(spi_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, vp->r700Shader.nParamExports,
+    dSETfield(spi_misc_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, vp->r700Shader.nParamExports,
              NUM_INTERP_shift, NUM_INTERP_mask);
 
     /*
-    dSETbit(spi_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, PERSP_GRADIENT_ENA_bit);
-    dCLEARbit(spi_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, LINEAR_GRADIENT_ENA_bit);
+    dSETbit(spi_misc_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, PERSP_GRADIENT_ENA_bit);
+    dCLEARbit(spi_misc_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, LINEAR_GRADIENT_ENA_bit);
     */
-	if (spi_dirty) R600_STATECHANGE(context, spi);
+	if (spi_misc_dirty) R600_STATECHANGE(context, spi_misc);
 
     /* sent out shader constants. */
     paramList = vp->mesa_program->Base.Parameters;

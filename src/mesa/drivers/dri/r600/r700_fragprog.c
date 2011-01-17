@@ -516,7 +516,7 @@ GLboolean r700SetupFragmentProgram(struct gl_context * ctx)
     unsigned int unBit;
     GLuint exportCount;
     GLboolean point_sprite = GL_FALSE;
-    int spi_dirty = 0;
+    int spi_ps_input_dirty = 0, spi_misc_dirty = 0;
 
     if(GL_FALSE == fp->loaded)
     {
@@ -561,28 +561,28 @@ GLboolean r700SetupFragmentProgram(struct gl_context * ctx)
     if (mesa_fp->Base.InputsRead & (1 << FRAG_ATTRIB_WPOS))
     {
         ui += 1;
-        dSETfield(spi_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, ui, NUM_INTERP_shift, NUM_INTERP_mask);
-        dSETfield(spi_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, CENTERS_ONLY, BARYC_SAMPLE_CNTL_shift, BARYC_SAMPLE_CNTL_mask);
-        dSETbit(spi_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, POSITION_ENA_bit);
-        dSETbit(spi_dirty, r700->SPI_INPUT_Z.u32All, PROVIDE_Z_TO_SPI_bit);
+        dSETfield(spi_misc_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, ui, NUM_INTERP_shift, NUM_INTERP_mask);
+        dSETfield(spi_misc_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, CENTERS_ONLY, BARYC_SAMPLE_CNTL_shift, BARYC_SAMPLE_CNTL_mask);
+        dSETbit(spi_misc_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, POSITION_ENA_bit);
+        dSETbit(spi_misc_dirty, r700->SPI_INPUT_Z.u32All, PROVIDE_Z_TO_SPI_bit);
     }
     else
     {
-        dCLEARbit(spi_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, POSITION_ENA_bit);
-        dCLEARbit(spi_dirty, r700->SPI_INPUT_Z.u32All, PROVIDE_Z_TO_SPI_bit);
+        dCLEARbit(spi_misc_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, POSITION_ENA_bit);
+        dCLEARbit(spi_misc_dirty, r700->SPI_INPUT_Z.u32All, PROVIDE_Z_TO_SPI_bit);
     }
 
     if (mesa_fp->Base.InputsRead & (1 << FRAG_ATTRIB_FACE))
     {
         ui += 1;
-        dSETfield(spi_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, ui, NUM_INTERP_shift, NUM_INTERP_mask);
-        dSETbit(spi_dirty, r700->SPI_PS_IN_CONTROL_1.u32All, FRONT_FACE_ENA_bit);
-        dSETbit(spi_dirty, r700->SPI_PS_IN_CONTROL_1.u32All, FRONT_FACE_ALL_BITS_bit);
-        dSETfield(spi_dirty, r700->SPI_PS_IN_CONTROL_1.u32All, pAsm->uiFP_AttributeMap[FRAG_ATTRIB_FACE], FRONT_FACE_ADDR_shift, FRONT_FACE_ADDR_mask);
+        dSETfield(spi_misc_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, ui, NUM_INTERP_shift, NUM_INTERP_mask);
+        dSETbit(spi_misc_dirty, r700->SPI_PS_IN_CONTROL_1.u32All, FRONT_FACE_ENA_bit);
+        dSETbit(spi_misc_dirty, r700->SPI_PS_IN_CONTROL_1.u32All, FRONT_FACE_ALL_BITS_bit);
+        dSETfield(spi_misc_dirty, r700->SPI_PS_IN_CONTROL_1.u32All, pAsm->uiFP_AttributeMap[FRAG_ATTRIB_FACE], FRONT_FACE_ADDR_shift, FRONT_FACE_ADDR_mask);
     }
     else
     {
-        dCLEARbit(spi_dirty, r700->SPI_PS_IN_CONTROL_1.u32All, FRONT_FACE_ENA_bit);
+        dCLEARbit(spi_misc_dirty, r700->SPI_PS_IN_CONTROL_1.u32All, FRONT_FACE_ENA_bit);
     }
 
     /* see if we need any point_sprite replacements, also increase num_interp
@@ -604,22 +604,22 @@ GLboolean r700SetupFragmentProgram(struct gl_context * ctx)
 
     if ((mesa_fp->Base.InputsRead & (1 << FRAG_ATTRIB_PNTC)) || point_sprite)
     {
-        dSETfield(spi_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, ui, NUM_INTERP_shift, NUM_INTERP_mask);
-        dSETbit(spi_dirty, r700->SPI_INTERP_CONTROL_0.u32All, PNT_SPRITE_ENA_bit);
-        dSETfield(spi_dirty, r700->SPI_INTERP_CONTROL_0.u32All, SPI_PNT_SPRITE_SEL_S, PNT_SPRITE_OVRD_X_shift, PNT_SPRITE_OVRD_X_mask);
-        dSETfield(spi_dirty, r700->SPI_INTERP_CONTROL_0.u32All, SPI_PNT_SPRITE_SEL_T, PNT_SPRITE_OVRD_Y_shift, PNT_SPRITE_OVRD_Y_mask);
-        dSETfield(spi_dirty, r700->SPI_INTERP_CONTROL_0.u32All, SPI_PNT_SPRITE_SEL_0, PNT_SPRITE_OVRD_Z_shift, PNT_SPRITE_OVRD_Z_mask);
-        dSETfield(spi_dirty, r700->SPI_INTERP_CONTROL_0.u32All, SPI_PNT_SPRITE_SEL_1, PNT_SPRITE_OVRD_W_shift, PNT_SPRITE_OVRD_W_mask);
+        dSETfield(spi_misc_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, ui, NUM_INTERP_shift, NUM_INTERP_mask);
+        dSETbit(spi_misc_dirty, r700->SPI_INTERP_CONTROL_0.u32All, PNT_SPRITE_ENA_bit);
+        dSETfield(spi_misc_dirty, r700->SPI_INTERP_CONTROL_0.u32All, SPI_PNT_SPRITE_SEL_S, PNT_SPRITE_OVRD_X_shift, PNT_SPRITE_OVRD_X_mask);
+        dSETfield(spi_misc_dirty, r700->SPI_INTERP_CONTROL_0.u32All, SPI_PNT_SPRITE_SEL_T, PNT_SPRITE_OVRD_Y_shift, PNT_SPRITE_OVRD_Y_mask);
+        dSETfield(spi_misc_dirty, r700->SPI_INTERP_CONTROL_0.u32All, SPI_PNT_SPRITE_SEL_0, PNT_SPRITE_OVRD_Z_shift, PNT_SPRITE_OVRD_Z_mask);
+        dSETfield(spi_misc_dirty, r700->SPI_INTERP_CONTROL_0.u32All, SPI_PNT_SPRITE_SEL_1, PNT_SPRITE_OVRD_W_shift, PNT_SPRITE_OVRD_W_mask);
         /* Like e.g. viewport and winding, point sprite coordinates are
          * inverted when rendering to FBO. */
         if ((ctx->Point.SpriteOrigin == GL_LOWER_LEFT) == !ctx->DrawBuffer->Name)
-            dSETbit(spi_dirty, r700->SPI_INTERP_CONTROL_0.u32All, PNT_SPRITE_TOP_1_bit);
+            dSETbit(spi_misc_dirty, r700->SPI_INTERP_CONTROL_0.u32All, PNT_SPRITE_TOP_1_bit);
         else
-            dCLEARbit(spi_dirty, r700->SPI_INTERP_CONTROL_0.u32All, PNT_SPRITE_TOP_1_bit);
+            dCLEARbit(spi_misc_dirty, r700->SPI_INTERP_CONTROL_0.u32All, PNT_SPRITE_TOP_1_bit);
     }
     else
     {
-        dCLEARbit(spi_dirty, r700->SPI_INTERP_CONTROL_0.u32All, PNT_SPRITE_ENA_bit);
+        dCLEARbit(spi_misc_dirty, r700->SPI_INTERP_CONTROL_0.u32All, PNT_SPRITE_ENA_bit);
     }
 
 
@@ -645,7 +645,7 @@ GLboolean r700SetupFragmentProgram(struct gl_context * ctx)
     unsigned orig_SPI_PS_INPUT_CNTL[R700_MAX_SHADER_EXPORTS];
     
     for(ui = 0; ui < R700_MAX_SHADER_EXPORTS; ui++) {
-	orig_SPI_PS_INPUT_CNTL[ui] = r700->SPI_PS_INPUT_CNTL[ui].u32All;
+		orig_SPI_PS_INPUT_CNTL[ui] = r700->SPI_PS_INPUT_CNTL[ui].u32All;
         r700->SPI_PS_INPUT_CNTL[ui].u32All = 0;
     }
 
@@ -765,8 +765,9 @@ GLboolean r700SetupFragmentProgram(struct gl_context * ctx)
         }
     }
     for (ui = 0; ui < R700_MAX_SHADER_EXPORTS; ui++)
-	if (r700->SPI_PS_INPUT_CNTL[ui].u32All != orig_SPI_PS_INPUT_CNTL[ui]) spi_dirty = 1;
-    if (spi_dirty) R600_STATECHANGE(context, spi);
+		if (r700->SPI_PS_INPUT_CNTL[ui].u32All != orig_SPI_PS_INPUT_CNTL[ui]) spi_ps_input_dirty = 1;
+    if (spi_misc_dirty) R600_STATECHANGE(context, spi_misc);
+    if (spi_ps_input_dirty) R600_STATECHANGE(context, spi_ps_input);
 
     exportCount = (r700->ps.SQ_PGM_EXPORTS_PS.u32All & EXPORT_MODE_mask) / (1 << EXPORT_MODE_shift);
     if (r700->CB_SHADER_CONTROL.u32All != ((1 << exportCount) - 1))
