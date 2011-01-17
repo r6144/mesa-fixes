@@ -45,6 +45,10 @@
 
 #define GETbits(x, shift, mask)  ( ((x) & (mask)) >> (shift) )
 
+#define SAVEREGU(name) const unsigned saved_##name = r700->name.u32All
+/* Wow.  C doesn't have the ||= operator (|= should work but might prevent optimization) */
+#define CHECKREGU(dirty, name) ((dirty) = (dirty) || (r700->name.u32All != saved_##name))
+
 #define R700_TEXTURE_NUMBERUNITS 16
 #define R700_MAX_RENDER_TARGETS  8
 #define R700_MAX_VIEWPORTS       16

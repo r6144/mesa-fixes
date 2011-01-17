@@ -196,8 +196,11 @@ static void r700SetDBRenderState(struct gl_context * ctx)
 	R700_CHIP_CONTEXT *r700 = (R700_CHIP_CONTEXT*)(&context->hw);
 	struct r700_fragment_program *fp = (struct r700_fragment_program *)
 		(ctx->FragmentProgram._Current);
-
-	R600_STATECHANGE(context, db);
+	int dirty = 0;
+	/* FIXME: For now we only check the registers actually modified here */
+	SAVEREGU(DB_RENDER_OVERRIDE);
+	SAVEREGU(DB_RENDER_CONTROL);
+	SAVEREGU(DB_SHADER_CONTROL);
 
 	SETbit(r700->DB_SHADER_CONTROL.u32All, DUAL_EXPORT_ENABLE_bit);
 	SETfield(r700->DB_SHADER_CONTROL.u32All, EARLY_Z_THEN_LATE_Z, Z_ORDER_shift, Z_ORDER_mask);
@@ -243,6 +246,11 @@ static void r700SetDBRenderState(struct gl_context * ctx)
 			CLEARbit(r700->DB_SHADER_CONTROL.u32All, Z_EXPORT_ENABLE_bit);
 		}
 	}
+
+	CHECKREGU(dirty, DB_RENDER_OVERRIDE);
+	CHECKREGU(dirty, DB_RENDER_CONTROL);
+	CHECKREGU(dirty, DB_SHADER_CONTROL);
+	if (dirty) R600_STATECHANGE(context, db);
 }
 
 void r700UpdateShaderStates(struct gl_context * ctx)
