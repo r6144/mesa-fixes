@@ -152,40 +152,42 @@ static void r700InvalidateState(struct gl_context * ctx, GLuint new_state) //---
     }
 
     if (new_state & (_NEW_LIGHT)) {
-	    R600_STATECHANGE(context, su);
+		int su_dirty = 0;
 	    if (ctx->Light.ProvokingVertex == GL_LAST_VERTEX_CONVENTION)
-		    SETbit(r700->PA_SU_SC_MODE_CNTL.u32All, PROVOKING_VTX_LAST_bit);
+		    dSETbit(su_dirty, r700->PA_SU_SC_MODE_CNTL.u32All, PROVOKING_VTX_LAST_bit);
 	    else
-		    CLEARbit(r700->PA_SU_SC_MODE_CNTL.u32All, PROVOKING_VTX_LAST_bit);
+		    dCLEARbit(su_dirty, r700->PA_SU_SC_MODE_CNTL.u32All, PROVOKING_VTX_LAST_bit);
+	    if (su_dirty) R600_STATECHANGE(context, su);
     }
 
     r700UpdateStateParameters(ctx, new_state);
 
-    R600_STATECHANGE(context, cl);
-    R600_STATECHANGE(context, spi_misc);
+	int cl_dirty = 0, spi_misc_dirty = 0;
 
     if(GL_TRUE == r700->bEnablePerspective)
     {
         /* Do scale XY and Z by 1/W0 for perspective correction on pos. For orthogonal case, set both to one. */
-        CLEARbit(r700->PA_CL_VTE_CNTL.u32All, VTX_XY_FMT_bit);
-        CLEARbit(r700->PA_CL_VTE_CNTL.u32All, VTX_Z_FMT_bit);
+		dCLEARbit(cl_dirty, r700->PA_CL_VTE_CNTL.u32All, VTX_XY_FMT_bit);
+        dCLEARbit(cl_dirty, r700->PA_CL_VTE_CNTL.u32All, VTX_Z_FMT_bit);
 
-        SETbit(r700->PA_CL_VTE_CNTL.u32All, VTX_W0_FMT_bit);
+        dSETbit(cl_dirty, r700->PA_CL_VTE_CNTL.u32All, VTX_W0_FMT_bit);
 
-        SETbit(r700->SPI_PS_IN_CONTROL_0.u32All, PERSP_GRADIENT_ENA_bit);
-        CLEARbit(r700->SPI_PS_IN_CONTROL_0.u32All, LINEAR_GRADIENT_ENA_bit);
+        dSETbit(spi_misc_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, PERSP_GRADIENT_ENA_bit);
+        dCLEARbit(spi_misc_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, LINEAR_GRADIENT_ENA_bit);
     }
     else
     {
         /* For orthogonal case. */
-        SETbit(r700->PA_CL_VTE_CNTL.u32All, VTX_XY_FMT_bit);
-        SETbit(r700->PA_CL_VTE_CNTL.u32All, VTX_Z_FMT_bit);
+        dSETbit(cl_dirty, r700->PA_CL_VTE_CNTL.u32All, VTX_XY_FMT_bit);
+        dSETbit(cl_dirty, r700->PA_CL_VTE_CNTL.u32All, VTX_Z_FMT_bit);
 
-        SETbit(r700->PA_CL_VTE_CNTL.u32All, VTX_W0_FMT_bit);
+        dSETbit(cl_dirty, r700->PA_CL_VTE_CNTL.u32All, VTX_W0_FMT_bit);
 
-        CLEARbit(r700->SPI_PS_IN_CONTROL_0.u32All, PERSP_GRADIENT_ENA_bit);
-        SETbit(r700->SPI_PS_IN_CONTROL_0.u32All, LINEAR_GRADIENT_ENA_bit);
+        dCLEARbit(spi_misc_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, PERSP_GRADIENT_ENA_bit);
+        dSETbit(spi_misc_dirty, r700->SPI_PS_IN_CONTROL_0.u32All, LINEAR_GRADIENT_ENA_bit);
     }
+    if (cl_dirty) R600_STATECHANGE(context, cl);
+    if (spi_misc_dirty) R600_STATECHANGE(context, spi_misc);
 
     context->radeon.NewGLState |= new_state;
 }
