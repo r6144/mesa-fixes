@@ -699,6 +699,9 @@ GLboolean r700SetupVertexProgram(struct gl_context * ctx)
 	if (spi_misc_dirty) R600_STATECHANGE(context, spi_misc);
 
     /* sent out shader constants. */
+	int vsc_dirty = 0;
+	unsigned orig_num_consts = r700->vs.num_consts;
+
     paramList = vp->mesa_program->Base.Parameters;
 
     if(NULL != paramList) {
@@ -713,8 +716,6 @@ GLboolean r700SetupVertexProgram(struct gl_context * ctx)
 	    if (paramList->NumParameters > R700_MAX_DX9_CONSTS)
 		    return GL_FALSE;
 
-	    R600_STATECHANGE(context, vs_consts);
-
 	    r700->vs.num_consts = paramList->NumParameters;
 
 	    unNumParamData = paramList->NumParameters;
@@ -722,17 +723,17 @@ GLboolean r700SetupVertexProgram(struct gl_context * ctx)
 	    for(ui=0; ui<unNumParamData; ui++) {
             if(paramList->Parameters[ui].Type == PROGRAM_UNIFORM) 
             {
-                r700->vs.consts[ui][0].f32All = paramListOrginal->ParameterValues[ui][0];
-		        r700->vs.consts[ui][1].f32All = paramListOrginal->ParameterValues[ui][1];
-		        r700->vs.consts[ui][2].f32All = paramListOrginal->ParameterValues[ui][2];
-		        r700->vs.consts[ui][3].f32All = paramListOrginal->ParameterValues[ui][3];
+                dSET(vsc_dirty, r700->vs.consts[ui][0].f32All, paramListOrginal->ParameterValues[ui][0]);
+		        dSET(vsc_dirty, r700->vs.consts[ui][1].f32All, paramListOrginal->ParameterValues[ui][1]);
+		        dSET(vsc_dirty, r700->vs.consts[ui][2].f32All, paramListOrginal->ParameterValues[ui][2]);
+				dSET(vsc_dirty, r700->vs.consts[ui][3].f32All, paramListOrginal->ParameterValues[ui][3]);
             }
             else
             {
-		        r700->vs.consts[ui][0].f32All = paramList->ParameterValues[ui][0];
-		        r700->vs.consts[ui][1].f32All = paramList->ParameterValues[ui][1];
-		        r700->vs.consts[ui][2].f32All = paramList->ParameterValues[ui][2];
-		        r700->vs.consts[ui][3].f32All = paramList->ParameterValues[ui][3];
+		        dSET(vsc_dirty, r700->vs.consts[ui][0].f32All, paramList->ParameterValues[ui][0]);
+		        dSET(vsc_dirty, r700->vs.consts[ui][1].f32All, paramList->ParameterValues[ui][1]);
+		        dSET(vsc_dirty, r700->vs.consts[ui][2].f32All, paramList->ParameterValues[ui][2]);
+		        dSET(vsc_dirty, r700->vs.consts[ui][3].f32All, paramList->ParameterValues[ui][3]);
             }
 	    }
 
@@ -746,7 +747,8 @@ GLboolean r700SetupVertexProgram(struct gl_context * ctx)
                            unNumParamData * 4 * 4);
         }
     } else
-	    r700->vs.num_consts = 0;
+	    r700->vs.num_consts = 0; /* We probably don't need to care if there are stale constants
+									in the hardware that the shader does not use */
 
     COMPILED_SUB * pCompiledSub;
     GLuint uj;
@@ -759,13 +761,15 @@ GLboolean r700SetupVertexProgram(struct gl_context * ctx)
 
         for(uj=0; uj<pCompiledSub->NumParameters; uj++)
         {
-            r700->vs.consts[uj + unConstOffset][0].f32All = pCompiledSub->ParameterValues[uj][0];
-		    r700->vs.consts[uj + unConstOffset][1].f32All = pCompiledSub->ParameterValues[uj][1];
-		    r700->vs.consts[uj + unConstOffset][2].f32All = pCompiledSub->ParameterValues[uj][2];
-		    r700->vs.consts[uj + unConstOffset][3].f32All = pCompiledSub->ParameterValues[uj][3];
+            dSET(vsc_dirty, r700->vs.consts[uj + unConstOffset][0].f32All, pCompiledSub->ParameterValues[uj][0]);
+            dSET(vsc_dirty, r700->vs.consts[uj + unConstOffset][1].f32All, pCompiledSub->ParameterValues[uj][1]);
+            dSET(vsc_dirty, r700->vs.consts[uj + unConstOffset][2].f32All, pCompiledSub->ParameterValues[uj][2]);
+            dSET(vsc_dirty, r700->vs.consts[uj + unConstOffset][3].f32All, pCompiledSub->ParameterValues[uj][3]);
         }
         unConstOffset += pCompiledSub->NumParameters;
     }
+	if (r700->vs.num_consts != orig_num_consts) vsc_dirty = 1;
+	if (vsc_dirty) R600_STATECHANGE(context, vs_consts); /* only reemit if e.g. the matrices change */
 
     return GL_TRUE;
 }

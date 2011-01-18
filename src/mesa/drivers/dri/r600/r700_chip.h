@@ -53,6 +53,8 @@
 #define dSETbit(dirty, x, bit) do { unsigned orig = (x); SETbit(x, bit); (dirty) = (dirty) || ((x) != (orig)); } while (0)
 #define dCLEARbit(dirty, x, bit) do { unsigned orig = (x); CLEARbit(x, bit); (dirty) = (dirty) || ((x) != (orig)); } while (0)
 
+#define dSET(dirty, x, value) do { if ((x) != (value)) { (dirty) = GL_TRUE; (x) = (value); } } while (0)
+
 /* If we start a new command buffer, the original r700->XXX values may be invalid, but we'd set all_dirty in that case anyway. */
 #define SAVEREGU(name) const unsigned saved_##name = r700->name.u32All
 /* Wow.  C doesn't have the ||= operator (|= should work but might prevent optimization) */
