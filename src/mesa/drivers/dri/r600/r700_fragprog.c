@@ -782,6 +782,9 @@ GLboolean r700SetupFragmentProgram(struct gl_context * ctx)
 	if (ps_dirty) R600_STATECHANGE(context, ps);
 
     /* sent out shader constants. */
+	int psc_dirty = 0;
+	unsigned orig_num_consts = r700->ps.num_consts;
+
     paramList = fp->mesa_program.Base.Parameters;
 
     if(NULL != paramList) 
@@ -791,17 +794,15 @@ GLboolean r700SetupFragmentProgram(struct gl_context * ctx)
 	    if (paramList->NumParameters > R700_MAX_DX9_CONSTS)
 		    return GL_FALSE;
 
-	    R600_STATECHANGE(context, ps_consts);
-
 	    r700->ps.num_consts = paramList->NumParameters;
 
 	    unNumParamData = paramList->NumParameters;
 
 	    for(ui=0; ui<unNumParamData; ui++) {
-		        r700->ps.consts[ui][0].f32All = paramList->ParameterValues[ui][0];
-		        r700->ps.consts[ui][1].f32All = paramList->ParameterValues[ui][1];
-		        r700->ps.consts[ui][2].f32All = paramList->ParameterValues[ui][2];
-		        r700->ps.consts[ui][3].f32All = paramList->ParameterValues[ui][3];
+			dSET(psc_dirty, r700->ps.consts[ui][0].f32All, paramList->ParameterValues[ui][0]);
+			dSET(psc_dirty, r700->ps.consts[ui][1].f32All, paramList->ParameterValues[ui][1]);
+			dSET(psc_dirty, r700->ps.consts[ui][2].f32All, paramList->ParameterValues[ui][2]);
+			dSET(psc_dirty, r700->ps.consts[ui][3].f32All, paramList->ParameterValues[ui][3]);
 	    }
 
         /* Load fp constants to gpu */
@@ -828,13 +829,16 @@ GLboolean r700SetupFragmentProgram(struct gl_context * ctx)
 
         for(uj=0; uj<pCompiledSub->NumParameters; uj++)
         {
-            r700->ps.consts[uj + unConstOffset][0].f32All = pCompiledSub->ParameterValues[uj][0];
-		    r700->ps.consts[uj + unConstOffset][1].f32All = pCompiledSub->ParameterValues[uj][1];
-		    r700->ps.consts[uj + unConstOffset][2].f32All = pCompiledSub->ParameterValues[uj][2];
-		    r700->ps.consts[uj + unConstOffset][3].f32All = pCompiledSub->ParameterValues[uj][3];
+            dSET(psc_dirty, r700->ps.consts[uj + unConstOffset][0].f32All, pCompiledSub->ParameterValues[uj][0]);
+            dSET(psc_dirty, r700->ps.consts[uj + unConstOffset][1].f32All, pCompiledSub->ParameterValues[uj][1]);
+            dSET(psc_dirty, r700->ps.consts[uj + unConstOffset][2].f32All, pCompiledSub->ParameterValues[uj][2]);
+            dSET(psc_dirty, r700->ps.consts[uj + unConstOffset][3].f32All, pCompiledSub->ParameterValues[uj][3]);
         }
         unConstOffset += pCompiledSub->NumParameters;
     }
+
+	if (r700->ps.num_consts != orig_num_consts) psc_dirty = GL_TRUE;
+	if (psc_dirty) R600_STATECHANGE(context, ps_consts);
 
     return GL_TRUE;
 }

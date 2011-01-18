@@ -768,7 +768,7 @@ GLboolean r700SetupVertexProgram(struct gl_context * ctx)
         }
         unConstOffset += pCompiledSub->NumParameters;
     }
-	if (r700->vs.num_consts != orig_num_consts) vsc_dirty = 1;
+	if (r700->vs.num_consts != orig_num_consts) vsc_dirty = GL_TRUE;
 	if (vsc_dirty) R600_STATECHANGE(context, vs_consts); /* only reemit if e.g. the matrices change */
 
     return GL_TRUE;
