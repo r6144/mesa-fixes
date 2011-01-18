@@ -159,7 +159,8 @@ static const struct dri_extension card_extensions[] = {
 
 
 static const struct dri_extension mm_extensions[] = {
-#if 1
+#if 0
+  /* As of Fedora 14, FBOs still lead to video memory corruption for some reason */
   { "GL_EXT_framebuffer_blit",	GL_EXT_framebuffer_blit_functions },
   { "GL_EXT_framebuffer_object", GL_EXT_framebuffer_object_functions },
 #endif
