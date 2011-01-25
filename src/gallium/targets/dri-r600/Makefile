@@ -1,7 +1,7 @@
 TOP = ../../../..
 include $(TOP)/configs/current
 
-LIBNAME = r600_dri.so
+LIBNAME = r600g_dri.so
 
 PIPE_DRIVERS = \
 	$(TOP)/src/gallium/drivers/r600/libr600.a \

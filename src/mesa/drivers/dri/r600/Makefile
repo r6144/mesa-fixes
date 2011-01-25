@@ -5,7 +5,7 @@ include $(TOP)/configs/current
 
 CFLAGS += $(RADEON_CFLAGS)
 
-LIBNAME = r600_dri.so
+LIBNAME = r600c_dri.so
 
 ifeq ($(RADEON_LDFLAGS),)
 CS_SOURCES = radeon_cs_space_drm.c radeon_bo.c radeon_cs.c

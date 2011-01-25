@@ -47,6 +47,7 @@
 #include "xf86drm.h"
 #include "dri2.h"
 #include "dri_common.h"
+#include <stdlib.h>
 
 /* From xmlpool/options.h, user exposed so should be stable */
 #define DRI_CONF_VBLANK_NEVER 0
@@ -775,6 +776,7 @@ dri2CreateScreen(int screen, struct glx_display * priv)
    struct dri2_screen *psc;
    __GLXDRIscreen *psp;
    char *driverName, *deviceName;
+   const char *userDriverName;
    drm_magic_t magic;
    int i;
 
@@ -791,8 +793,9 @@ dri2CreateScreen(int screen, struct glx_display * priv)
       XFree(psc);
       return NULL;
    }
+   userDriverName = getenv("DRI_DRIVER");
 
-   psc->driver = driOpenDriver(driverName);
+   psc->driver = driOpenDriver(userDriverName ? userDriverName : driverName);
    if (psc->driver == NULL) {
       ErrorMessageF("driver pointer missing\n");
       goto handle_error;
